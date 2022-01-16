@@ -17,40 +17,40 @@ static int image_signature(const Image& i) {
 }
 
 
-template <class T>
-double getMicroDiff(T b, T a) {
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(b-a).count() * 1e-3;
-}
-std::string prettyPrintMicros(double us) {
-	std::string out              = "";
-	if (us < 1'000) out          = std::to_string(us) + "μs";
-	else if (us < 1'000'000) out = std::to_string(us/1e3) + "ms";
-	else out                     = std::to_string(us/1e6) + "s";
-	return out;
-}
 
-int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x) {
-	Image img { 256, 256, 1 }; img.alloc();
-	BlockCoordinate coord { z,y,x };
-	if (dset.get(img, coord, nullptr))
-		return 1;
+int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
+	Image img { 256, 256, 3 }; img.alloc();
 
-	cv::Mat imgRef { img.h, img.w, CV_8U, img.buffer };
-	cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", imgRef);
+	cv::Mat mat ( 256 * w, 256 * h, CV_8UC3 );
+
+	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
+	for (uint64_t xx=x, xi=0; xx<x+h; xx++, xi++) {
+		BlockCoordinate coord { z,yy,xx };
+		if (dset.get(img, coord, nullptr))
+			return 1;
+
+		cv::Mat imgRef { img.h, img.w, CV_8UC3, img.buffer };
+		imgRef.copyTo(mat(cv::Rect({((int)xi)*256, (int)(h-1-yi)*256, 256, 256})));
+	}
+
+	cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+	cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
 	return 0;
 }
 
 int main(int argc, char** argv) {
 	if (argc > 1 and strcmp(argv[1],"dumpTile") == 0) {
-		assert(argc == 5);
+		assert(argc == 5 or argc == 7);
 		int z = std::atoi(argv[2]);
 		int y = std::atoi(argv[3]);
 		int x = std::atoi(argv[4]);
-		Dataset dset(Dataset::OpenMode::READ_ONLY, "out");
-		return dumpTile(dset, z,y,x);
+		int w = argc == 7 ? std::atoi(argv[5]) : 1;
+		int h = argc == 7 ? std::atoi(argv[6]) : 1;
+		Dataset dset("out");
+		return dumpTile(dset, z,y,x, w,h);
 	}
 
-	Dataset dset(Dataset::OpenMode::READ_WRITE, "out");
+	Dataset dset("out");
 
 	Image img  { 256, 256, 1 }; img.calloc(0);
 	//Image img2;
@@ -132,13 +132,8 @@ int main(int argc, char** argv) {
 	std::cout << " - Output signature: " << image_signature(img2) << "\n";
 	}
 
-	std::cout << " - Timing 'encodeTime'   : " << prettyPrintMicros(_encodeTime * 1e-3) << " (" << (_encodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'decodeTime'   : " << prettyPrintMicros(_decodeTime * 1e-3) << " (" << (_decodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'imgMergeTime' : " << prettyPrintMicros(_imgMergeTime * 1e-3) << " (" << (_imgMergeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbWriteTime'  : " << prettyPrintMicros(_dbWriteTime * 1e-3) << " (" << (_dbWriteTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbReadTime'   : " << prettyPrintMicros(_dbReadTime * 1e-3) << " (" << (_dbReadTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbEndTxnTime' : " << prettyPrintMicros(_dbEndTxnTime * 1e-3) << " (" << (_dbEndTxnTime/_totalTime) * 100 << "%)\n";
 
+	printDebugTimes();
 
 
 	return 0;

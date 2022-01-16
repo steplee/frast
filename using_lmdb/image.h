@@ -24,6 +24,27 @@ struct Image {
 	uint8_t *buffer = nullptr;
 	bool ownBuffer = false;
 
+	// TODO: implement move operators
+
+	inline Image(const Image& other) { copyFrom(other); }
+	inline Image& operator=(const Image& other) { copyFrom(other); return *this; }
+
+	void copyFrom(const Image& other) {
+		if (other.buffer and buffer and ownBuffer and w == other.w and h == other.h and channels() == other.channels())
+			memcpy(buffer, other.buffer, size());
+		else {
+			if (buffer and not ownBuffer) free(buffer);
+			w = other.w;
+			h = other.h;
+			format = other.format;
+			ownBuffer = false;
+			if (w > 0 and h > 0 and other.buffer) {
+				alloc();
+				memcpy(buffer, other.buffer, size());
+			}
+		}
+	}
+
 	static Format c2format(int c) {
 		switch (c) {
 			case 1: { return Format::GRAY; }

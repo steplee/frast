@@ -1,3 +1,5 @@
+#include "db.h"
+#include "image.h"
 
 #include <iostream>
 #include <iomanip>
@@ -12,6 +14,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
 
 #include <Eigen/Core>
 #include <Eigen/LU>
@@ -107,16 +110,16 @@ GdalDset::GdalDset(const std::string& path) {
     double   ptsPrj[4]   = { tl_prj(0), tl_prj(1), br_prj(0), br_prj(1) };
     double   pts_[4]   = {tl_prj(0), br_prj(0), tl_prj(1), br_prj(1)};
     prj2wm->Transform(2, pts_, pts_ + 2, nullptr);
-    double s = 1. / WebMercatorScale;
     if (pts_[0] > pts_[1]) std::swap(pts_[0], pts_[1]);
     if (pts_[2] > pts_[3]) std::swap(pts_[2], pts_[3]);
     if (ptsPrj[0] > ptsPrj[2]) std::swap(ptsPrj[0], ptsPrj[2]);
     if (ptsPrj[1] > ptsPrj[3]) std::swap(ptsPrj[1], ptsPrj[3]);
 	for (int i=0; i<4; i++) tlbr_prj(i) = ptsPrj[i];
-    tlbr_uwm(0) = pts_[0] * s;
-    tlbr_uwm(1) = pts_[2] * s;
-    tlbr_uwm(2) = pts_[1] * s;
-    tlbr_uwm(3) = pts_[3] * s;
+    double s = .5 / WebMercatorScale;
+    tlbr_uwm(0) = (pts_[0] * s + .5);
+    tlbr_uwm(1) = (pts_[2] * s + .5);
+    tlbr_uwm(2) = (pts_[1] * s + .5);
+    tlbr_uwm(3) = (pts_[3] * s + .5);
 }
 
 GdalDset::~GdalDset() {
@@ -158,10 +161,10 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, cv::Mat& o
                                   nbands, nullptr,
                                   eleSize * nbands, eleSize * nbands * outw, eleSize,
                                   &arg);
-        return err == CE_None;
+        return err != CE_None;
     } else {
         out = cv::Scalar{0};
-        return false;
+        return true;
     }
 }
 
@@ -217,9 +220,11 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 		double scale = WebMercatorScale / (s * .5);
 		double off_x = (static_cast<double>(x)) * WebMercatorScale / s * 2 - WebMercatorScale;
 		double off_y = (static_cast<double>(y)) * WebMercatorScale / s * 2 - WebMercatorScale;
-		auto X = Array<double,rtN,1>::LinSpaced(rtN, start, end) * scale + off_x;
-		auto Y = y_flipped ? Array<double,rtN,1>::LinSpaced(rtN, end, start) * scale + off_y
-		                   : Array<double,rtN,1>::LinSpaced(rtN, start, end) * scale + off_y;
+		//using ArrayT = Array<double,rtN,1>;
+		using ArrayT = Array<double,-1,1>;
+		auto X = ArrayT::LinSpaced(rtN, start, end) * scale + off_x;
+		auto Y = y_flipped ? ArrayT::LinSpaced(rtN, end, start) * scale + off_y
+		                   : ArrayT::LinSpaced(rtN, start, end) * scale + off_y;
 		//std::cout << " - XY " << ArrayXd::LinSpaced(rtN, start, end).transpose() << "\n";
 		for (int y=0; y<rtN; y++)
 		for (int x=0; x<rtN; x++)
@@ -247,18 +252,23 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
 	//imgPrj.create(oh,ow,cv_type);
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
-	assert(res);
+	if (res) {
+		printf(" - Failed to get tile %d %d %d\n", z, y, x);
+		fflush(stdout);
+		return res;
+	}
 
 	// TODO: If imgPrj is less channels than the output type, do it here. Otherwise do it after warping.
 
-	RowMatrix<float,N,2> meshPtsf { N , 2 };
+	//RowMatrix<float,N,2> meshPtsf { N , 2 };
+	RowMatrix<float,-1,2> meshPtsf { N , 2 };
 	{
 		Vector2d off   { prjTlbr(0), prjTlbr(1) };
 		Array2f scale { sw/(prjTlbr(2)-prjTlbr(0)), sh/(prjTlbr(3)-prjTlbr(1)) };
 		if (y_flipped) {
 			//for (int i=0; i<N; i++) meshPtsf.row(i) = (Vector2d{pts(0,i),pts(1,N-1-i)} - off).cast<float>().array() * scale;
-			meshPtsf.row(0) = pts.col(0).transpose().cast<float>();
-			meshPtsf.row(1) = pts.col(1).reverse().transpose().cast<float>();
+			meshPtsf.col(0) = pts.row(0).transpose().cast<float>();
+			meshPtsf.col(1) = pts.row(1).reverse().transpose().cast<float>();
 			meshPtsf = (meshPtsf.rowwise() - off.transpose().cast<float>()).array().rowwise() * scale.transpose();
 		} else
 			//for (int i=0; i<N; i++) meshPtsf.row(i) = (pts.col(i) - off).cast<float>().array() * scale;
@@ -272,13 +282,29 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_LINEAR);
 	//cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_CUBIC);
 	}
+	//std::cout << meshMat << "\n";
 
 	//out.create(imgPrj.rows, imgPrj.cols, imgPrj.type());
 	//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
 	cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
 
-	return true;
+	return false;
 }
+
+
+
+
+
+
+
+bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
+	cv::imencode(".jpg", mat, out);
+	return false;
+}
+
+
+
+
 
 
 static void test1() {
@@ -328,10 +354,129 @@ static void test2() {
 #undef THREADS
 }
 
-int main() {
+static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
+	double s = (1lu<<((int64_t)lvl));
+
+	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s) + 4lu;
+	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s) + 4lu;
+	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s) - 4lu;
+	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s) - 4lu;
+
+	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s + .5) + 0lu;
+	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s + .5) + 0lu;
+	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s     ) - 0lu;
+	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s     ) - 0lu;
+
+}
+
+#define THREADS 4
+static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls) {
+	// Open one DB, and one tiff+buffer per thread
+
+	GdalDset* dset[THREADS];
+	cv::Mat tile[THREADS];
+	cv::Mat img[THREADS];
+
+	for (int i=0; i<THREADS; i++) {
+		dset[i] = new GdalDset { "/data/naip/mocoNaip/whole.tif" };
+		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
+		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type );
+	}
+
+	DatasetWritable outDset { outPath };
+	outDset.configure(256, 256, dset[0]->nbands, THREADS, 2);
+	std::cout << " - beginning" << std::endl;
+
+	// For each level
+	//    Get bbox of dataset
+	//    For each tile in bbox [multithreaded]
+	//        getTile()
+	//        putTile()
+
+	for (int lvli = 0; lvli<lvls.size(); lvli++) {
+		int lvl = lvls[lvli];
+
+		outDset.sendCommand(Command{Command::BeginLvl,lvl});
+
+		uint64_t tileTlbr[4];
+		findWmTlbrOfDataset(tileTlbr, dset[0], lvl);
+
+		int nrows = (tileTlbr[3]-tileTlbr[1]);
+		int ncols = (tileTlbr[2]-tileTlbr[0]);
+		int totalTiles = nrows*ncols;
+		printf(" - Lvl %d:\n",lvl);
+		printf(" -        %lu %lu -> %lu %lu\n", tileTlbr[0], tileTlbr[1], tileTlbr[2], tileTlbr[3]);
+		printf(" -        %lu rows\n", nrows);
+		printf(" -        %lu cols\n", ncols);
+
+		#pragma omp parallel for schedule(static,4) num_threads(THREADS)
+		for (uint64_t y=tileTlbr[1]; y<tileTlbr[3]; y++) {
+			for (uint64_t x=tileTlbr[0]; x<tileTlbr[2]; x++) {
+
+				int tid = omp_get_thread_num();
+				BlockCoordinate coord { (uint64_t)lvl, y, x};
+				//printf(" - on tile %lu %lu %lu\n", lvl,y,x);
+
+					if (!dset[tid]->getTile(tile[tid], coord.z(), coord.y(), coord.x())) {
+
+					//if (tid == 0) { cv::imshow("img",tile[tid]); cv::waitKey(1); }
+
+					WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
+
+					encode_cv__(outTile.eimg, tile[tid]);
+
+					outTile.coord = coord;
+					outDset.push(outTile);
+				}
+			}
+
+			int tid = omp_get_thread_num();
+			if (tid == 0) {
+				float yyy = y - tileTlbr[1];
+				printf(" - ~%.2f%% finished (row %d / %d)\n", 100.f * yyy / nrows, y-tileTlbr[1], nrows); fflush(stdout);
+			}
+		}
+
+		outDset.sendCommand(Command{Command::EndLvl, lvl});
+
+		uint64_t finalTlbr[4];
+		uint64_t nHere = outDset.determineLevelAABB(finalTlbr, lvl);
+		uint64_t nExpected = (finalTlbr[2]-finalTlbr[0]) * (finalTlbr[3]-finalTlbr[1]);
+		uint64_t nExpectedInput = (tileTlbr[2]-tileTlbr[0]) * (tileTlbr[3]-tileTlbr[1]);
+		printf(" - Final Tlbr on Lvl %d:\n", lvl);
+		printf(" -        %lu %lu -> %lu %lu\n", finalTlbr[0], finalTlbr[1], finalTlbr[2], finalTlbr[3]);
+		printf(" -        %lu tiles (%lu missing interior, %lu missing from input aoi)\n", nHere, nExpected-nHere, nExpectedInput-nHere);
+	}
+	return 0;
+}
+#undef THREADS
+
+int main(int argc, char** argv) {
 
 	//test1();
-	test2();
+	//test2();
+	//return 0;
 
-	return 0;
+	if (argc <= 3) {
+		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <lvls>+\n");
+		if (argc == 3) printf("\t(You must provide at least one level.)\n");
+		return 1;
+	}
+
+	std::string srcTiff, outPath;
+	srcTiff = std::string(argv[1]);
+	outPath = std::string(argv[2]);
+	std::vector<int> lvls;
+
+	try {
+		for (int i=3; i<argc; i++) {
+			lvls.push_back( std::stoi(argv[i]) );
+			if (lvls.back() < 0 or lvls.back() >= 27) {
+				printf(" - Lvls must be >0 and <28\n");
+				return 1;
+			}
+		}
+	} catch (...) { printf(" - You provided a non-integer or invalid level.\n"); return 1; }
+
+	return test3(srcTiff, outPath, lvls);
 }

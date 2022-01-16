@@ -1,2 +1,2 @@
 CompileFlags:
-	Add: [-std=c++20, -I/usr/local/include/opencv4]
+	Add: [-std=c++20, -I/usr/local/include/opencv4, -I/usr/local/include/eigen3]
