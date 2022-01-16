@@ -65,6 +65,14 @@ struct DatabaseOptions {
 	int64_t mapSize = 10485760l * 9000l; // 1GB
 };
 
+
+/*
+ *
+ * TODO: Do not have r_txns in this class, and erase all reader specific code.
+ *       Instead there should be a subclass that does all that, just like there is 'DatasetWritable'
+ *
+ */
+
 class Dataset {
 	public:
 		enum class OpenMode {
