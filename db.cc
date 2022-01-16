@@ -19,27 +19,30 @@
  *		- Using a single txn for many reads is marginally faster, if at all.
  */
 
-double _encodeTime = 0;
-double _decodeTime = 0;
-double _imgMergeTime = 0;
+std::atomic<double> _encodeTime = 0;
+std::atomic<double> _decodeTime = 0;
+std::atomic<double> _imgMergeTime = 0;
 double _dbWriteTime = 0;
 double _dbReadTime = 0;
 double _dbEndTxnTime = 0;
 double _totalTime = 0;
+std::atomic<double> _tileBufferCopyTime = 0;
 
 void printDebugTimes() {
-	std::cout << " - Timing 'encodeTime'   : " << prettyPrintMicros(_encodeTime * 1e-3) << " (" << (_encodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'decodeTime'   : " << prettyPrintMicros(_decodeTime * 1e-3) << " (" << (_decodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'imgMergeTime' : " << prettyPrintMicros(_imgMergeTime * 1e-3) << " (" << (_imgMergeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbWriteTime'  : " << prettyPrintMicros(_dbWriteTime * 1e-3) << " (" << (_dbWriteTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbReadTime'   : " << prettyPrintMicros(_dbReadTime * 1e-3) << " (" << (_dbReadTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbEndTxnTime' : " << prettyPrintMicros(_dbEndTxnTime * 1e-3) << " (" << (_dbEndTxnTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'encodeTime'   : " << prettyPrintNanos(_encodeTime) << " (" << (_encodeTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'decodeTime'   : " << prettyPrintNanos(_decodeTime) << " (" << (_decodeTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'imgMergeTime' : " << prettyPrintNanos(_imgMergeTime) << " (" << (_imgMergeTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'dbWriteTime'  : " << prettyPrintNanos(_dbWriteTime) << " (" << (_dbWriteTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'dbReadTime'   : " << prettyPrintNanos(_dbReadTime) << " (" << (_dbReadTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'dbEndTxnTime' : " << prettyPrintNanos(_dbEndTxnTime) << " (" << (_dbEndTxnTime/_totalTime) * 100 << "%)\n";
+	std::cout << " - Timing 'tileBufCopy'  : " << prettyPrintNanos(_tileBufferCopyTime) << " (" << (_tileBufferCopyTime/_totalTime) * 100 << "%)\n";
 }
-std::string prettyPrintMicros(double us) {
-	std::string out              = "";
-	if (us < 1'000) out          = std::to_string(us) + "μs";
-	else if (us < 1'000'000) out = std::to_string(us/1e3) + "ms";
-	else out                     = std::to_string(us/1e6) + "s";
+std::string prettyPrintNanos(double ns) {
+	std::string                  out = "";
+	if (ns < 1'000)              out = std::to_string(ns) + "μs";
+	if (ns < 1'000'000)          out = std::to_string(ns/1e3) + "μs";
+	else if (ns < 1'000'000'000) out = std::to_string(ns/1e6) + "ms";
+	else                         out = std::to_string(ns/1e9) + "s";
 	return out;
 }
 
@@ -171,7 +174,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 
 	EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
 	{
-		AddTimeGuard g(_decodeTime);
+		AddTimeGuardAsync g(_decodeTime);
 		ret = decode(out, eimg);
 	}
 
@@ -202,6 +205,8 @@ int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, boo
 
 int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
 
+	assert(false); // deprecated: the worker threads should do the encoding!
+
 
 	// XXX NOTE:
 	// If the key is already present and we must merge, this function encodes the image the first time for no reason.
@@ -211,7 +216,7 @@ int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, b
 	//MDB_val val;
 	EncodedImage eimg;
 	{
-		AddTimeGuard g(_encodeTime);
+		AddTimeGuardAsync g(_encodeTime);
 		encode(eimg, in);
 
 		//val = MDB_val{ eimg.size(), static_cast<void*>(eimg.data()) };
@@ -331,6 +336,7 @@ uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 
 
 void WritableTile::copyFrom(const WritableTile& tile) {
+	AddTimeGuardAsync tg(_tileBufferCopyTime);
 	bufferIdx = tile.bufferIdx;
 	image.copyFrom(tile.image);
 	if (tile.eimg.size() > eimg.size()) {
@@ -340,6 +346,7 @@ void WritableTile::copyFrom(const WritableTile& tile) {
 	coord = tile.coord;
 }
 void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v) {
+	AddTimeGuardAsync tg(_tileBufferCopyTime);
 	image.copyFrom(im);
 	if (v.size() > eimg.size()) {
 		eimg.resize(v.size() * 2);

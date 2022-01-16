@@ -298,6 +298,7 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 
 
 bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
+	AddTimeGuardAsync g(_encodeTime);
 	cv::imencode(".jpg", mat, out);
 	return false;
 }
@@ -447,6 +448,9 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		printf(" -        %lu %lu -> %lu %lu\n", finalTlbr[0], finalTlbr[1], finalTlbr[2], finalTlbr[3]);
 		printf(" -        %lu tiles (%lu missing interior, %lu missing from input aoi)\n", nHere, nExpected-nHere, nExpectedInput-nHere);
 	}
+
+	printDebugTimes();
+
 	return 0;
 }
 #undef THREADS

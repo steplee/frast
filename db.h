@@ -14,21 +14,21 @@
 #include "image.h"
 
 
-extern double _encodeTime;
-extern double _decodeTime;
-extern double _imgMergeTime;
+extern std::atomic<double> _encodeTime;
+extern std::atomic<double> _decodeTime;
+extern std::atomic<double> _imgMergeTime;
 extern double _dbWriteTime;
 extern double _dbReadTime;
 extern double _dbEndTxnTime;
 extern double _totalTime;
-
+extern std::atomic<double> _tileBufferCopyTime;
 void printDebugTimes();
 
 template <class T>
-double getMicroDiff(T b, T a) {
+double getNanoDiff(T b, T a) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(b-a).count() * 1e-3;
 }
-std::string prettyPrintMicros(double us);
+std::string prettyPrintNanos(double us);
 
 struct AddTimeGuard {
 	std::chrono::time_point<std::chrono::high_resolution_clock> st;
@@ -39,6 +39,18 @@ struct AddTimeGuard {
 	inline ~AddTimeGuard() {
 		auto et = std::chrono::high_resolution_clock::now();
 		acc += std::chrono::duration_cast<std::chrono::nanoseconds>(et-st).count();
+	}
+};
+struct AddTimeGuardAsync {
+	std::chrono::time_point<std::chrono::high_resolution_clock> st;
+	std::atomic<double>& acc;
+	inline AddTimeGuardAsync(std::atomic<double>& acc) : acc(acc) {
+		st = std::chrono::high_resolution_clock::now();
+	}
+	inline ~AddTimeGuardAsync() {
+		auto et = std::chrono::high_resolution_clock::now();
+		double old = acc.load();
+		acc = old + std::chrono::duration_cast<std::chrono::nanoseconds>(et-st).count();
 	}
 };
 

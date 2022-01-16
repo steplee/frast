@@ -86,16 +86,16 @@ int main(int argc, char** argv) {
 			imgRef(cv::Rect{0,0,1,256}) = cv::Scalar{(double)(i%255)};
 			cv::putText(imgRef, "HI_"+std::to_string(i), {50,50}, 0, 1, cv::Scalar{255}, 1);
 			auto et_ = std::chrono::high_resolution_clock::now();
-			acc += getMicroDiff(et_,st_);
+			acc += getNanoDiff(et_,st_);
 
 			BlockCoordinate coord_{20, (uint64_t)i/DatasetCols,(uint64_t)i%DatasetCols};
 			dset.put(img, coord_, &txn);
 			if (i % 1000 == 0) std::cout << " - wrote " << i << " (" << 100. * ((double)i) / N << "%)\n";
 		}
 		auto et = std::chrono::high_resolution_clock::now();
-		std::cout << " - Put " << N << " images, " << prettyPrintMicros(getMicroDiff(et, st))
-			<< " (actually " << prettyPrintMicros(getMicroDiff(et,st)-acc) << ")"
-			<< " (" << prettyPrintMicros(getMicroDiff(et,st)/N) << "/put)\n"
+		std::cout << " - Put " << N << " images, " << prettyPrintNanos(getNanoDiff(et, st))
+			<< " (actually " << prettyPrintNanos(getNanoDiff(et,st)-acc) << ")"
+			<< " (" << prettyPrintNanos(getNanoDiff(et,st)/N) << "/put)\n"
 			<< ").\n";
 
 		dset.endTxn(&txn);
@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
 			//dset.get(img2, coord_, &txn);
 		}
 		auto et = std::chrono::high_resolution_clock::now();
-		std::cout << " - Got " << N << " images, " << prettyPrintMicros(getMicroDiff(et, st)) << ".\n";
+		std::cout << " - Got " << N << " images, " << prettyPrintNanos(getNanoDiff(et, st)) << ".\n";
 
 		//dset.endTxn(&txn);
 	}
