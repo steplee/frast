@@ -18,16 +18,35 @@ struct EncodedImageRef {
 };
 
 
+/*
+ * You can 'view' other images, but it assumes the child lifetime does not out-last the view'ed parent.
+ */
 struct Image {
 	int32_t w, h;
 	enum class Format { RGB, RGBA, RGBN, GRAY } format;
 	uint8_t *buffer = nullptr;
-	bool ownBuffer = false;
+	bool ownBuffer = true;
 
 	// TODO: implement move operators
 
+	// Value semantics (will copy entire buffer)
 	inline Image(const Image& other) { copyFrom(other); }
 	inline Image& operator=(const Image& other) { copyFrom(other); return *this; }
+
+	inline ~Image() {
+		if (buffer and ownBuffer) free(buffer);
+		buffer = 0;
+		w = h = 0;
+	}
+
+	static inline Image& view(const Image& other) {
+		Image out;
+		out.w = other.w;
+		out.h = other.h;
+		out.format = other.format;
+		out.buffer = other.buffer;
+		out.ownBuffer = false;
+	}
 
 	void copyFrom(const Image& other) {
 		if (other.buffer and buffer and ownBuffer and w == other.w and h == other.h and channels() == other.channels())
@@ -37,7 +56,7 @@ struct Image {
 			w = other.w;
 			h = other.h;
 			format = other.format;
-			ownBuffer = false;
+			ownBuffer = true;
 			if (w > 0 and h > 0 and other.buffer) {
 				alloc();
 				memcpy(buffer, other.buffer, size());
@@ -74,6 +93,7 @@ struct Image {
 	}
 
 	inline bool alloc() {
+		if (not ownBuffer) throw std::runtime_error("alloc() called on a viewed image!");
 		if (buffer != nullptr) throw std::runtime_error("only alloc once!");
 		//buffer = (uint8_t*) malloc(size());
 		buffer = (uint8_t*) aligned_alloc(16, size());
