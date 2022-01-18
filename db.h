@@ -328,6 +328,8 @@ class DatasetReader : public Dataset {
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
 
+		bool fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]);
+
 	private:
 		DatasetReaderOptions opts;
 		Image accessCache;

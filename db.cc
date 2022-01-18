@@ -576,9 +576,9 @@ DatasetReader::~DatasetReader() {
 
 void DatasetReader::loaderThreadLoop(int idx) {
 	if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, r_txns+idx)) {
-		std::cout << " - (Dataset::Dataset()) failed to open r_txn " << idx << "\n";
+		std::cout << " - (DatasetReader::loaderThreadLoop()) failed to open r_txn " << idx << "\n";
 	} else
-		std::cout << " - (Dataset::Dataset()) opened  r_txn " << idx << " -> " << r_txns[idx] << "\n";
+		std::cout << " - (DatasetReader::loaderThreadLoop()) opened  r_txn " << idx << " -> " << r_txns[idx] << "\n";
 
 	while (not doStop) sleep(1);
 }
@@ -596,9 +596,6 @@ bool DatasetReader::loadTile(Image& out) {
 }
 
 bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
-	MDB_txn* r_txn_;
-	if (auto err = beginTxn(&r_txn_, true))
-		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
 
 	// Compute overview & tiles needed
 	int ow = out.w;
@@ -635,43 +632,13 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	// If >2 tiles, and enabled, use bg threads
 	// In either case, after this, accessCache will have the needed tiles.
-	if (opts.nthreads == 0) {
-		// Load all tiles inline
-		for (int yi=0; yi<ny; yi++) {
-		for (int xi=0; xi<nx; xi++) {
-			BlockCoordinate tileCoord { lvl, tileTlbr[1]+yi, tileTlbr[0]+xi };
-			if (get(accessCache1, tileCoord, &r_txn_)) {
-				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
-			} else {
-				//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
-				uint8_t* dst = accessCache.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
-				if (channels == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize, tileSize);
-				else if (channels == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize, tileSize);
-				else if (channels == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize, tileSize);
-			}
-		}
-		}
-	} else {
-		// Queue load tiles in seperate threads, sleep on it in this thread, join results, continue.
-		assert(false);
-	}
-
-	if (auto err = endTxn(&r_txn_, true))
-		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
-
-	/*
-	out.buffer = accessCache.buffer;
-	out.w = sw;
-	out.h = sh;
-	return false;
-	*/
+	fetchBlocks(accessCache, lvl, tileTlbr);
 
 	// Find the affine transformation that takes the sampled image into the
 	// queried bounding box.
 	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
 			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
-			sampledTlbr[2] - sampledTlbr[0],
-			sampledTlbr[3] - sampledTlbr[1]);
+			sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
 	printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
 			bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
 
@@ -729,6 +696,44 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	return false;
 
+}
+
+bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]) {
+	int32_t nx = tlbr[2] - tlbr[0];
+	int32_t ny = tlbr[3] - tlbr[1];
+	assert(out.w >= tileSize*nx);
+	assert(out.h >= tileSize*ny);
+	int sw = nx*tileSize; // Sampled width and height
+	int sh = ny*tileSize;
+
+	MDB_txn* r_txn_;
+	if (auto err = beginTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
+
+	// If >2 tiles, and enabled, use bg threads
+	if (opts.nthreads == 0 and nx*ny > 2) {
+		for (int yi=0; yi<ny; yi++) {
+		for (int xi=0; xi<nx; xi++) {
+			BlockCoordinate tileCoord { lvl, tlbr[1]+yi, tlbr[0]+xi };
+			if (get(accessCache1, tileCoord, &r_txn_)) {
+				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
+				memset(accessCache1.buffer, 0, tileSize*tileSize*channels);
+			}
+			//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
+			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
+			if (channels == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+			else if (channels == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+			else if (channels == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+		}
+		}
+	} else {
+		// ...
+	}
+
+	if (auto err = endTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
+
+	return false;
 }
 
 
