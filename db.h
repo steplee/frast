@@ -1,6 +1,8 @@
 #pragma once
 
+extern "C" {
 #include <lmdb.h>
+}
 
 #include <string>
 #include <array>
@@ -12,6 +14,45 @@
 #include <cassert>
 
 #include "image.h"
+
+constexpr int MAX_LVLS = 26;
+constexpr int MAX_READER_THREADS = 4;
+
+// Note: WebMercator the size of the map is actually 2x this.
+constexpr double WebMercatorScale = 20037508.342789248;
+// Level 0 holds 2*WebMercatorScale, Level 1 half that, and so on.
+constexpr double WebMercatorCellSizes[MAX_LVLS] = {
+	40075016.685578495, 20037508.342789248, 10018754.171394624,
+	5009377.085697312, 2504688.542848656, 1252344.271424328,
+	626172.135712164, 313086.067856082, 156543.033928041,
+	78271.5169640205, 39135.75848201025, 19567.879241005125,
+	9783.939620502562, 4891.969810251281, 2445.9849051256406,
+	1222.9924525628203, 611.4962262814101, 305.7481131407051,
+	152.87405657035254, 76.43702828517627, 38.218514142588134,
+	19.109257071294067, 9.554628535647034, 4.777314267823517,
+	2.3886571339117584, 1.1943285669558792
+};
+constexpr float WebMercatorCellSizesf[MAX_LVLS] = {
+	40075016.685578495, 20037508.342789248, 10018754.171394624,
+	5009377.085697312, 2504688.542848656, 1252344.271424328,
+	626172.135712164, 313086.067856082, 156543.033928041,
+	78271.5169640205, 39135.75848201025, 19567.879241005125,
+	9783.939620502562, 4891.969810251281, 2445.9849051256406,
+	1222.9924525628203, 611.4962262814101, 305.7481131407051,
+	152.87405657035254, 76.43702828517627, 38.218514142588134,
+	19.109257071294067, 9.554628535647034, 4.777314267823517,
+	2.3886571339117584, 1.1943285669558792
+};
+
+// Assumes channelStride = 1.
+template <int channels>
+inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowStride, size_t w, size_t h) {
+	for (int y=0; y<h; y++)
+	for (int x=0; x<w; x++)
+	for (int c=0; c<channels; c++) {
+		dst[y*rowStride*channels + x*channels + c] = src[y*w*channels+x*channels+c];
+	}
+}
 
 
 extern std::atomic<double> _encodeTime;
@@ -92,10 +133,18 @@ class Dataset {
 			READ_WRITE
 		};
 
+		struct __attribute__((packed)) LevelHeader {
+			bool valid : 1;
+			int32_t tlbr[4];
+		};
+		struct __attribute__((packed)) DatasetHeader {
+			LevelHeader lvlHeaders[MAX_LVLS];
+			int channels;
+			int tileSize;
+		};
+
 		Dataset(const std::string& path, const DatabaseOptions& dopts=DatabaseOptions{}, OpenMode m=OpenMode::READ_ONLY);
 		~Dataset();
-
-		bool rasterio(Image& out, double aoiUwm[4]) const;
 
 		bool get(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
 		bool get(std::vector<uint8_t>& out, const BlockCoordinate& coord, MDB_txn** txn); // By re-using output buffer, allocations will stop happening eventually
@@ -112,10 +161,16 @@ class Dataset {
 
 		uint64_t determineLevelAABB(uint64_t tlbr[4], int lvl) const;
 
+		void getExistingLevels(std::vector<int>& out) const;
+
 	protected:
 		std::string path;
 		bool readOnly;
 		bool doStop = false;
+
+		// TODO: Read this from header, it is not done right now.
+		int channels = 3;
+		int tileSize = 256;
 
 		MDB_env *env = nullptr;
 
@@ -124,7 +179,7 @@ class Dataset {
 		// TODO: Have a per dbi header with this info.
 		double extent[4];
 
-		MDB_dbi dbs[32];
+		MDB_dbi dbs[MAX_LVLS];
 
 		// When in readOnly mode, we have long-lived dedicated per-thread read transactions.
 		// Note: they are not used in write mode.
@@ -176,10 +231,11 @@ struct WritableTile {
  */
 struct Command {
 	enum Type : int32_t {
-		NoCommand, BeginLvl, EndLvl
+		NoCommand, BeginLvl, EndLvl, EraseLvl, TileReady
 	} cmd = NoCommand;
 	union Data {
 		int32_t lvl;
+		int32_t tileBufferIdx;
 	} data = Data{.lvl=0};
 };
 
@@ -198,7 +254,7 @@ struct RingBuffer {
 		r_idx++;
 		return true;
 	}
-	inline bool push_back(T& t) {
+	inline bool push_back(const T& t) {
 		//if (w_idx - r_idx >= cap) return false;
 		if (w_idx - r_idx >= cap) { assert(false); }
 		data[w_idx % cap] = t;
@@ -208,6 +264,7 @@ struct RingBuffer {
 	}
 	inline int size()  const { return w_idx -  r_idx; }
 	inline int empty() const { return w_idx == r_idx; }
+	inline bool isFull() const { return w_idx - r_idx >= cap; }
 };
 
 /*
@@ -230,28 +287,71 @@ class DatasetWritable : public Dataset {
 		// By having buffers for each thread seperately, we can avoid locking.
 		WritableTile& blockingGetTileBufferForThread(int thread);
 
-		void push(WritableTile& tile);
+		//void push(WritableTile& tile);
 		void sendCommand(const Command& cmd);
 
-	private:
+		// True if 'EndLvl' has not been processed
+		bool hasOpenWrite();
+
 		constexpr static int MAX_THREADS = 8;
+	private:
 		int tilew, tileh;
 		int numWorkers, buffersPerWorker, nBuffers;
 
 		void w_loop();
-		MDB_txn *w_txn;
+		MDB_txn *w_txn = nullptr;
 		std::thread w_thread;
 		std::condition_variable w_cv;
 		std::mutex w_mtx;
 		std::vector<WritableTile> tileBuffers; // We will have exactly numThreads * buffersPerWorker elements.
-		// Sequence number of lended buffer.
-		atomic_int tileBufferLendedIdx[MAX_THREADS];
+		// Sequence number of lended buffer &
 		// Sequence number of commited-to-database image.
-		atomic_int tileBufferCommittedIdx[MAX_THREADS];
+		// Originally I used these atomic ints, but I thought they caused a bug, which they weren't.
+		// Still I'm not convinced it is correct, since they are not atomic w.r.t eachother.
+		//atomic_int tileBufferLendedIdx[MAX_THREADS];
+		//atomic_int tileBufferCommittedIdx[MAX_THREADS];
+		int tileBufferLendedIdx[MAX_THREADS];
+		int tileBufferCommittedIdx[MAX_THREADS];
+		std::mutex tileBufferIdxMtx[MAX_THREADS];
 
+;
 		// A worker pushes the index of the buffer to this list. It never grows larger then N
-		RingBuffer<int> pushedTileIdxs;
-		std::vector<Command> waitingCommands;
+		//RingBuffer<int> pushedTileIdxs;
+		//std::vector<Command> waitingCommands;
+		RingBuffer<Command> pushedCommands;
 
 };
 
+
+
+struct DatasetReaderOptions : public DatabaseOptions {
+	float oversampleRatio = 1.f;
+	int maxSampleTiles = 5;
+	bool forceGray = false;
+	bool forceRgb = false;
+
+	int nthreads = 0;
+};
+
+
+/*
+ *
+ * Can only access safely from ONE THREAD
+ *
+ */
+class DatasetReader : public Dataset {
+	public:
+		DatasetReader(const std::string& path, const DatasetReaderOptions& dopts=DatasetReaderOptions{});
+
+		// Image should already be allocated.
+		// false on success.
+		bool rasterIo(Image& out, const double bbox[4]);
+
+	private:
+		DatasetReaderOptions opts;
+		Image accessCache;
+		Image accessCache1;
+
+};
+
+uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, int tileSize, const double bboxWm[4]);

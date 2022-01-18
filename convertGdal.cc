@@ -21,7 +21,6 @@
 //#include <Eigen/Geometry>
 
 
-constexpr double WebMercatorScale = 20037508.342789248;
 
 using namespace Eigen;
 template <class T, int r, int c>
@@ -253,8 +252,7 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	//imgPrj.create(oh,ow,cv_type);
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
 	if (res) {
-		printf(" - Failed to get tile %d %d %d\n", z, y, x);
-		fflush(stdout);
+		//printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
 		return res;
 	}
 
@@ -385,7 +383,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	}
 
 	DatasetWritable outDset { outPath };
-	outDset.configure(256, 256, dset[0]->nbands, THREADS, 2);
+	outDset.configure(256, 256, dset[0]->nbands, THREADS, 4);
 	std::cout << " - beginning" << std::endl;
 
 	// For each level
@@ -427,7 +425,8 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 					encode_cv__(outTile.eimg, tile[tid]);
 
 					outTile.coord = coord;
-					outDset.push(outTile);
+					//outDset.push(outTile);
+					outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
 				}
 			}
 
@@ -439,6 +438,9 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		}
 
 		outDset.sendCommand(Command{Command::EndLvl, lvl});
+
+		while (outDset.hasOpenWrite())
+			usleep(10'000);
 
 		uint64_t finalTlbr[4];
 		uint64_t nHere = outDset.determineLevelAABB(finalTlbr, lvl);

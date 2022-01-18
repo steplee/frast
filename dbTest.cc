@@ -33,8 +33,24 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		imgRef.copyTo(mat(cv::Rect({((int)xi)*256, (int)(h-1-yi)*256, 256, 256})));
 	}
 
-	cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+	if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
 	cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
+	return 0;
+}
+
+int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
+	Image img {512,512,3};
+	img.alloc();
+
+	if (dset.rasterIo(img, tlbr)) {
+		printf(" - rasterIo failed.\n");
+		fflush(stdout);
+		return 1;
+	}
+
+	cv::Mat mat ( img.h, img.w, CV_8UC3, img.buffer );
+	if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+	cv::imwrite("out/rasterIoed.jpg", mat);
 	return 0;
 }
 
@@ -50,7 +66,19 @@ int main(int argc, char** argv) {
 		return dumpTile(dset, z,y,x, w,h);
 	}
 
-	Dataset dset("out");
+	if (argc > 1 and strcmp(argv[1],"rasterIo") == 0) {
+		assert(argc == 6);
+		double tlbr[4] = {
+			std::atof(argv[2]),
+			std::atof(argv[3]),
+			std::atof(argv[4]),
+			std::atof(argv[5]) };
+		DatasetReader dset("out");
+		return rasterIo_it(dset, tlbr);
+	}
+
+	/*
+	DatasetReader dset("out");
 
 	Image img  { 256, 256, 1 }; img.calloc(0);
 	//Image img2;
@@ -134,6 +162,7 @@ int main(int argc, char** argv) {
 
 
 	printDebugTimes();
+	*/
 
 
 	return 0;

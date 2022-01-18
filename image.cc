@@ -230,6 +230,7 @@ void my_warpAffine(Image& out, const Image& in, float H[6]) {
 	const int oh = out.h, ow = out.w;
 	const int ih = in.h, iw = in.w;
 	const int istep = iw * C;
+	const int ostep = ow * C;
 	auto IDX = [ih,iw,istep](int y, int x, int c) {
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
 		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
@@ -252,7 +253,7 @@ void my_warpAffine(Image& out, const Image& in, float H[6]) {
 		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+0) , (((int)ix)+1) , c)] * ((Scalar)(64.f * (1.f-my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(64.f * (    my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(64.f * (    my) * (1.f-mx)));
-		for (int c=0; c<C; c++) out.buffer[oy*istep+ox*C+c] = (uint8_t) (p[c] / 64);
+		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c] / 64);
 #else
 		using Scalar = float;
 		using Vec = Scalar[C];
@@ -261,7 +262,7 @@ void my_warpAffine(Image& out, const Image& in, float H[6]) {
 		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+0) , (((int)ix)+1) , c)]) * ((Scalar)((1.f-my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
-		for (int c=0; c<C; c++) out.buffer[oy*istep+ox*C+c] = (uint8_t) (p[c]);
+		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c]);
 #endif
 	}
 	}

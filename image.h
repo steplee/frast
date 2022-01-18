@@ -39,13 +39,14 @@ struct Image {
 		w = h = 0;
 	}
 
-	static inline Image& view(const Image& other) {
+	static inline Image view(const Image& other) {
 		Image out;
 		out.w = other.w;
 		out.h = other.h;
 		out.format = other.format;
 		out.buffer = other.buffer;
 		out.ownBuffer = false;
+		return out;
 	}
 
 	void copyFrom(const Image& other) {

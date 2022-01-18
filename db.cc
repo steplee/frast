@@ -1,7 +1,6 @@
 #include "db.h"
 #include "image.h"
 
-#include <lmdb.h>
 #include <cassert>
 #include <string>
 
@@ -11,6 +10,13 @@
 #include <thread>
 #include <array>
 #include <iomanip>
+#include <cmath>
+
+//#define DEBUG_RASTERIO
+#ifdef DEBUG_RASTERIO
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#endif
 
 
 /*
@@ -47,11 +53,22 @@ std::string prettyPrintNanos(double ns) {
 }
 
 
+
+/* ===================================================
+ *
+ *
+ *                  Dataset
+ *
+ *
+ * =================================================== */
+
+
+
 Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode m)
 	: path(path),
 	  readOnly(m == OpenMode::READ_ONLY)
 {
-	for (int i=0; i<32; i++) dbs[i] = INVALID_DB;
+	for (int i=0; i<MAX_LVLS; i++) dbs[i] = INVALID_DB;
 	for (int i=0; i<NumReadThreads+1; i++) r_txns[i] = 0;
 
 	if (auto err = mdb_env_create(&env)) {
@@ -60,7 +77,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 
 	mdb_env_set_mapsize(env, dopts.mapSize);
 
-	mdb_env_set_maxdbs(env, 32);
+	mdb_env_set_maxdbs(env, MAX_LVLS+1);
 
 	int flags = 0;
 	if (readOnly) flags = MDB_RDONLY;
@@ -92,7 +109,7 @@ bool Dataset::endTxn(MDB_txn** txn, bool abort) const {
 	else
 		mdb_txn_commit(*txn);
 	*txn = nullptr;
-	return true;
+	return false;
 }
 
 void Dataset::open_all_dbs() {
@@ -103,7 +120,7 @@ void Dataset::open_all_dbs() {
 		throw std::runtime_error(std::string{"(open_all_dbs) mdb_txn_begin failed with "} + mdb_strerror(err));
 	}
 
-	for (int i=0; i<32; i++) {
+	for (int i=0; i<MAX_LVLS; i++) {
 		std::string name = std::string{"lvl"} + std::to_string(i);
 		int flags = 0;
 		if (auto err = mdb_dbi_open(txn, name.c_str(), flags, dbs+i))
@@ -146,7 +163,10 @@ void Dataset::loaderThreadLoop(int idx) {
 Dataset::~Dataset() {
 	doStop = true;
 	for (int i=0; i<NumReadThreads; i++) if (threads[i].joinable()) threads[i].join();
+	assert(env);
 	mdb_env_close(env);
+	env = 0;
+	printf (" - (~Dataset closed mdb env)\n");
 }
 
 
@@ -170,7 +190,10 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 		ret = get_(eimg_, coord, theTxn);
 	}
 
-	if (ret) return ret != 0;
+	if (ret) {
+		if (givenTxn == nullptr) endTxn(&theTxn);
+		return ret != 0;
+	}
 
 	EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
 	{
@@ -185,7 +208,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 int Dataset::get_(MDB_val& val, const BlockCoordinate& coord, MDB_txn* txn) {
 	MDB_val key { 8, (void*)(&coord.c) };
 	if (auto err = mdb_get(txn, dbs[coord.z()], &key, &val)) {
-		std::cout << " - mdb_get error: " << mdb_strerror(err) << "\n";
+		//std::cout << " - mdb_get error: " << mdb_strerror(err) << " (block " << coord.z() << "z " << coord.y() << "y " << coord.x() << "x)\n";
 		return err;
 	}
 	return 0;
@@ -278,10 +301,6 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 }
 
 
-bool Dataset::rasterio(Image& out, double aoiUwm[4]) const {
-	return true;
-}
-
 uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 	tlbr[0] = tlbr[2] = 0;
 	tlbr[1] = tlbr[3] = 0;
@@ -325,12 +344,28 @@ uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 		nn++;
 	}
 
+	if (endTxn(&txn))
+		throw std::runtime_error("Failed to close txn.");
+
 	printf(" - determineLevelAABB searched %d\n", nn);
 	return (tlbr[2]-tlbr[0]) * (tlbr[3]-tlbr[1]);
 }
 
+void Dataset::getExistingLevels(std::vector<int>& out) const {
+	for (int lvl=0; lvl<MAX_LVLS; lvl++)
+		if (dbs[lvl] != INVALID_DB)
+			out.push_back(lvl);
+}
 
 
+
+/* ===================================================
+ *
+ *
+ *                  DatasetWritable
+ *
+ *
+ * =================================================== */
 
 
 
@@ -360,21 +395,23 @@ DatasetWritable::~DatasetWritable() {
 	doStop = true;
 	w_cv.notify_one();
 	if (w_thread.joinable()) w_thread.join();
+	printf (" - (~DatasetWritable join w_thread)\n");
 }
 
 void DatasetWritable::w_loop() {
 	//beginTxn(&w_txn, false);
 
-	while (!doStop) {
-		int theTileIdx;
-		int nAvailable = 0;
+	while (true) {
+		int nWaitingCommands = 0;
 		Command theCommand;
 		theCommand.cmd = Command::NoCommand;
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
-			w_cv.wait(lck, [this]{return doStop or pushedTileIdxs.size() or waitingCommands.size();});
 
-			if (waitingCommands.size()) {
+			/*
+			//w_cv.wait(lck, [this]{return doStop or pushedTileIdxs.size() or waitingCommands.size();});
+			nWaitingCommands = waitingCommands.size();
+			if (nWaitingCommands) {
 				theCommand = waitingCommands.back();
 				waitingCommands.pop_back();
 			}
@@ -383,6 +420,22 @@ void DatasetWritable::w_loop() {
 			if (nAvailable > 0)
 				pushedTileIdxs.pop_front(theTileIdx);
 			//if (pushedTileIdxs.pop_front(theTileIdx) == false) { printf(" - Weird: awoke and found a >0 size, but could not pop.\n"); fflush(stdout); exit(1); }
+			*/
+			
+			w_cv.wait(lck, [this]{return doStop or pushedCommands.size();});
+			nWaitingCommands = pushedCommands.size();
+			if (nWaitingCommands) {
+				//theCommand = pushedCommands.pop_back();
+				pushedCommands.pop_front(theCommand);
+			}
+
+			if (doStop and nWaitingCommands == 0) {
+				printf(" - (wthread exiting.)\n");
+				break;
+			}
+			if (!doStop and nWaitingCommands == 0) {
+				printf(" - (wthread, spurious wakeup.\n");
+			}
 		}
 
 		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
@@ -398,23 +451,31 @@ void DatasetWritable::w_loop() {
 				assert(w_txn);
 				endTxn(&w_txn);
 				//beginTxn(&w_txn, false);
+			} else if (theCommand.cmd == Command::EraseLvl) {
+				printf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
+				if (w_txn) {
+					printf(" - Cannot have open w_txn while erasing level. Should sent 'EndLvl' first.\n"); fflush(stdout);
+					exit(1);
+				}
+				beginTxn(&w_txn, false);
+				mdb_drop(w_txn, dbs[theCommand.data.lvl], 1);
+				endTxn(&w_txn);
+			} else if (theCommand.cmd == Command::TileReady) {
+				int theTileIdx = theCommand.data.tileBufferIdx;
+				int theWorker = theTileIdx / buffersPerWorker;
+				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
+				WritableTile& tile = tileBuffers[theTileIdx];
+				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+
+				tileBufferIdxMtx[theWorker].lock();
+				tileBufferCommittedIdx[theWorker] += 1;
+				tileBufferIdxMtx[theWorker].unlock();
 			}
+			nWaitingCommands--;
 		}
 
-		if (doStop and nAvailable == 0) break;
 
-		if (nAvailable) {
-			WritableTile& tile = tileBuffers[theTileIdx];
-			//printf(" - Popped tile %d, coord %lu %lu %lu, data size %lu\n", theTileIdx, tile.coord.z(), tile.coord.y(), tile.coord.x(), tile.eimg.size());
-			this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
-
-			//++(tileBufferCommittedIdx[theTileIdx / numWorkers]);
-			int theWorker = theTileIdx / buffersPerWorker;
-			tileBufferCommittedIdx[theWorker] += 1;
-			//printf(" - handled ... incremented idxs [thr %d] are %dcmt %dlnd\n", theWorker, tileBufferCommittedIdx[theWorker].load(), tileBufferLendedIdx[theWorker].load()); fflush(stdout);
-
-			if (nAvailable > 1 or theCommand.cmd != Command::NoCommand or doStop) w_cv.notify_one();
-		}
+		if (doStop or nWaitingCommands > 0) w_cv.notify_one();
 	}
 
 	//if (w_txn) endTxn(&w_txn);
@@ -422,6 +483,8 @@ void DatasetWritable::w_loop() {
 
 // Note: this ASSUMES the correct thread is calling the func.
 WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
+	int nwaited = 0;
+#if 0
 	int lendIdx = tileBufferLendedIdx[thread];
 	while(1) {
 		lendIdx = tileBufferLendedIdx[thread];
@@ -432,13 +495,34 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 			break;
 		}
 
-		usleep(2'000);
 		//usleep(200'000);
-		printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waiting...\n",
-				thread, comtIdx, lendIdx, buffersPerWorker);
+		if (nwaited++ % 10 == 0)
+			printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
+					thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
+		usleep(2'000);
 	}
 	tileBufferLendedIdx[thread] += 1;
 	return tileBuffers[thread * buffersPerWorker + lendIdx % buffersPerWorker];
+#endif
+
+	while (1) {
+		tileBufferIdxMtx[thread].lock();
+		int lendIdx = tileBufferLendedIdx[thread];
+		int comtIdx = tileBufferCommittedIdx[thread];
+
+		if (lendIdx - comtIdx < buffersPerWorker) {
+			tileBufferLendedIdx[thread] += 1;
+			tileBufferIdxMtx[thread].unlock();
+			return tileBuffers[thread * buffersPerWorker + lendIdx % buffersPerWorker];
+		} else {
+			tileBufferIdxMtx[thread].unlock();
+
+			if (nwaited++ % 1 == 0)
+			printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
+					thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
+			usleep(2'000);
+		}
+	}
 }
 
 void DatasetWritable::configure(int tilew, int tileh, int tilec, int numWorkerThreads, int buffersPerWorker) {
@@ -450,19 +534,25 @@ void DatasetWritable::configure(int tilew, int tileh, int tilec, int numWorkerTh
 
 	nBuffers = numWorkers * buffersPerWorker;
 	tileBuffers.resize(nBuffers);
-	for (int i=0; i<nBuffers; i++) {
+	for (int i=0; i<numWorkerThreads; i++) {
 		tileBufferLendedIdx[i] = 0;
 		tileBufferCommittedIdx[i] = 0;
+	}
+	for (int i=0; i<nBuffers; i++) {
 		tileBuffers[i].image = Image { tilew, tileh, tilec };
 		tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);
 	}
 
-	pushedTileIdxs = RingBuffer<int>(nBuffers);
+	//pushedTileIdxs = RingBuffer<int>(nBuffers);
+	//pushedCommands = RingBuffer<Command>(nBuffers);
+	//pushedCommands = RingBuffer<Command>(2);
+	pushedCommands = RingBuffer<Command>(128);
 	w_thread = std::thread(&DatasetWritable::w_loop, this);
 }
 
+/*
 void DatasetWritable::push(WritableTile& tile) {
 	{
 		std::unique_lock<std::mutex> lck(w_mtx);
@@ -471,21 +561,62 @@ void DatasetWritable::push(WritableTile& tile) {
 	}
 	w_cv.notify_one();
 }
+*/
 
 DatasetWritable::DatasetWritable(const std::string& path, const DatabaseOptions& dopts)
 	: Dataset(path, dopts, Dataset::OpenMode::READ_WRITE) {
 }
 
+bool DatasetWritable::hasOpenWrite() {
+	std::unique_lock<std::mutex> lck(w_mtx);
+	return (not pushedCommands.empty()) or w_txn != nullptr;
+}
 
 void DatasetWritable::sendCommand(const Command& cmd) {
+	{
+		std::unique_lock<std::mutex> lck(w_mtx);
+		bool full = pushedCommands.isFull();
+		while (full) {
+			printf(" - commandQ full, sleeping.\n");
+			lck.unlock();
+			usleep(100'000);
+			w_cv.notify_one();
+			lck.lock();
+			full = pushedCommands.isFull();
+		}
+
+		// No, the blocking should be done in blockingGetTileBufferForThread
+		/*
+		if (cmd.cmd == Command::TileReady) {
+			int workerId = cmd.data.tileBufferIdx / buffersPerWorker;
+			bool cannotPushTileBuffer = tileBufferLendedIdx[workerId] - tileBufferCommittedIdx[workerId] <= buffersPerWorker;
+
+			while (cannotPushTileBuffer) {
+				lck.unlock();
+				printf(" - commandQ: cannot push tileBufferIdx %d, worker %d is full (lend %d, commit %d)\n",
+						cmd.data.tileBufferIdx, workerId, tileBufferLendedIdx[workerId].load(), tileBufferCommittedIdx[workerId].load());
+				usleep(100'000);
+				lck.lock();
+				cannotPushTileBuffer = tileBufferLendedIdx[workerId] - tileBufferCommittedIdx[workerId] <= buffersPerWorker;
+				w_cv.notify_one();
+			}
+		}
+		*/
+
+		pushedCommands.push_back(cmd);
+		lck.unlock();
+		w_cv.notify_one();
+	}
+
+#if 0
 
 	//if (cmd.cmd == Command::EndLvl)
-	usleep(500'000);
+	usleep(10'000);
 
 	{
-		if (cmd.cmd == Command::EndLvl) printf(" - Acquiring w_mtx to EndLvl.\n"); fflush(stdout);
+		//if (cmd.cmd == Command::EndLvl) printf(" - Acquiring w_mtx to EndLvl.\n"); fflush(stdout);
 		std::lock_guard<std::mutex> lck(w_mtx);
-		if (cmd.cmd == Command::EndLvl) printf(" - Pushing EndLvl.\n"); fflush(stdout);
+		//if (cmd.cmd == Command::EndLvl) printf(" - Pushing EndLvl.\n"); fflush(stdout);
 		waitingCommands.push_back(cmd);
 	}
 	w_cv.notify_one();
@@ -500,7 +631,194 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 	if (cmd.cmd == Command::EndLvl)
 		while (w_txn) {
 			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
-			usleep(500'000);
+			usleep(100'000);
 		}
+#endif
 }
 
+
+
+
+
+
+/* ===================================================
+ *
+ *
+ *                  DatasetReader
+ *
+ *
+ * =================================================== */
+
+
+
+
+DatasetReader::DatasetReader(const std::string& path, const DatasetReaderOptions& dopts)
+	: Dataset(path, static_cast<const DatabaseOptions>(dopts), OpenMode::READ_ONLY),
+	  opts(dopts)
+{
+	assert(dopts.nthreads == 0); // only blocking loads suported rn
+
+	accessCache1 = Image {                      tileSize,                      tileSize, channels };
+	accessCache  = Image { dopts.maxSampleTiles*tileSize, dopts.maxSampleTiles*tileSize, channels };
+	accessCache1.calloc();
+	accessCache .calloc();
+}
+
+bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
+	MDB_txn* r_txn_;
+	if (auto err = beginTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
+
+	// Compute overview & tiles needed
+	int ow = out.w;
+	int oh = out.h;
+	uint64_t lvl_ = findBestLvlForBoxAndRes(oh,ow, tileSize, bboxWm);
+	uint64_t lvl = lvl_;
+	int step = 1;
+	while (dbs[lvl] == INVALID_DB) {
+		lvl += step;
+		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
+		if (lvl == -1) {
+			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
+		}
+	}
+	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+	double s = (.5 * (1<<lvl)) / WebMercatorScale;
+	uint64_t tileTlbr[4] = {
+		static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s),
+		static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s),
+		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s)),
+		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s)) };
+	double sampledTlbr[4] = {
+		std::floor(bboxWm[0] * s) / s,
+		std::floor(bboxWm[1] * s) / s,
+		std::ceil(bboxWm[2] * s) / s,
+		std::ceil(bboxWm[3] * s) / s };
+	int ny = tileTlbr[3] - tileTlbr[1];
+	int nx = tileTlbr[2] - tileTlbr[0];
+	int sw = nx*tileSize; // Sampled width and height
+	int sh = ny*tileSize;
+	printf(" - (rasterIo) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
+			ny,nx, sh,sw, oh,ow);
+	
+
+	// If >2 tiles, and enabled, use bg threads
+	// In either case, after this, accessCache will have the needed tiles.
+	if (opts.nthreads == 0) {
+		// Load all tiles inline
+		for (int yi=0; yi<ny; yi++) {
+		for (int xi=0; xi<nx; xi++) {
+			BlockCoordinate tileCoord { lvl, tileTlbr[1]+yi, tileTlbr[0]+xi };
+			if (get(accessCache1, tileCoord, &r_txn_)) {
+				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
+			} else {
+				//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
+				uint8_t* dst = accessCache.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
+				if (channels == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+				else if (channels == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+				else if (channels == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+			}
+		}
+		}
+	} else {
+		// Queue load tiles in seperate threads, sleep on it in this thread, join results, continue.
+		assert(false);
+	}
+
+	if (auto err = endTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
+
+	/*
+	out.buffer = accessCache.buffer;
+	out.w = sw;
+	out.h = sh;
+	return false;
+	*/
+
+	// Find the affine transformation that takes the sampled image into the
+	// queried bounding box.
+	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
+			sampledTlbr[2] - sampledTlbr[0],
+			sampledTlbr[3] - sampledTlbr[1]);
+	printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
+
+	float in_corners[4] = {
+		(float) ((bboxWm[0] - sampledTlbr[0]) * sw / (sampledTlbr[2] - sampledTlbr[0])),
+		(float) ((bboxWm[1] - sampledTlbr[1]) * sh / (sampledTlbr[3] - sampledTlbr[1])),
+		(float) ((bboxWm[2] - sampledTlbr[0]) * sw / (sampledTlbr[2] - sampledTlbr[0])),
+		(float) ((bboxWm[3] - sampledTlbr[1]) * sh / (sampledTlbr[3] - sampledTlbr[1])),
+	};
+	float out_corners[4] = { 0, 0, (float) ow, (float) oh };
+	//printf(" - in_corners : %f %f -> %f %f\n", in_corners[0], in_corners[1], in_corners[2], in_corners[3]);
+	//printf(" - out_corners: %f %f -> %f %f\n", out_corners[0], out_corners[1], out_corners[2], out_corners[3]);
+	float inset_tl_x_i = in_corners[0];
+	float inset_tl_y_i = in_corners[1];
+	float scale_x = out_corners[2] / (in_corners[2] - in_corners[0]);
+	float scale_y = out_corners[3] / (in_corners[3] - in_corners[1]);
+	float inset_tl_x = -in_corners[0] * scale_x;
+	float inset_tl_y = -(sh - in_corners[3]) * scale_y;
+
+
+	//printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
+	assert(scale_x > 0.f);
+	assert(scale_y > 0.f);
+	assert(inset_tl_x <= 0.f); assert(inset_tl_y <= 0.f);
+	float A[6] = {
+		scale_x, 0, inset_tl_x,
+		0, scale_y, inset_tl_y };
+
+#ifdef DEBUG_RASTERIO
+	cv::Mat dbgImg1 = cv::Mat(sh, sw, accessCache.channels()==3?CV_8UC3:CV_8UC1, accessCache.buffer).clone();
+	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize, sw, 1)) = cv::Scalar{0};
+	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize, 0, 1, sh)) = cv::Scalar{0};
+	cv::Point pt1 { (int)(inset_tl_x_i), (int)(inset_tl_y_i) };
+	cv::Point pt2 { (int)(inset_tl_x_i+scale_x*ow), (int)(inset_tl_y_i*scale_y*oh) };
+	cv::rectangle(dbgImg1, pt1, pt2, cv::Scalar{255,0,0}, 2);
+	float Ai[6] = {
+		1.f/scale_x, 0, -inset_tl_x/scale_x,
+		0, 1.f/scale_y, -inset_tl_y/scale_y };
+	cv::Point pt1_ { (int)(Ai[0]*0+Ai[2]), (int)(Ai[4]*0+Ai[5]) };
+	cv::Point pt2_ { (int)(Ai[0]*ow+Ai[2]), (int)(Ai[4]*oh+Ai[5]) };
+	cv::rectangle(dbgImg1, pt1_, pt2_, cv::Scalar{0,255,0}, 2);
+	cv::imwrite("out/rasterioSampled.jpg", dbgImg1);
+#endif
+
+	// Warp affine must get correct sample w/h
+	int push_w = accessCache.w, push_h = accessCache.h;
+	accessCache.w = sw;
+	accessCache.h = sh;
+	printf(" - Warping %d %d %d -> %d %d %d\n",
+			accessCache.w, accessCache.h, accessCache.channels(),
+			out.w, out.h, out.channels());
+	accessCache.warpAffine(out, A);
+	accessCache.w = push_w;
+	accessCache.h = push_h;
+
+	return false;
+
+}
+
+
+static int floor_log2_i_(float x) {
+	assert(x >= 0);
+
+	// Could also use floating point log2.
+	// Could also convert x to an int and use intrinsics.
+	int i = 0;
+	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
+	//while ((1<<i) < xi) { i++; };
+	while ((1<<(i+1)) < xi) { i++; };
+	return i-2;
+}
+uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, int tileSize, const double bboxWm[4]) {
+	double boxW = bboxWm[2] - bboxWm[0];
+	double boxH = bboxWm[3] - bboxWm[1];
+	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
+	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
+	int lvl = floor_log2_i_(WebMercatorCellSizesf[0] / x);
+	printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
+			boxW,boxH,tileSize,lvl,WebMercatorCellSizesf[lvl]);
+	return lvl;
+}
