@@ -16,9 +16,6 @@ namespace {
 		return false;
 	}
 
-
-}
-
 std::vector<int> findExistingLvls(DatasetWritable& dset) {
 	std::vector<int> out;
 	dset.getExistingLevels(out);
@@ -156,6 +153,7 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 	}
 
 	return 0;
+}
 }
 
 int main(int argc, char** argv) {

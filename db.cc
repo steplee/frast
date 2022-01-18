@@ -69,7 +69,6 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	  readOnly(m == OpenMode::READ_ONLY)
 {
 	for (int i=0; i<MAX_LVLS; i++) dbs[i] = INVALID_DB;
-	for (int i=0; i<NumReadThreads+1; i++) r_txns[i] = 0;
 
 	if (auto err = mdb_env_create(&env)) {
 		throw std::runtime_error(std::string{"mdb_env_create failed with "} + mdb_strerror(err));
@@ -88,11 +87,6 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 
 	open_all_dbs();
 
-	if (readOnly)
-		for (int i=0; i<NumReadThreads; i++) {
-			threads[i] = std::thread(&Dataset::loaderThreadLoop, this, i);
-			threadIds[i] = threads[i].get_id();
-		}
 }
 
 bool Dataset::beginTxn(MDB_txn** txn, bool readOnly) const {
@@ -151,18 +145,9 @@ bool Dataset::createLevelIfNeeded(int lvl) {
 	return true;
 }
 
-void Dataset::loaderThreadLoop(int idx) {
-	if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, r_txns+idx)) {
-		std::cout << " - (Dataset::Dataset()) failed to open r_txn " << idx << "\n";
-	} else
-		std::cout << " - (Dataset::Dataset()) opened  r_txn " << idx << " -> " << r_txns[idx] << "\n";
-
-	while (not doStop) sleep(1);
-}
 
 Dataset::~Dataset() {
 	doStop = true;
-	for (int i=0; i<NumReadThreads; i++) if (threads[i].joinable()) threads[i].join();
 	assert(env);
 	mdb_env_close(env);
 	env = 0;
@@ -175,11 +160,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 	MDB_txn* theTxn;
 
 	if (givenTxn == nullptr) {
-		int threadIdx = getReaderThreadIdx();
-		//std::cout << " - using txn " << getReaderThreadIdx() << " -> " << theTxn << "\n";
-		if (threadIdx >= 0) {
-			theTxn = r_txns[getReaderThreadIdx()];
-		} else if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, &theTxn))
+		if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, &theTxn))
 			throw std::runtime_error(std::string{"(get) mdb_txn_begin failed with "} + mdb_strerror(err));
 	} else theTxn = *givenTxn;
 
@@ -263,24 +244,6 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 	MDB_val val { len, ((void*)in) };
 	auto err = put_(val, coord, theTxn, allowOverwrite);
 
-	/*
-	if (err == MDB_KEYEXIST) {
-		std::cout << " - Tile existing, attempting to merge (" << coord.z() << " " << coord.y() << " " << coord.x() << ")\n";
-		Image tmp { in.h, in.w, in.format};
-		tmp.alloc();
-		if (get(tmp, coord, &theTxn))
-			throw std::runtime_error("(put)(get) Tried to get existing key (to merge images), but failed!");
-
-		{
-			AddTimeGuard g(_imgMergeTime);
-			//tmp.add_nodata__average_(in);
-			tmp.add_nodata__keep_(in);
-		}
-
-		if (put(tmp, coord, &theTxn, true))
-			throw std::runtime_error("(put)(put) Tried to put merged image, but failed!");
-	}
-	*/
 	if (err == MDB_KEYEXIST) {
 		printf(" - duplicate coord %ld %ld %ld.\n", coord.z(), coord.y(), coord.x());
 		assert(false);
@@ -407,20 +370,6 @@ void DatasetWritable::w_loop() {
 		theCommand.cmd = Command::NoCommand;
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
-
-			/*
-			//w_cv.wait(lck, [this]{return doStop or pushedTileIdxs.size() or waitingCommands.size();});
-			nWaitingCommands = waitingCommands.size();
-			if (nWaitingCommands) {
-				theCommand = waitingCommands.back();
-				waitingCommands.pop_back();
-			}
-
-			nAvailable = pushedTileIdxs.size();
-			if (nAvailable > 0)
-				pushedTileIdxs.pop_front(theTileIdx);
-			//if (pushedTileIdxs.pop_front(theTileIdx) == false) { printf(" - Weird: awoke and found a >0 size, but could not pop.\n"); fflush(stdout); exit(1); }
-			*/
 			
 			w_cv.wait(lck, [this]{return doStop or pushedCommands.size();});
 			nWaitingCommands = pushedCommands.size();
@@ -484,26 +433,6 @@ void DatasetWritable::w_loop() {
 // Note: this ASSUMES the correct thread is calling the func.
 WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 	int nwaited = 0;
-#if 0
-	int lendIdx = tileBufferLendedIdx[thread];
-	while(1) {
-		lendIdx = tileBufferLendedIdx[thread];
-		int comtIdx = tileBufferCommittedIdx[thread];
-		if (lendIdx - comtIdx < buffersPerWorker) {
-			//printf(" - (blockingGetTileBufferForThread : got open buffer [thr %d] (cmt %d, lnd %d, nbuf %d) -> %d\n",
-				//thread, comtIdx, lendIdx, buffersPerWorker, lendIdx%buffersPerWorker);
-			break;
-		}
-
-		//usleep(200'000);
-		if (nwaited++ % 10 == 0)
-			printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
-					thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
-		usleep(2'000);
-	}
-	tileBufferLendedIdx[thread] += 1;
-	return tileBuffers[thread * buffersPerWorker + lendIdx % buffersPerWorker];
-#endif
 
 	while (1) {
 		tileBufferIdxMtx[thread].lock();
@@ -518,8 +447,8 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 			tileBufferIdxMtx[thread].unlock();
 
 			if (nwaited++ % 1 == 0)
-			printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
-					thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
+				printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
+						thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
 			usleep(2'000);
 		}
 	}
@@ -545,23 +474,10 @@ void DatasetWritable::configure(int tilew, int tileh, int tilec, int numWorkerTh
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);
 	}
 
-	//pushedTileIdxs = RingBuffer<int>(nBuffers);
-	//pushedCommands = RingBuffer<Command>(nBuffers);
-	//pushedCommands = RingBuffer<Command>(2);
 	pushedCommands = RingBuffer<Command>(128);
 	w_thread = std::thread(&DatasetWritable::w_loop, this);
 }
 
-/*
-void DatasetWritable::push(WritableTile& tile) {
-	{
-		std::unique_lock<std::mutex> lck(w_mtx);
-		pushedTileIdxs.push_back(tile.bufferIdx);
-		//printf(" - push buffer tile with idx %d [thr %d]\n", tile.bufferIdx, tile.bufferIdx/buffersPerWorker);
-	}
-	w_cv.notify_one();
-}
-*/
 
 DatasetWritable::DatasetWritable(const std::string& path, const DatabaseOptions& dopts)
 	: Dataset(path, dopts, Dataset::OpenMode::READ_WRITE) {
@@ -584,24 +500,6 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 			lck.lock();
 			full = pushedCommands.isFull();
 		}
-
-		// No, the blocking should be done in blockingGetTileBufferForThread
-		/*
-		if (cmd.cmd == Command::TileReady) {
-			int workerId = cmd.data.tileBufferIdx / buffersPerWorker;
-			bool cannotPushTileBuffer = tileBufferLendedIdx[workerId] - tileBufferCommittedIdx[workerId] <= buffersPerWorker;
-
-			while (cannotPushTileBuffer) {
-				lck.unlock();
-				printf(" - commandQ: cannot push tileBufferIdx %d, worker %d is full (lend %d, commit %d)\n",
-						cmd.data.tileBufferIdx, workerId, tileBufferLendedIdx[workerId].load(), tileBufferCommittedIdx[workerId].load());
-				usleep(100'000);
-				lck.lock();
-				cannotPushTileBuffer = tileBufferLendedIdx[workerId] - tileBufferCommittedIdx[workerId] <= buffersPerWorker;
-				w_cv.notify_one();
-			}
-		}
-		*/
 
 		pushedCommands.push_back(cmd);
 		lck.unlock();
@@ -656,12 +554,45 @@ DatasetReader::DatasetReader(const std::string& path, const DatasetReaderOptions
 	: Dataset(path, static_cast<const DatabaseOptions>(dopts), OpenMode::READ_ONLY),
 	  opts(dopts)
 {
+
 	assert(dopts.nthreads == 0); // only blocking loads suported rn
+
+	for (int i=0; i<dopts.nthreads+1; i++) r_txns[i] = 0;
+	for (int i=0; i<dopts.nthreads; i++) {
+		threads[i] = std::thread(&DatasetReader::loaderThreadLoop, this, i);
+		threadIds[i] = threads[i].get_id();
+	}
 
 	accessCache1 = Image {                      tileSize,                      tileSize, channels };
 	accessCache  = Image { dopts.maxSampleTiles*tileSize, dopts.maxSampleTiles*tileSize, channels };
 	accessCache1.calloc();
 	accessCache .calloc();
+}
+
+DatasetReader::~DatasetReader() {
+	doStop = true;
+	for (int i=0; i<MAX_READER_THREADS; i++) if (threads[i].joinable()) threads[i].join();
+}
+
+void DatasetReader::loaderThreadLoop(int idx) {
+	if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, r_txns+idx)) {
+		std::cout << " - (Dataset::Dataset()) failed to open r_txn " << idx << "\n";
+	} else
+		std::cout << " - (Dataset::Dataset()) opened  r_txn " << idx << " -> " << r_txns[idx] << "\n";
+
+	while (not doStop) sleep(1);
+}
+
+bool DatasetReader::loadTile(Image& out) {
+		int threadIdx = getReaderThreadIdx();
+		MDB_txn* theTxn;
+		//std::cout << " - using txn " << getReaderThreadIdx() << " -> " << theTxn << "\n";
+		if (threadIdx >= 0) {
+			theTxn = r_txns[getReaderThreadIdx()];
+		} else if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, &theTxn))
+			throw std::runtime_error(std::string{"(get) mdb_txn_begin failed with "} + mdb_strerror(err));
+
+		return false;
 }
 
 bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {

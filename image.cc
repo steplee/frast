@@ -15,6 +15,9 @@
 // Didn't use simd intrinsics and it's hard to tell if clang/llc auto-vectorized.
 // But '-O3 -march=native -fopenmp' was able to compete with OpenCV's impl.
 #define USE_MY_WARP
+// For my warp: whether to use floating point or int16_t bilinear weightings.
+//              Probably faster, probably slightly worse quality.
+#define INTEGER_MIXING 1
 
 #ifdef USE_MY_WARP
 #ifndef _OPENMP
@@ -188,6 +191,7 @@ inline void inv_3x2(float iH[6], const float H[6]) {
 
 template <int C> void my_warpAffine(Image& out, const Image& in, float H[6]);
 
+// Specialize the one channel case, to make loop optims easier for compiler
 template <> void my_warpAffine<1>(Image& out, const Image& in, float H[6]) {
 	float iH[6];
 	inv_3x2(iH,H);
@@ -195,6 +199,7 @@ template <> void my_warpAffine<1>(Image& out, const Image& in, float H[6]) {
 	const int oh = out.h, ow = out.w;
 	const int ih = in.h, iw = in.w;
 	const int istep = iw;
+	const int ostep = ow;
 	auto IDX = [ih,iw,istep](int y, int x) {
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
 		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
@@ -213,12 +218,22 @@ template <> void my_warpAffine<1>(Image& out, const Image& in, float H[6]) {
 		float iy = iH[1*3+0] * ((float)ox) + iH[1*3+1] * ((float)oy) + iH[1*3+2];
 		float mx = ix - floorf(ix), my = iy - floorf(iy);
 
+#if INTEGER_MIXING
+		using Scalar = uint16_t;
+		Scalar p = {0};
+		p += in.buffer[IDX((((int)iy)+0) , (((int)ix)+0))] * ((Scalar)(64.f * (1.f-my) * (1.f-mx)));
+		p += in.buffer[IDX((((int)iy)+0) , (((int)ix)+1))] * ((Scalar)(64.f * (1.f-my) * (    mx)));
+		p += in.buffer[IDX((((int)iy)+1) , (((int)ix)+1))] * ((Scalar)(64.f * (    my) * (    mx)));
+		p += in.buffer[IDX((((int)iy)+1) , (((int)ix)+0))] * ((Scalar)(64.f * (    my) * (1.f-mx)));
+		out.buffer[oy*ostep+ox] = (uint8_t) (p / 64);
+#else
 		float p = 0.f;
 		p += ((float)in.buffer[IDX((((int)iy)+0) , (((int)ix)+0))]) * ((float)((1.f-my) * (1.f-mx)));
 		p += ((float)in.buffer[IDX((((int)iy)+0) , (((int)ix)+1))]) * ((float)((1.f-my) * (    mx)));
 		p += ((float)in.buffer[IDX((((int)iy)+1) , (((int)ix)+1))]) * ((float)((    my) * (    mx)));
 		p += ((float)in.buffer[IDX((((int)iy)+1) , (((int)ix)+0))]) * ((float)((    my) * (1.f-mx)));
-		out.buffer[oy*istep+ox] = (uint8_t) (p);
+		out.buffer[oy*ostep+ox] = (uint8_t) (p);
+#endif
 	}
 }
 
@@ -245,7 +260,7 @@ void my_warpAffine(Image& out, const Image& in, float H[6]) {
 		float iy = iH[1*3+0] * ((float)ox) + iH[1*3+1] * ((float)oy) + iH[1*3+2];
 		float mx = ix - floorf(ix), my = iy - floorf(iy);
 
-#if 0
+#if INTEGER_MIXING
 		using Scalar = uint16_t;
 		using Vec = Scalar[C];
 		Vec p = {0};

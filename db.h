@@ -115,14 +115,12 @@ constexpr static unsigned int INVALID_DB = 2147483648;
 struct DatabaseOptions {
 	//int64_t mapSize = 10485760l; // lmdb default: 10MB
 	//int64_t mapSize = 10485760l * 8l; // 80MB
-	int64_t mapSize = 10485760l * 9000l; // 1GB
+	uint64_t mapSize = 2lu * (1lu << 30lu); // 1GB
 };
 
 
 /*
  *
- * TODO: Do not have r_txns in this class, and erase all reader specific code.
- *       Instead there should be a subclass that does all that, just like there is 'DatasetWritable'
  *
  */
 
@@ -181,22 +179,6 @@ class Dataset {
 
 		MDB_dbi dbs[MAX_LVLS];
 
-		// When in readOnly mode, we have long-lived dedicated per-thread read transactions.
-		// Note: they are not used in write mode.
-		static constexpr int NumReadThreads = 2;
-		MDB_txn *r_txns[NumReadThreads];
-
-		std::array<std::thread, NumReadThreads> threads;
-		std::array<std::thread::id, NumReadThreads> threadIds;
-		void loaderThreadLoop(int idx);
-
-		inline int getReaderThreadIdx() const {
-			if (not readOnly) return -1;
-			auto id = std::this_thread::get_id();
-			for (int i=0; i<NumReadThreads; i++) if (id == threadIds[i]) return i;
-			return -1;
-		}
-
 };
 
 
@@ -227,7 +209,6 @@ struct WritableTile {
 
 /*
  * Simple type to help an app control the DatasetWritable writer thread asynchronously.
- *
  */
 struct Command {
 	enum Type : int32_t {
@@ -272,8 +253,7 @@ struct RingBuffer {
  * This is because only one lonnnng write transaction is held the entire duration.
  *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.
- * Techincally this is broken, since the commands could be re-ordered against pushed tiles.
- * So when sending EndLvl, the callee will sleep for 1 second.
+ *
  */
 using atomic_int = std::atomic_int;
 class DatasetWritable : public Dataset {
@@ -342,6 +322,7 @@ struct DatasetReaderOptions : public DatabaseOptions {
 class DatasetReader : public Dataset {
 	public:
 		DatasetReader(const std::string& path, const DatasetReaderOptions& dopts=DatasetReaderOptions{});
+		~DatasetReader();
 
 		// Image should already be allocated.
 		// false on success.
@@ -351,6 +332,19 @@ class DatasetReader : public Dataset {
 		DatasetReaderOptions opts;
 		Image accessCache;
 		Image accessCache1;
+
+		MDB_txn* r_txns[MAX_READER_THREADS];
+		std::array<std::thread, MAX_READER_THREADS> threads;
+		std::array<std::thread::id, MAX_READER_THREADS> threadIds;
+		void loaderThreadLoop(int idx);
+		bool loadTile(Image& out);
+
+		inline int getReaderThreadIdx() const {
+			if (not readOnly) return -1;
+			auto id = std::this_thread::get_id();
+			for (int i=0; i<MAX_READER_THREADS; i++) if (id == threadIds[i]) return i;
+			return -1;
+		}
 
 };
 
