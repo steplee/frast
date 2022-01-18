@@ -151,6 +151,8 @@ class Dataset {
 		int put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put_(MDB_val& in,  const BlockCoordinate& coord, MDB_txn* txn, bool allowOverwrite);
 
+		bool tileExists(const BlockCoordinate& bc, MDB_txn* txn);
+
 
 		bool createLevelIfNeeded(int lvl);
 
@@ -348,6 +350,10 @@ class DatasetReader : public Dataset {
 			return -1;
 		}
 
+		// the first func finds without insepcting which tiles exist in the database.
+		// the second func finds the best level that *actually covers* the AABB.
+		uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]);
+		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn);
+
 };
 
-uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, int tileSize, const double bboxWm[4]);

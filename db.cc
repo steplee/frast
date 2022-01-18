@@ -320,6 +320,19 @@ void Dataset::getExistingLevels(std::vector<int>& out) const {
 			out.push_back(lvl);
 }
 
+bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
+	uint64_t lvl = bc.z();
+	if (dbs[lvl] == INVALID_DB) return false;
+	MDB_val key { 8, (void*) &bc };
+	MDB_val val;
+	if (auto err = mdb_get(txn, dbs[lvl], &key, &val)) {
+		if (err == MDB_NOTFOUND) return false;
+			throw std::runtime_error(std::string{"(tileExists) mdb err "} + mdb_strerror(err));
+	}
+	return true;
+}
+
+
 
 
 /* ===================================================
@@ -600,23 +613,27 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	// Compute overview & tiles needed
 	int ow = out.w;
 	int oh = out.h;
-	uint64_t lvl_ = findBestLvlForBoxAndRes(oh,ow, tileSize, bboxWm);
-	uint64_t lvl = lvl_;
-	int step = 1;
-	while (dbs[lvl] == INVALID_DB) {
-		lvl += step;
-		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
-		if (lvl == -1) {
-			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
-		}
-	}
-	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+#if 0
+	uint64_t lvl = findBestLvlForBoxAndRes(oh,ow, bboxWm);
 	double s = (.5 * (1<<lvl)) / WebMercatorScale;
 	uint64_t tileTlbr[4] = {
 		static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s),
 		static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s),
 		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s)),
 		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s)) };
+#else
+
+	MDB_txn* r_txn_;
+	if (auto err = beginTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_begin failed with "} + mdb_strerror(err));
+
+	uint64_t tileTlbr[4];
+	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, bboxWm, r_txn_);
+	double s = (.5 * (1<<lvl)) / WebMercatorScale;
+
+	if (auto err = endTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_end failed with "} + mdb_strerror(err));
+#endif
 	double sampledTlbr[4] = {
 		std::floor(bboxWm[0] * s) / s,
 		std::floor(bboxWm[1] * s) / s,
@@ -748,13 +765,101 @@ static int floor_log2_i_(float x) {
 	while ((1<<(i+1)) < xi) { i++; };
 	return i-2;
 }
-uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, int tileSize, const double bboxWm[4]) {
+
+uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]) {
+	assert(false); // deprecated
+
+	// 1. Find optimal level
+	// 2. Find closest level that exists in entire db
+
+	// (1)
 	double boxW = bboxWm[2] - bboxWm[0];
 	double boxH = bboxWm[3] - bboxWm[1];
 	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
 	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
-	int lvl = floor_log2_i_(WebMercatorCellSizesf[0] / x);
+	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
 	printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
-			boxW,boxH,tileSize,lvl,WebMercatorCellSizesf[lvl]);
+			boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+
+	static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
+
+	// (2)
+	uint64_t lvl = lvl_;
+	int step = 1;
+	while (dbs[lvl] == INVALID_DB) {
+		lvl += step;
+		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
+		if (lvl == -1) {
+			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
+		}
+	}
+	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+
+	// (3)
+
+
+	return lvl;
+}
+
+uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
+
+	// 1. Find optimal level
+	// 2. Find closest level that exists in entire db
+	// 3. Find level that actually covers box
+	//
+	// Note: Step 2 is merely an optimization for step 3. It could be skipped.
+	// Note: Step 3 only checks the top-left and bottomo-right corners, and assumes
+	//       all interior tiles exist, without actually checking.
+
+	// (1)
+	double boxW = bboxWm[2] - bboxWm[0];
+	double boxH = bboxWm[3] - bboxWm[1];
+	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
+	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
+	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
+	printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
+			boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+
+	//static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
+
+	// (2)
+	uint64_t lvl = lvl_;
+	int step = 1;
+	while (dbs[lvl] == INVALID_DB) {
+		lvl += step;
+		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
+		if (lvl == -1) {
+			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
+		}
+	}
+	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+	lvl_ = lvl;
+
+	// (3)
+	bool good = false;
+	while (not good) {
+		double s = (.5 * (1<<lvl)) / WebMercatorScale;
+		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
+		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
+		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s));
+		tlbr[3] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s));
+
+		good = tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) and
+			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn);
+
+		printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[1],tlbr[0], tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) ? "yes" : "no");
+		printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[3],tlbr[2], tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) ? "yes" : "no");
+
+		if (not good)
+			lvl--;
+
+		if (lvl <= 0) {
+			printf(" - (findBestLvlAndTlbr) picked lvl %lu, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);
+			throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
+		}
+	}
+
+
+
 	return lvl;
 }
