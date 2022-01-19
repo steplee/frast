@@ -27,8 +27,10 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
 	for (uint64_t xx=x, xi=0; xx<x+h; xx++, xi++) {
 		BlockCoordinate coord { z,yy,xx };
-		if (dset.get(img, coord, nullptr))
+		if (dset.get(img, coord, nullptr)) {
+			printf(" - accessed bad block, exiting.\n");
 			return 1;
+		}
 
 		cv::Mat imgRef { img.h, img.w, CV_8UC3, img.buffer };
 		imgRef.copyTo(mat(cv::Rect({((int)xi)*256, (int)(h-1-yi)*256, 256, 256})));

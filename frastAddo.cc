@@ -2,6 +2,7 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
 
 #include <omp.h>
 
@@ -290,9 +291,9 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 	int64_t nrows = lvlTlbr[2] - lvlTlbr[0];
 	int64_t ncols = lvlTlbr[3] - lvlTlbr[1];
 
-	int channels = 1;
+	int channels = dset.channels;
+	int tileSize = dset.tileSize;
 	int cv_type = channels == 3 ? CV_8UC3 : channels == 4 ? CV_8UC4 : CV_8U;
-	int tileSize = 256;
 
 	Image tmpImage_[ADDO_THREADS];
 	cv::Mat tmpMat_[ADDO_THREADS];
@@ -361,16 +362,21 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 						memset(tmpImage.buffer, 0, channels*tileSize*tileSize);
 						nMissingParents++;
 					}
-					tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)/2), tileSize*(((int32_t)j)%2), tileSize, tileSize}));
+					//cv::Mat tmpMat  = cv::Mat ( tileSize, tileSize, cv_type, tmpImage.buffer );
+					//cv::imshow("child",tmpMat);
+					//cv::waitKey(1);
+					tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
 				}
 
 				if (nMissingParents == 4) {
-					//printf(" - [thr %d] Strange: tile %luz %luy %lux was missing all parents? Skipping it.\n", tid, lvl,y,x);
+					printf(" - [thr %d] Strange: tile %luz %luy %lux was missing all parents? Skipping it.\n", tid, lvl,y,x);
 				} else {
-					//printf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
+					printf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
 
 					// Downsample
 					cv::resize(parent, child, cv::Size{tileSize,tileSize});
+
+					//if (tid == 0) { cv::imshow("parent",parent); cv::waitKey(1); }
 
 					// Put
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);

@@ -12,7 +12,7 @@
 #include <iomanip>
 #include <cmath>
 
-//#define DEBUG_RASTERIO
+#define DEBUG_RASTERIO
 #ifdef DEBUG_RASTERIO
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
