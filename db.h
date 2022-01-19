@@ -151,6 +151,8 @@ class Dataset {
 		int put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put_(MDB_val& in,  const BlockCoordinate& coord, MDB_txn* txn, bool allowOverwrite);
 
+		bool erase(const BlockCoordinate& coord, MDB_txn* txn);
+
 		bool tileExists(const BlockCoordinate& bc, MDB_txn* txn);
 
 
@@ -162,6 +164,31 @@ class Dataset {
 		uint64_t determineLevelAABB(uint64_t tlbr[4], int lvl) const;
 
 		void getExistingLevels(std::vector<int>& out) const;
+
+		template <class F> bool iterLevel(int lvl, MDB_txn* txn, F&& f) {
+			if (dbs[lvl] == INVALID_DB) {
+				printf(" - iterLevel called on invalid lvl %d\n", lvl);
+				return 1;
+			}
+			MDB_cursor* cursor;
+			MDB_val key, val;
+			if (mdb_cursor_open(txn, dbs[lvl], &cursor))
+				throw std::runtime_error("Failed to open cursor.");
+			if (mdb_cursor_get(cursor, &key, &val, MDB_FIRST)) {
+				printf(" - determineLevelAABB searched (NO FIRST ENTRY)\n");
+				return 1;
+			} else {
+				BlockCoordinate coord(*static_cast<uint64_t*>(key.mv_data));
+				f(coord, val);
+			}
+			while (not mdb_cursor_get(cursor, &key, &val, MDB_NEXT)) {
+				BlockCoordinate coord(*static_cast<uint64_t*>(key.mv_data));
+				f(coord, val);
+			}
+			return 0;
+		}
+
+		int dropLvl(int lvl, MDB_txn* txn);
 
 	protected:
 		std::string path;
@@ -246,7 +273,7 @@ struct RingBuffer {
 		return true;
 	}
 	inline int size()  const { return w_idx -  r_idx; }
-	inline int empty() const { return w_idx == r_idx; }
+	inline bool empty() const { return w_idx == r_idx; }
 	inline bool isFull() const { return w_idx - r_idx >= cap; }
 };
 
@@ -274,6 +301,8 @@ class DatasetWritable : public Dataset {
 
 		// True if 'EndLvl' has not been processed
 		bool hasOpenWrite();
+		// Wait until all commands processed
+		void blockUntilEmptiedQueue();
 
 		constexpr static int MAX_THREADS = 8;
 	private:

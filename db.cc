@@ -263,6 +263,20 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 	return err != 0;
 }
 
+int Dataset::dropLvl(int lvl, MDB_txn* txn) {
+		int ret = mdb_drop(txn, dbs[lvl], 1);
+		dbs[lvl] = INVALID_DB;
+		return ret;
+}
+
+bool Dataset::erase(const BlockCoordinate& coord, MDB_txn* txn) {
+
+	MDB_val key { 8, static_cast<void*>(coord) };
+	if (auto err = mdb_del(txn, dbs[coord.z()], &key, nullptr))
+		return true;
+
+	return false;
+}
 
 uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 	tlbr[0] = tlbr[2] = 0;
@@ -323,11 +337,12 @@ void Dataset::getExistingLevels(std::vector<int>& out) const {
 bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
 	uint64_t lvl = bc.z();
 	if (dbs[lvl] == INVALID_DB) return false;
-	MDB_val key { 8, (void*) &bc };
-	MDB_val val;
+	MDB_val key, val;
+	key.mv_data = (void*) &(bc.c);
+	key.mv_size = sizeof(BlockCoordinate);
 	if (auto err = mdb_get(txn, dbs[lvl], &key, &val)) {
 		if (err == MDB_NOTFOUND) return false;
-			throw std::runtime_error(std::string{"(tileExists) mdb err "} + mdb_strerror(err));
+		else throw std::runtime_error(std::string{"(tileExists) mdb err "} + mdb_strerror(err));
 	}
 	return true;
 }
@@ -398,21 +413,22 @@ void DatasetWritable::w_loop() {
 			if (!doStop and nWaitingCommands == 0) {
 				printf(" - (wthread, spurious wakeup.\n");
 			}
-		}
 
-		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
 
-		if (theCommand.cmd != Command::NoCommand) {
+			// Lock the mutex if creating or ending a level.
+			// The TileReady command needn't hold mutex.
 			if (theCommand.cmd == Command::BeginLvl) {
 				printf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) endTxn(&w_txn);
 				this->createLevelIfNeeded(theCommand.data.lvl);
 				beginTxn(&w_txn, false);
+				nWaitingCommands--;
 			} else if (theCommand.cmd == Command::EndLvl) {
 				printf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				assert(w_txn);
 				endTxn(&w_txn);
 				//beginTxn(&w_txn, false);
+				nWaitingCommands--;
 			} else if (theCommand.cmd == Command::EraseLvl) {
 				printf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) {
@@ -420,9 +436,16 @@ void DatasetWritable::w_loop() {
 					exit(1);
 				}
 				beginTxn(&w_txn, false);
-				mdb_drop(w_txn, dbs[theCommand.data.lvl], 1);
+				dropLvl(theCommand.data.lvl, w_txn);
 				endTxn(&w_txn);
-			} else if (theCommand.cmd == Command::TileReady) {
+				nWaitingCommands--;
+			}
+		}
+
+		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
+
+		if (theCommand.cmd != Command::NoCommand) {
+			if (theCommand.cmd == Command::TileReady) {
 				int theTileIdx = theCommand.data.tileBufferIdx;
 				int theWorker = theTileIdx / buffersPerWorker;
 				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
@@ -547,6 +570,22 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 #endif
 }
 
+void DatasetWritable::blockUntilEmptiedQueue() {
+	bool empty = false;
+	{
+		std::lock_guard<std::mutex> lck(w_mtx);
+		//printf(" - blockUntilEmptiedQueue :: size at start: %d\n", pushedCommands.size());
+		empty = pushedCommands.empty();
+	}
+	while (not empty) {
+		usleep(20'000);
+		{
+			std::lock_guard<std::mutex> lck(w_mtx);
+			empty = pushedCommands.empty();
+		}
+	}
+	//printf(" - blockUntilEmptiedQueue :: size at end: %d\n", pushedCommands.size());
+}
 
 
 

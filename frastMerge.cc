@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
 	
 	if (argc == 1 or argc == 2 or argc == 3) {
 		printf(" - Usage:\n\n\tfrastMerge <outName> <inName1> <inName2> ...\n\n - You must provide at least two input datasets.\n");
+		return 1;
 	}
 
 	std::string outDsetPath = std::string { argv[1] };
@@ -51,7 +52,9 @@ int main(int argc, char** argv) {
 	DatasetWritable outDset { outDsetPath, dopts };
 
 	// Copy the first dataset, then open it.
+	
 	// Begin incremental addition algo.
+	
 	// Fin.
 
 	return 0;
