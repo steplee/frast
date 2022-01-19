@@ -347,6 +347,10 @@ bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
 	return true;
 }
 
+bool Dataset::hasLevel(int lvl) const {
+	return dbs[lvl] != INVALID_DB;
+}
+
 
 
 
@@ -377,6 +381,14 @@ void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std
 	if (v.size() > eimg.size()) {
 		eimg.resize(v.size() * 2);
 		std::copy(v.begin(), v.end(), eimg.begin());
+	}
+	coord = c;
+}
+void WritableTile::fillWith(const BlockCoordinate& c, const MDB_val& val) {
+	AddTimeGuardAsync tg(_tileBufferCopyTime);
+	if (val.mv_size > eimg.size()) {
+		eimg.resize(val.mv_size * 2);
+		std::copy((uint8_t*)val.mv_data, ((uint8_t*)val.mv_data)+val.mv_size, eimg.begin());
 	}
 	coord = c;
 }
@@ -490,10 +502,8 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 	}
 }
 
-void DatasetWritable::configure(int tilew, int tileh, int tilec, int numWorkerThreads, int buffersPerWorker) {
+void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 	assert(numWorkerThreads < MAX_THREADS);
-	this->tilew = tilew;
-	this->tileh = tileh;
 	this->numWorkers = numWorkerThreads;
 	this->buffersPerWorker = buffersPerWorker;
 
@@ -504,7 +514,7 @@ void DatasetWritable::configure(int tilew, int tileh, int tilec, int numWorkerTh
 		tileBufferCommittedIdx[i] = 0;
 	}
 	for (int i=0; i<nBuffers; i++) {
-		tileBuffers[i].image = Image { tilew, tileh, tilec };
+		tileBuffers[i].image = Image { tileSize, tileSize, channels };
 		tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);

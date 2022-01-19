@@ -383,7 +383,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	}
 
 	DatasetWritable outDset { outPath };
-	outDset.configure(256, 256, dset[0]->nbands, THREADS, 4);
+	outDset.configure(THREADS, 4);
 	std::cout << " - beginning" << std::endl;
 
 	// For each level

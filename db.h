@@ -154,6 +154,7 @@ class Dataset {
 		bool erase(const BlockCoordinate& coord, MDB_txn* txn);
 
 		bool tileExists(const BlockCoordinate& bc, MDB_txn* txn);
+		bool hasLevel(int lvl) const;
 
 
 		bool createLevelIfNeeded(int lvl);
@@ -234,6 +235,7 @@ struct WritableTile {
 
 	void copyFrom(const WritableTile& tile);
 	void fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
+	void fillWith(const BlockCoordinate& c, const MDB_val& val);
 };
 
 /*
@@ -291,7 +293,7 @@ class DatasetWritable : public Dataset {
 		~DatasetWritable();
 
 		// Must be called before writing anything.
-		void configure(int tilew, int tileh, int tilec, int numWorkerThreads, int buffersPerWorker);
+		void configure(int numWorkerThreads, int buffersPerWorker);
 
 		// By having buffers for each thread seperately, we can avoid locking.
 		WritableTile& blockingGetTileBufferForThread(int thread);
@@ -306,7 +308,6 @@ class DatasetWritable : public Dataset {
 
 		constexpr static int MAX_THREADS = 8;
 	private:
-		int tilew, tileh;
 		int numWorkers, buffersPerWorker, nBuffers;
 
 		void w_loop();

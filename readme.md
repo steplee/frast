@@ -20,8 +20,9 @@ It offers tools to convert from a GDAL supported format to an internal one (usin
 
 ### TODO
   - Python bindings, optimized for PyTorch DataLoaders
+  - Allow resizing db when it grows too large, which also would not require inputting large enough size at creation time.
   - Fix the bilinear interpolation in convertGdal.cc. It works when the number of sample points is large (128), but it should work for a very small grid too (like 4x4).
   - Support output to a cuda buffer.
   - Support sampling an arbitrary quad (rather than just a bbox in rasterIo)
   - Explore if there is a benefit to exporting the lmdb to a completely flat read-only format, with a hashmap in the header that maps to file offsets of tiles.
-  - Make convertGdal faster if input is already WebMercator
+  - Make convertGdal faster if input is already WebMercator (no need to warp)

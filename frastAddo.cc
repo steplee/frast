@@ -436,7 +436,7 @@ int main(int argc, char** argv) {
 
 	DatasetWritable dset { argv[1] };
 
-	dset.configure(256,256, 3, ADDO_THREADS, 8);
+	dset.configure(ADDO_THREADS, 8);
 
 	std::vector<int> existingLvls = findExistingLvls(dset);
 
