@@ -191,14 +191,15 @@ class Dataset {
 
 		int dropLvl(int lvl, MDB_txn* txn);
 
+		// TODO: Read this from header, it is not done right now.
+		int channels = 3;
+		int tileSize = 256;
+
 	protected:
 		std::string path;
 		bool readOnly;
 		bool doStop = false;
 
-		// TODO: Read this from header, it is not done right now.
-		int channels = 3;
-		int tileSize = 256;
 
 		MDB_env *env = nullptr;
 
@@ -360,7 +361,7 @@ class DatasetReader : public Dataset {
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
 
-		bool fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]);
+		bool fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]);
 
 	private:
 		DatasetReaderOptions opts;

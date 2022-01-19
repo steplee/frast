@@ -764,7 +764,10 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 }
 
-bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]) {
+// If this function fetches *any* invalid blocks, it returns non-zero.
+// It still fills the buffers with black pixels, how-ever.
+// A full success returns zero.
+bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]) {
 	int32_t nx = tlbr[2] - tlbr[0];
 	int32_t ny = tlbr[3] - tlbr[1];
 	assert(out.w >= tileSize*nx);
@@ -776,14 +779,17 @@ bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]) {
 	if (auto err = beginTxn(&r_txn_, true))
 		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
 
+	bool didSucceed = true;
+
 	// If >2 tiles, and enabled, use bg threads
-	if (opts.nthreads == 0 and nx*ny > 2) {
+	if (opts.nthreads == 0 or nx*ny <= 2) {
 		for (int yi=0; yi<ny; yi++) {
 		for (int xi=0; xi<nx; xi++) {
 			BlockCoordinate tileCoord { lvl, tlbr[1]+yi, tlbr[0]+xi };
 			if (get(accessCache1, tileCoord, &r_txn_)) {
 				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
 				memset(accessCache1.buffer, 0, tileSize*tileSize*channels);
+				didSucceed = false;
 			}
 			//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
 			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
@@ -799,7 +805,7 @@ bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]) {
 	if (auto err = endTxn(&r_txn_, true))
 		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
 
-	return false;
+	return didSucceed ? 0 : 1;
 }
 
 

@@ -39,6 +39,15 @@ struct Image {
 		w = h = 0;
 	}
 
+	static inline Image view(int hh, int ww, Format fmt, uint8_t* buffer_) {
+		Image out;
+		out.ownBuffer = false;
+		out.format = fmt;
+		out.h = hh;
+		out.w = ww;
+		out.buffer = buffer_;
+		return out;
+	}
 	static inline Image view(const Image& other) {
 		Image out;
 		out.w = other.w;
