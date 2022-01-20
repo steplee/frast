@@ -30,6 +30,7 @@
  *		- Using a single txn for many reads is marginally faster, if at all.
  */
 
+	/*
 std::atomic<double> _encodeTime = 0;
 std::atomic<double> _decodeTime = 0;
 std::atomic<double> _imgMergeTime = 0;
@@ -56,7 +57,12 @@ std::string prettyPrintNanos(double ns) {
 	else                         out = std::to_string(ns/1e9) + "s";
 	return out;
 }
+	*/
 
+AtomicTimer t_total("total"),
+			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
+			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
+void printDebugTimes() {}
 
 
 /* ===================================================
@@ -102,7 +108,7 @@ bool Dataset::beginTxn(MDB_txn** txn, bool readOnly) const {
 	return err != 0;
 }
 bool Dataset::endTxn(MDB_txn** txn, bool abort) const {
-	AddTimeGuard g(_dbEndTxnTime);
+	AtomicTimerMeasurement g(t_dbEndTxn);
 	if (abort)
 		mdb_txn_abort(*txn);
 	else
@@ -171,11 +177,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 	} else theTxn = *givenTxn;
 
 	MDB_val eimg_;
-	bool ret;
-	{
-		AddTimeGuard g(_dbReadTime);
-		ret = get_(eimg_, coord, theTxn);
-	}
+	bool ret = get_(eimg_, coord, theTxn);
 
 	if (ret) {
 		if (givenTxn == nullptr) endTxn(&theTxn);
@@ -184,7 +186,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 
 	EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
 	{
-		AddTimeGuardAsync g(_decodeTime);
+		AtomicTimerMeasurement g(t_decodeImage);
 		ret = decode(out, eimg);
 	}
 
@@ -193,6 +195,8 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 }
 
 int Dataset::get_(MDB_val& val, const BlockCoordinate& coord, MDB_txn* txn) {
+	AtomicTimerMeasurement g(t_dbRead);
+
 	MDB_val key { 8, (void*)(&coord.c) };
 	if (auto err = mdb_get(txn, dbs[coord.z()], &key, &val)) {
 		//std::cout << " - mdb_get error: " << mdb_strerror(err) << " (block " << coord.z() << "z " << coord.y() << "y " << coord.x() << "x)\n";
@@ -201,11 +205,13 @@ int Dataset::get_(MDB_val& val, const BlockCoordinate& coord, MDB_txn* txn) {
 	return 0;
 }
 int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, bool allowOverwrite) {
+	AtomicTimerMeasurement g(t_dbWrite);
+
 	MDB_val key { 8, (void*)(&coord.c) };
 
 	//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << "\n";
 	{
-		AddTimeGuard g(_dbWriteTime);
+		AtomicTimerMeasurement g(t_dbWrite);
 		//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << " to lvl " << coord.z() << "\n";
 
 		auto err = mdb_put(txn, dbs[coord.z()], &key, &val, allowOverwrite ? 0 : MDB_NOOVERWRITE);
@@ -226,7 +232,7 @@ int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, b
 	//MDB_val val;
 	EncodedImage eimg;
 	{
-		AddTimeGuardAsync g(_encodeTime);
+		AtomicTimerMeasurement g(t_encodeImage);
 		encode(eimg, in);
 
 		//val = MDB_val{ eimg.size(), static_cast<void*>(eimg.data()) };
@@ -372,7 +378,7 @@ bool Dataset::hasLevel(int lvl) const {
 
 
 void WritableTile::copyFrom(const WritableTile& tile) {
-	AddTimeGuardAsync tg(_tileBufferCopyTime);
+	AtomicTimerMeasurement g(t_tileBufferCopy);
 	bufferIdx = tile.bufferIdx;
 	image.copyFrom(tile.image);
 	if (tile.eimg.size() > eimg.size()) {
@@ -382,7 +388,7 @@ void WritableTile::copyFrom(const WritableTile& tile) {
 	coord = tile.coord;
 }
 void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v) {
-	AddTimeGuardAsync tg(_tileBufferCopyTime);
+	AtomicTimerMeasurement g(t_tileBufferCopy);
 	image.copyFrom(im);
 	if (v.size() > eimg.size()) {
 		eimg.resize(v.size() * 2);
@@ -391,7 +397,7 @@ void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std
 	coord = c;
 }
 void WritableTile::fillWith(const BlockCoordinate& c, const MDB_val& val) {
-	AddTimeGuardAsync tg(_tileBufferCopyTime);
+	AtomicTimerMeasurement g(t_tileBufferCopy);
 	if (val.mv_size > eimg.size()) {
 		eimg.resize(val.mv_size * 2);
 		std::copy((uint8_t*)val.mv_data, ((uint8_t*)val.mv_data)+val.mv_size, eimg.begin());

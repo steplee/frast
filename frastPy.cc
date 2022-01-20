@@ -38,6 +38,7 @@ PYBIND11_MODULE(frastpy, m) {
 		.def_readwrite("forceRgb", &DatasetReaderOptions::forceRgb)
 		.def_readwrite("nthreads", &DatasetReaderOptions::nthreads);
 
+	// All of the reader functions release the GIL
     py::class_<DatasetReader>(m, "DatasetReader")
         .def(py::init<const std::string&, const DatasetReaderOptions&>())
 
@@ -54,11 +55,13 @@ PYBIND11_MODULE(frastpy, m) {
 				int outw = dset.tileSize * (tlbr[2] - tlbr[0]);
 				int outh = dset.tileSize * (tlbr[3] - tlbr[1]);
 
+
 				std::vector<ssize_t> outShape;
 
 				py::buffer_info bufIn = out.request();
 
 				verifyShapeOrThrow(outh, outw, dset.channels, bufIn);
+				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2) {
 					outShape = {outh, outw};
@@ -95,6 +98,7 @@ PYBIND11_MODULE(frastpy, m) {
 				std::vector<ssize_t> outShape;
 				py::buffer_info bufIn = out.request();
 				verifyShapeOrThrow(outh, outw, dset.channels, bufIn);
+				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2) {
 					outShape = {outh, outw};
@@ -133,6 +137,7 @@ PYBIND11_MODULE(frastpy, m) {
 				std::vector<ssize_t> outShape;
 				py::buffer_info bufIn = out.request();
 				verifyShapeOrThrow(outh, outw, dset.channels, bufIn);
+				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2) {
 					outShape = {outh, outw};

@@ -16,7 +16,7 @@ img1 = np.zeros((256*2,2*256,3), dtype=np.uint8)
 
 img1 = cv2.cvtColor(img1,cv2.COLOR_RGB2BGR)
 
-for t in np.linspace(0, 50, 1000):
+for t in np.linspace(0, 10, 200):
     off = 2000 * np.array((np.cos(t), np.sin(t)))
     tlbr_ = tlbr + np.array((*off, *(off*2.)))
     img2 = (d.rasterIo(img1, tlbr_))

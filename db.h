@@ -56,7 +56,14 @@ inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowS
 	}
 }
 
+#include "timer.hpp"
+extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
+			t_dbWrite, t_dbRead, t_dbEndTxn, t_tileBufferCopy,
+			t_total;
+void printDebugTimes();
 
+
+/*
 extern std::atomic<double> _encodeTime;
 extern std::atomic<double> _decodeTime;
 extern std::atomic<double> _imgMergeTime;
@@ -96,6 +103,7 @@ struct AddTimeGuardAsync {
 		acc = old + std::chrono::duration_cast<std::chrono::nanoseconds>(et-st).count();
 	}
 };
+*/
 
 struct BlockCoordinate {
 	uint64_t c;
@@ -212,6 +220,10 @@ class Dataset {
 
 		MDB_dbi dbs[MAX_LVLS];
 
+	private:
+		// Just put this in main() for any program you care about.
+		//std::unique_ptr<AtomicTimerMeasurement> _t_total = std::make_unique<AtomicTimerMeasurement>(t_total);
+
 };
 
 
@@ -287,6 +299,11 @@ struct RingBuffer {
  * This is because only one lonnnng write transaction is held the entire duration.
  *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.
+ *
+ *  TODO:
+ *  This should also have a tile cache like DatasetReader does, because it would make
+ *  frastAddo faster.
+ *  Unlike DatasetReader::tileCache, however, each cache should be *thread local*.
  *
  */
 using atomic_int = std::atomic_int;

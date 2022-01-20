@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
 	std::vector<std::unique_ptr<DatasetReader>> inDsets;
 	inDsets.reserve(inDsetPaths.size());
 	for (auto path : inDsetPaths) inDsets.push_back(std::make_unique<DatasetReader>(path));
+	AtomicTimerMeasurement _tg_total(t_total);
 
 	outDset.configure(1,8);
 	

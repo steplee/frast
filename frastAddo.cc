@@ -39,7 +39,7 @@ static_assert(ADDO_THREADS < DatasetWritable::MAX_THREADS);
 
 namespace {
 	bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
-		AddTimeGuardAsync g(_encodeTime);
+		AtomicTimerMeasurement g(t_encodeImage);
 		cv::imencode(".jpg", mat, out);
 		return false;
 	}
@@ -440,6 +440,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	AtomicTimerMeasurement _tg_total(t_total);
 	DatasetWritable dset { argv[1] };
 
 	dset.configure(ADDO_THREADS, 8);

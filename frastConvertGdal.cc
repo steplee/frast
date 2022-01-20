@@ -296,7 +296,7 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 
 
 bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
-	AddTimeGuardAsync g(_encodeTime);
+	AtomicTimerMeasurement g(t_encodeImage);
 	cv::imencode(".jpg", mat, out);
 	return false;
 }
@@ -473,6 +473,8 @@ int main(int argc, char** argv) {
 	srcTiff = std::string(argv[1]);
 	outPath = std::string(argv[2]);
 	std::vector<int> lvls;
+
+	AtomicTimerMeasurement _tg_total(t_total);
 
 	try {
 		for (int i=3; i<argc; i++) {
