@@ -3,7 +3,6 @@ import frastpy
 import cv2
 
 o = frastpy.DatasetReaderOptions()
-
 d = frastpy.DatasetReader('out', o)
 
 tlbr = [37400, 81080, 37400+2, 81080+2]

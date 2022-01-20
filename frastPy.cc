@@ -43,7 +43,10 @@ PYBIND11_MODULE(frastpy, m) {
 
 		// Output buffer is passed in. Returned result is a *view* of it, possibly smaller.
 		// Also note: the output stride *may not match* input stride.
-		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t> tlbr_) -> py::object {
+		//
+		// Note: Parameter if parameter 'safe' is true, if there are *any* missing tiles, None is returned.
+		// If 'safe' is false, we may return a partially or entirely blank image.
+		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t> tlbr_, bool safe) -> py::object {
 				if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
 				if (tlbr_.strides(0) != 8) throw std::runtime_error("tlbr must have stride 8 (be contiguous uint64_t), was: " + std::to_string(tlbr_.strides(0)));
@@ -73,11 +76,8 @@ PYBIND11_MODULE(frastpy, m) {
 
 				Image imgView = Image::view(outh,outw, dset.channels==3?Image::Format::RGB:dset.channels==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
 
-				// Should I notify the caller of invalid blocks?
-				// Best api would actually be to return the number of invalid blocks...
-				// For now I'll just be silent, and always return an image (possibly empty)
-				//if (dset.fetchBlocks(imgView, lvl, tlbr)) return py::none();
-				dset.fetchBlocks(imgView, lvl, tlbr);
+				int nMissing = dset.fetchBlocks(imgView, lvl, tlbr);
+				if (safe and nMissing > 0) return py::none();
 
 				return result;
 		})

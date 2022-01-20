@@ -40,6 +40,9 @@ frastAddo: $(HEADERS) frastAddo.cc frast.a
 frastMerge: $(HEADERS) frastMerge.cc frast.a
 	$(CXX) frastMerge.cc -o $@ $(BASE_CFLAGS) $(OPT) frast.a $(gdal_libs)
 
+frastInfo: $(HEADERS) frastInfo.cc frast.a
+	$(CXX) frastInfo.cc -o frastInfo $(OPT)  frast.a $(BASE_CFLAGS)
+
 dbTest: $(HEADERS) dbTest.cc frast.a
 	$(CXX) dbTest.cc -o dbTest $(OPT)  frast.a $(BASE_CFLAGS)
 

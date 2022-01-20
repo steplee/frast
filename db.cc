@@ -121,8 +121,9 @@ void Dataset::open_all_dbs() {
 			//throw std::runtime_error(std::string{"(open_all_dbs) mdb_dbi_open failed with "} + mdb_strerror(err));
 			//std::cout << " - (open_all_dbs) failed to open lvl " << i << "\n";
 			{}
-		else
-			std::cout << " - (open_all_dbs) opened lvl " << i << "\n";
+		else {
+			//std::cout << " - (open_all_dbs) opened lvl " << i << "\n";
+		}
 	}
 
 	mdb_txn_commit(txn);
@@ -151,7 +152,7 @@ Dataset::~Dataset() {
 	assert(env);
 	mdb_env_close(env);
 	env = 0;
-	printf (" - (~Dataset closed mdb env)\n");
+	//printf (" - (~Dataset closed mdb env)\n");
 }
 
 
@@ -324,7 +325,7 @@ uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 	if (endTxn(&txn))
 		throw std::runtime_error("Failed to close txn.");
 
-	printf(" - determineLevelAABB searched %d\n", nn);
+	//printf(" - determineLevelAABB searched %d\n", nn);
 	return (tlbr[2]-tlbr[0]) * (tlbr[3]-tlbr[1]);
 }
 
@@ -764,10 +765,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 }
 
-// If this function fetches *any* invalid blocks, it returns non-zero.
-// It still fills the buffers with black pixels, how-ever.
-// A full success returns zero.
-bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]) {
+// Returns number of invalid tiles.
+int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]) {
 	int32_t nx = tlbr[2] - tlbr[0];
 	int32_t ny = tlbr[3] - tlbr[1];
 	assert(out.w >= tileSize*nx);
@@ -779,7 +778,7 @@ bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]
 	if (auto err = beginTxn(&r_txn_, true))
 		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
 
-	bool didSucceed = true;
+	int nMissing = 0;
 
 	// If >2 tiles, and enabled, use bg threads
 	if (opts.nthreads == 0 or nx*ny <= 2) {
@@ -789,7 +788,7 @@ bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]
 			if (get(accessCache1, tileCoord, &r_txn_)) {
 				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
 				memset(accessCache1.buffer, 0, tileSize*tileSize*channels);
-				didSucceed = false;
+				nMissing++;
 			}
 			//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
 			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
@@ -799,13 +798,14 @@ bool DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]
 		}
 		}
 	} else {
+		// TODO: Multi-threaded load.
 		// ...
 	}
 
 	if (auto err = endTxn(&r_txn_, true))
 		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
 
-	return didSucceed ? 0 : 1;
+	return nMissing;
 }
 
 

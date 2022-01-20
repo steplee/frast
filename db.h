@@ -176,7 +176,7 @@ class Dataset {
 			if (mdb_cursor_open(txn, dbs[lvl], &cursor))
 				throw std::runtime_error("Failed to open cursor.");
 			if (mdb_cursor_get(cursor, &key, &val, MDB_FIRST)) {
-				printf(" - determineLevelAABB searched (NO FIRST ENTRY)\n");
+				printf(" - iterLevel all on empty db lvl\n");
 				return 1;
 			} else {
 				BlockCoordinate coord(*static_cast<uint64_t*>(key.mv_data));
@@ -361,7 +361,7 @@ class DatasetReader : public Dataset {
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
 
-		bool fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]);
+		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]);
 
 	private:
 		DatasetReaderOptions opts;
