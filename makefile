@@ -19,9 +19,9 @@ py_lib := -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e 
 # Main lib
 ######################
 
-db.o: $(HEADERS) $(main_srcs)
+db.o: $(HEADERS) db.cc
 	$(CXX) -fPIC db.cc -c -o $@ $(BASE_CFLAGS) $(OPT)
-image.o: $(HEADERS) $(main_srcs)
+image.o: $(HEADERS) image.cc
 	$(CXX) -fPIC image.cc -c -o $@ $(BASE_CFLAGS) $(OPT)
 frast.a: db.o image.o
 	ar rcs $@ db.o image.o

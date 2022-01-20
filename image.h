@@ -20,12 +20,15 @@ struct EncodedImageRef {
 
 /*
  * You can 'view' other images, but it assumes the child lifetime does not out-last the view'ed parent.
+ *
+ * This really needs a stride/pitch member to allow fully-functional views.
  */
 struct Image {
 	int32_t w, h;
 	enum class Format { RGB, RGBA, RGBN, GRAY } format;
 	uint8_t *buffer = nullptr;
 	bool ownBuffer = true;
+	int32_t capacity = 0;
 
 	// TODO: implement move operators
 
@@ -34,7 +37,7 @@ struct Image {
 	inline Image& operator=(const Image& other) { copyFrom(other); return *this; }
 
 	inline ~Image() {
-		if (buffer and ownBuffer) free(buffer);
+		if (buffer and ownBuffer) { free(buffer); buffer = 0; }
 		buffer = 0;
 		w = h = 0;
 	}
@@ -59,15 +62,20 @@ struct Image {
 	}
 
 	void copyFrom(const Image& other) {
-		if (other.buffer and buffer and ownBuffer and w == other.w and h == other.h and channels() == other.channels())
+		//if (other.buffer and buffer and ownBuffer and w == other.w and h == other.h and channels() == other.channels())
+		if (other.buffer and buffer and capacity >= other.capacity)
 			memcpy(buffer, other.buffer, size());
+		else if (buffer and !ownBuffer and capacity < other.capacity)
+			throw std::runtime_error("copyFrom() called on a viewed image that was too small.");
 		else {
-			if (buffer and not ownBuffer) free(buffer);
-			w = other.w;
-			h = other.h;
-			format = other.format;
-			ownBuffer = true;
-			if (w > 0 and h > 0 and other.buffer) {
+			if (buffer and ownBuffer) { free(buffer); buffer = 0; }
+			if (other.w > 0 and other.h > 0) {
+				w = other.w;
+				h = other.h;
+				format = other.format;
+			}
+			if (other.buffer) {
+				ownBuffer = true;
 				alloc();
 				memcpy(buffer, other.buffer, size());
 			}
@@ -106,7 +114,8 @@ struct Image {
 		if (not ownBuffer) throw std::runtime_error("alloc() called on a viewed image!");
 		if (buffer != nullptr) throw std::runtime_error("only alloc once!");
 		//buffer = (uint8_t*) malloc(size());
-		buffer = (uint8_t*) aligned_alloc(16, size());
+		capacity = size();
+		buffer = (uint8_t*) aligned_alloc(16, capacity);
 		ownBuffer = true;
 		return buffer != nullptr;
 	}
@@ -122,7 +131,9 @@ struct Image {
 	void add_nodata__keep_(const Image& other, uint16_t nodata=0);
 
 	// Destination image should be allocated.
-	void warpAffine(Image& out, float H[6]) const;
+	void warpAffine(Image& out, const float H[6]) const;
+	// H is not const: it may be divided by H[8].
+	void warpPerspective(Image& out, float H[9]) const;
 };
 
 

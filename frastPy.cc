@@ -76,7 +76,7 @@ PYBIND11_MODULE(frastpy, m) {
 
 				Image imgView = Image::view(outh,outw, dset.channels==3?Image::Format::RGB:dset.channels==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
 
-				int nMissing = dset.fetchBlocks(imgView, lvl, tlbr);
+				int nMissing = dset.fetchBlocks(imgView, lvl, tlbr, nullptr);
 				if (safe and nMissing > 0) return py::none();
 
 				return result;
@@ -93,9 +93,7 @@ PYBIND11_MODULE(frastpy, m) {
 				int outh = out.shape(0);
 
 				std::vector<ssize_t> outShape;
-
 				py::buffer_info bufIn = out.request();
-
 				verifyShapeOrThrow(outh, outw, dset.channels, bufIn);
 
 				if (bufIn.ndim == 2) {
@@ -122,6 +120,45 @@ PYBIND11_MODULE(frastpy, m) {
 
 				return result;
 		})
+
+		.def("rasterIoQuad", [](DatasetReader& dset, py::array_t<uint8_t> out, py::array_t<double> quad) -> py::object {
+				if (quad.size() != 8) throw std::runtime_error("quad must be length 8.");
+				if (quad.ndim() != 1) throw std::runtime_error("quad must have one dim.");
+				if (quad.strides(0) != 8) throw std::runtime_error("quad must have stride 8 (be contiguous double), was: " + std::to_string(quad.strides(0)));
+				const double* quad_ = quad.data();
+				int outw = out.shape(1);
+				int outh = out.shape(0);
+
+
+				std::vector<ssize_t> outShape;
+				py::buffer_info bufIn = out.request();
+				verifyShapeOrThrow(outh, outw, dset.channels, bufIn);
+
+				if (bufIn.ndim == 2) {
+					outShape = {outh, outw};
+				} else {
+					outShape = {outh, outw, (ssize_t) dset.channels};
+				}
+
+				std::vector<ssize_t> outStrides;
+				outStrides.push_back(dset.channels*outw);
+				outStrides.push_back(dset.channels);
+				if (bufIn.ndim == 3) outStrides.push_back(1);
+				// WHich one is correct? Do I need to inc_ref() manually()
+				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+
+				Image imgView = Image::view(outh,outw, dset.channels==3?Image::Format::RGB:dset.channels==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+
+				// Should I notify the caller of invalid blocks?
+				// Best api would actually be to return the number of invalid blocks...
+				// For now I'll just be silent, and always return an image (possibly empty)
+				//if (dset.fetchBlocks(imgView, lvl, tlbr)) return py::none();
+				dset.rasterIoQuad(imgView, quad_);
+
+				return result;
+		})
+
 		;
 
 }

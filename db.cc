@@ -16,7 +16,12 @@
 #ifdef DEBUG_RASTERIO
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
 #endif
+
+// Needed for rasterIoQuad.
+// TODO: Replace with simple DLT solve, using eigen cholesky solve.
+#include <opencv2/imgproc.hpp>
 
 
 /*
@@ -615,7 +620,8 @@ void DatasetWritable::blockUntilEmptiedQueue() {
 
 DatasetReader::DatasetReader(const std::string& path, const DatasetReaderOptions& dopts)
 	: Dataset(path, static_cast<const DatabaseOptions>(dopts), OpenMode::READ_ONLY),
-	  opts(dopts)
+	  opts(dopts),
+	  tileCache(READER_TILE_CACHE_SIZE)
 {
 
 	assert(dopts.nthreads == 0); // only blocking loads suported rn
@@ -658,20 +664,142 @@ bool DatasetReader::loadTile(Image& out) {
 		return false;
 }
 
+bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
+	// Compute overview & tiles needed
+	int ow = out.w;
+	int oh = out.h;
+
+	MDB_txn* r_txn_;
+	if (auto err = beginTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_begin failed with "} + mdb_strerror(err));
+
+	const double quadColMajor[8] = {
+		quad[0], quad[2], quad[4], quad[6],
+		quad[1], quad[3], quad[5], quad[7] };
+	double bboxWm[4] = {
+		*std::min_element(quadColMajor+0, quadColMajor+4),
+		*std::min_element(quadColMajor+4, quadColMajor+8),
+		*std::max_element(quadColMajor+0, quadColMajor+4),
+		*std::max_element(quadColMajor+4, quadColMajor+8)
+	};
+
+	uint64_t tileTlbr[4];
+	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, bboxWm, r_txn_);
+	double s = (.5 * (1<<lvl)) / WebMercatorScale;
+
+	/*
+	double sampledTlbr[4] = {
+		std::floor((WebMercatorScale + bboxWm[0]) * s) / s - WebMercatorScale,
+		std::floor((WebMercatorScale + bboxWm[1]) * s) / s - WebMercatorScale,
+		std::ceil((WebMercatorScale + bboxWm[2]) * s) / s - WebMercatorScale,
+		std::ceil((WebMercatorScale + bboxWm[3]) * s) / s  - WebMercatorScale};
+	*/
+	double sampledTlbr[4] = {
+		((double)tileTlbr[0]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[1]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[2]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[3]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale };
+
+	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
+	// sampled width/height
+	int sw = nx*tileSize, sh = ny*tileSize;
+	printf(" - (rasterIoQuad) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
+			ny,nx, sh,sw, oh,ow);
+
+	// If >2 tiles, and enabled, use bg threads
+	// In either case, after this, accessCache will have the needed tiles.
+	fetchBlocks(accessCache, lvl, tileTlbr, r_txn_);
+
+	if (auto err = endTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_end failed with "} + mdb_strerror(err));
+
+	// Find the perspective transformation that takes the sampled image into the
+	// queried quad.
+	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
+			sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
+	printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
+
+	float x_scale = sw / (sampledTlbr[2] - sampledTlbr[0]);
+	float y_scale = sh / (sampledTlbr[3] - sampledTlbr[1]);
+	float in_corners[8] = {
+		// pt1
+		((float)(quad[0] - sampledTlbr[0])) * x_scale,
+		((float)(quad[1] - sampledTlbr[1])) * y_scale,
+		// pt2
+		((float)(quad[2] - sampledTlbr[0])) * x_scale,
+		((float)(quad[3] - sampledTlbr[1])) * y_scale,
+		// pt3
+		((float)(quad[4] - sampledTlbr[0])) * x_scale,
+		((float)(quad[5] - sampledTlbr[1])) * y_scale,
+		// pt4
+		((float)(quad[6] - sampledTlbr[0])) * x_scale,
+		((float)(quad[7] - sampledTlbr[1])) * y_scale,
+	};
+	float out_corners[8] = {
+		0, 0,
+		(float) ow, 0,
+		(float) ow, (float) oh,
+		0, (float) oh };
+
+	for (int i=0; i<4; i++) in_corners[i*2+1] = sh - 1 - in_corners[i*2+1];
+	for (int i=0; i<4; i++) out_corners[i*2+1] = oh - out_corners[i*2+1];
+	//printf(" - in_corners : %f %f -> %f %f\n", in_corners[0], in_corners[1], in_corners[2], in_corners[3]);
+	//printf(" - out_corners: %f %f -> %f %f\n", out_corners[0], out_corners[1], out_corners[2], out_corners[3]);
+
+#ifdef DEBUG_RASTERIO
+	cv::Mat dbgImg1 = cv::Mat(sh, sw, accessCache.channels()==3?CV_8UC3:CV_8UC1, accessCache.buffer).clone();
+	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize, sw, 1)) = cv::Scalar{0};
+	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize, 0, 1, sh)) = cv::Scalar{0};
+	for (int i=0; i<4; i++)
+		//cv::circle(dbgImg1, cv::Point{(int)in_corners[2*i+0], (int)in_corners[2*i+1]}, 2, cv::Scalar{0,0,255}, -1);
+		cv::line(dbgImg1,
+				cv::Point{(int)in_corners[2*i+0], (int)in_corners[2*i+1]},
+				cv::Point{(int)in_corners[2*((i+1)%4)+0], (int)in_corners[2*((i+1)%4)+1]},
+				cv::Scalar{0,255,0}, 1);
+	//cv::imwrite("out/rasterioSampled.jpg", dbgImg1);
+	cv::imshow("debug", dbgImg1);
+	cv::waitKey(1);
+#endif
+
+	cv::Mat a { 4, 2, CV_32F,  in_corners };
+	cv::Mat b { 4, 2, CV_32F, out_corners };
+	cv::Mat h = cv::getPerspectiveTransform(a,b);
+	//cv::Mat h = cv::getPerspectiveTransform(b,a);
+	if (h.type() == CV_64F) h.convertTo(h, CV_32F);
+	float *H = (float*) h.data;
+	printf(" - in_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
+			in_corners[0], in_corners[1],
+			in_corners[2], in_corners[3],
+			in_corners[4], in_corners[5],
+			in_corners[6], in_corners[7]);
+	printf(" - out_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
+			out_corners[0], out_corners[1],
+			out_corners[2], out_corners[3],
+			out_corners[4], out_corners[5],
+			out_corners[6], out_corners[7]);
+
+	// Warp affine must get correct sample w/h
+	int push_w = accessCache.w, push_h = accessCache.h;
+	accessCache.w = sw;
+	accessCache.h = sh;
+	printf(" - Warping %d %d %d -> %d %d %d\n",
+			accessCache.w, accessCache.h, accessCache.channels(),
+			out.w, out.h, out.channels());
+	accessCache.warpPerspective(out, H);
+	accessCache.w = push_w;
+	accessCache.h = push_h;
+
+	return false;
+
+}
+
 bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	// Compute overview & tiles needed
 	int ow = out.w;
 	int oh = out.h;
-#if 0
-	uint64_t lvl = findBestLvlForBoxAndRes(oh,ow, bboxWm);
-	double s = (.5 * (1<<lvl)) / WebMercatorScale;
-	uint64_t tileTlbr[4] = {
-		static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s),
-		static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s),
-		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s)),
-		static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s)) };
-#else
 
 	MDB_txn* r_txn_;
 	if (auto err = beginTxn(&r_txn_, true))
@@ -681,28 +809,33 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, bboxWm, r_txn_);
 	double s = (.5 * (1<<lvl)) / WebMercatorScale;
 
-	if (auto err = endTxn(&r_txn_, true))
-		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_end failed with "} + mdb_strerror(err));
-#endif
+
+	// double sampledTlbr[4] = {
+		// std::floor(bboxWm[0] * s) / s,
+		// std::floor(bboxWm[1] * s) / s,
+		// std::ceil(bboxWm[2] * s) / s,
+		// std::ceil(bboxWm[3] * s) / s };
 	double sampledTlbr[4] = {
-		std::floor(bboxWm[0] * s) / s,
-		std::floor(bboxWm[1] * s) / s,
-		std::ceil(bboxWm[2] * s) / s,
-		std::ceil(bboxWm[3] * s) / s };
-	int ny = tileTlbr[3] - tileTlbr[1];
-	int nx = tileTlbr[2] - tileTlbr[0];
-	int sw = nx*tileSize; // Sampled width and height
-	int sh = ny*tileSize;
+		((double)tileTlbr[0]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[1]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[2]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
+		((double)tileTlbr[3]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale };
+
+	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
+	// sampled width/height
+	int sw = nx*tileSize, sh = ny*tileSize;
 	printf(" - (rasterIo) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
 			ny,nx, sh,sw, oh,ow);
-	
 
 	// If >2 tiles, and enabled, use bg threads
 	// In either case, after this, accessCache will have the needed tiles.
-	fetchBlocks(accessCache, lvl, tileTlbr);
+	fetchBlocks(accessCache, lvl, tileTlbr, r_txn_);
+
+	if (auto err = endTxn(&r_txn_, true))
+		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_end failed with "} + mdb_strerror(err));
 
 	// Find the affine transformation that takes the sampled image into the
-	// queried bounding box.
+	// queried bbox.
 	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
 			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
 			sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
@@ -747,7 +880,9 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	cv::Point pt1_ { (int)(Ai[0]*0+Ai[2]), (int)(Ai[4]*0+Ai[5]) };
 	cv::Point pt2_ { (int)(Ai[0]*ow+Ai[2]), (int)(Ai[4]*oh+Ai[5]) };
 	cv::rectangle(dbgImg1, pt1_, pt2_, cv::Scalar{0,255,0}, 2);
-	cv::imwrite("out/rasterioSampled.jpg", dbgImg1);
+	//cv::imwrite("out/rasterioSampled.jpg", dbgImg1);
+	cv::imshow("debug", dbgImg1);
+	cv::waitKey(1);
 #endif
 
 	// Warp affine must get correct sample w/h
@@ -765,18 +900,50 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 }
 
+bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn) {
+	if (opts.nthreads > 1) tileCacheMtx.lock();
+	if (tileCache.get(out, coord.c)) {
+		printf(" - (getCached) cache hit for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
+		if (opts.nthreads > 1) tileCacheMtx.unlock();
+		return false;
+	}
+	if (opts.nthreads > 1) tileCacheMtx.unlock();
+	if (get(out,coord,txn)) {
+		// Failed. Do not cache.
+		return true;
+	}
+	printf(" - (getCached) cache miss for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
+	if (opts.nthreads > 1) tileCacheMtx.lock();
+	tileCache.set(coord.c, out);
+	if (opts.nthreads > 1) tileCacheMtx.unlock();
+	return false;
+}
+
 // Returns number of invalid tiles.
-int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]) {
+int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
+
+	if (tlbr[0] == fetchedCacheBox[0] and
+	    tlbr[1] == fetchedCacheBox[1] and
+	    tlbr[2] == fetchedCacheBox[2] and
+	    tlbr[3] == fetchedCacheBox[3]) {
+		out = fetchedCache;
+		printf(" - (fetchBlocks) cache hit.\n");
+		return fetchedCacheMissing;
+	}
+
+	bool ownTxn = false;
+	if (txn0 == nullptr) {
+		if (auto err = beginTxn(&txn0, true))
+			throw std::runtime_error(std::string{"(fetchBlocks) mdb_txn_begin failed with "} + mdb_strerror(err));
+		ownTxn = true;
+	}
+
 	int32_t nx = tlbr[2] - tlbr[0];
 	int32_t ny = tlbr[3] - tlbr[1];
 	assert(out.w >= tileSize*nx);
 	assert(out.h >= tileSize*ny);
 	int sw = nx*tileSize; // Sampled width and height
 	int sh = ny*tileSize;
-
-	MDB_txn* r_txn_;
-	if (auto err = beginTxn(&r_txn_, true))
-		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_begin failed with "} + mdb_strerror(err));
 
 	int nMissing = 0;
 
@@ -785,7 +952,7 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4])
 		for (int yi=0; yi<ny; yi++) {
 		for (int xi=0; xi<nx; xi++) {
 			BlockCoordinate tileCoord { lvl, tlbr[1]+yi, tlbr[0]+xi };
-			if (get(accessCache1, tileCoord, &r_txn_)) {
+			if (getCached(accessCache1, tileCoord, &txn0)) {
 				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
 				memset(accessCache1.buffer, 0, tileSize*tileSize*channels);
 				nMissing++;
@@ -802,8 +969,18 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4])
 		// ...
 	}
 
-	if (auto err = endTxn(&r_txn_, true))
-		throw std::runtime_error(std::string{"(rasterIo) mdb_txn_end failed with "} + mdb_strerror(err));
+	if (ownTxn)
+		if (auto err = endTxn(&txn0))
+			throw std::runtime_error(std::string{"(fetchBlocks) mdb_txn_end failed with "} + mdb_strerror(err));
+
+
+	// Populate cache.
+	fetchedCache = out;
+	fetchedCacheMissing = nMissing;
+	fetchedCacheBox[0] = tlbr[0];
+	fetchedCacheBox[1] = tlbr[1];
+	fetchedCacheBox[2] = tlbr[2];
+	fetchedCacheBox[3] = tlbr[3];
 
 	return nMissing;
 }
@@ -848,7 +1025,7 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
 		}
 	}
-	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
 
 	// (3)
 
@@ -887,17 +1064,27 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
 		}
 	}
-	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %d\n", lvl_, lvl);
+	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
 	lvl_ = lvl;
 
 	// (3)
 	bool good = false;
 	while (not good) {
 		double s = (.5 * (1<<lvl)) / WebMercatorScale;
+
+#if 0
 		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
 		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
 		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s));
 		tlbr[3] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s));
+#else
+		uint64_t w = 1 + std::max(std::ceil((WebMercatorScale + bboxWm[2]) * s) - (WebMercatorScale + bboxWm[0]) * s,
+							  std::ceil((WebMercatorScale + bboxWm[3]) * s) - (WebMercatorScale + bboxWm[1]) * s);
+		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
+		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
+		tlbr[2] = w + static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
+		tlbr[3] = w + static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
+#endif
 
 		good = tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) and
 			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn);
@@ -909,7 +1096,7 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 			lvl--;
 
 		if (lvl <= 0) {
-			printf(" - (findBestLvlAndTlbr) picked lvl %lu, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);
+			printf(" - (findBestLvlAndTlbr) picked lvl %d, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);
 			throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
 		}
 	}

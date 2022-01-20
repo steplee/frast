@@ -14,9 +14,11 @@ extern "C" {
 #include <cassert>
 
 #include "image.h"
+#include "utils.hpp"
 
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
+constexpr int READER_TILE_CACHE_SIZE = 64;
 
 // Note: WebMercator the size of the map is actually 2x this.
 constexpr double WebMercatorScale = 20037508.342789248;
@@ -351,22 +353,49 @@ struct DatasetReaderOptions : public DatabaseOptions {
  *
  * Can only access safely from ONE THREAD
  *
+ * There are two levels of caching:
+ *			1) fetchBlocks(), caches the last output. If the same input tlbr is passed, the last result is copied to the output buffer.
+ *			2) getCached() has an LRU cache of READER_TILE_CACHE_SIZE entries.
+ *
+ * So fetchBlocks() (and the rasterIo* funcs) employ two-level caching.
+ * Calls to getCached() that are new will incur a Dataset::get() call, which also do a jpeg decode.
+ *
+ * fetchBlocks() is not thread safe.
+ * getCached() is thread-safe, but only to internal threads. cacheMtx is acquired if opts.nthreads > 1.
+ *
  */
 class DatasetReader : public Dataset {
 	public:
 		DatasetReader(const std::string& path, const DatasetReaderOptions& dopts=DatasetReaderOptions{});
 		~DatasetReader();
 
+		// Access an AABB in the projection coordinate system (e.g. WM)
 		// Image should already be allocated.
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
 
-		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4]);
+		// Access a quad in the projection coordinate system (e.g. WM)
+		bool rasterIoQuad(Image& out, const double quad[8]);
+
+		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0);
+
+		// Shared by all threads
+		bool getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
 
 	private:
 		DatasetReaderOptions opts;
 		Image accessCache;
 		Image accessCache1;
+		// TODO: have LruCache have a getView() method, then keep LruCache locked until memcpyStridedOutputFlatInput is run, then unlock.
+		// This avoids a copy, at the cost of a critical region (or not cost if nthreads=0)
+		//LruCache<uint64_t, Image> tileCache;
+		LruCache<uint64_t, Image> tileCache;
+		Image fetchedCache;
+		uint64_t fetchedCacheBox[4];
+		int fetchedCacheMissing = 0;
+
+		// Only used if nthread>1
+		std::mutex tileCacheMtx;
 
 		MDB_txn* r_txns[MAX_READER_THREADS];
 		std::array<std::thread, MAX_READER_THREADS> threads;
