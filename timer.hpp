@@ -18,8 +18,8 @@ struct TimerMeasurement {
 
 using Timer                  = timer::Timer<double>;
 using TimerMeasurement       = timer::TimerMeasurement<double, std::chrono::high_resolution_clock>;
-using AtomicTimer            = timer::Timer<std::atomic_double>;
-using AtomicTimerMeasurement = timer::TimerMeasurement<std::atomic_double, std::chrono::high_resolution_clock>;
+using AtomicTimer            = timer::Timer<std::atomic<double>>;
+using AtomicTimerMeasurement = timer::TimerMeasurement<std::atomic<double>, std::chrono::high_resolution_clock>;
 
 #else
 
@@ -117,6 +117,7 @@ struct Timer {
 		acc2 = acc2 + dt*dt;
 	}
 };
+
 template <class D, class T = high_resolution_clock>
 struct TimerMeasurement {
 	Timer<D>& timer;

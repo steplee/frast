@@ -70,4 +70,4 @@ image.s: image.cc makefile
 	clang++ image.cc -S -o image.s $(BASE_CFLAGS) $(OPT)  -fno-discard-value-names
 
 clean:
-	rm frast.a image.ll image.s dbTest *.o frast frastConvertGdal frastAddo frastMerge frastPy.so
+	rm frast.a image.ll image.s dbTest *.o frastConvertGdal frastAddo frastMerge frastpy.so frastInfo

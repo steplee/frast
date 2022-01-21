@@ -59,6 +59,7 @@ inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowS
 #include "timer.hpp"
 extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 			t_dbWrite, t_dbRead, t_dbEndTxn, t_tileBufferCopy,
+			t_rasterIo, t_fetchBlocks, t_warp,
 			t_total;
 void printDebugTimes();
 
@@ -266,36 +267,9 @@ struct Command {
 	} data = Data{.lvl=0};
 };
 
-template <class T>
-struct RingBuffer {
-	std::vector<T> data;
-	int cap, w_idx=0, r_idx=0;
-	RingBuffer() : cap(0) { }
-	RingBuffer(int cap_) : cap(cap_) {
-		data.resize(cap);
-	}
-	inline bool pop_front(T& t) {
-		if (r_idx == w_idx) return false;
-		t = data[r_idx % cap];
-		//printf(" - ring buffer pop_front() idx %d val %d\n", r_idx, t); fflush(stdout);
-		r_idx++;
-		return true;
-	}
-	inline bool push_back(const T& t) {
-		//if (w_idx - r_idx >= cap) return false;
-		if (w_idx - r_idx >= cap) { assert(false); }
-		data[w_idx % cap] = t;
-		//printf(" - ring buffer push_front() idx %d val %d\n", r_idx, t); fflush(stdout);
-		w_idx++;
-		return true;
-	}
-	inline int size()  const { return w_idx -  r_idx; }
-	inline bool empty() const { return w_idx == r_idx; }
-	inline bool isFull() const { return w_idx - r_idx >= cap; }
-};
-
 /*
  * This makes the assumption that no workers commit any of the same tiles!
+ * (At least, invetween BeginLvl and EndLvl commands)
  * This is because only one lonnnng write transaction is held the entire duration.
  *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.

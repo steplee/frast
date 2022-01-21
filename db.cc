@@ -12,7 +12,7 @@
 #include <iomanip>
 #include <cmath>
 
-#define DEBUG_RASTERIO
+//#define DEBUG_RASTERIO
 #ifdef DEBUG_RASTERIO
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -61,6 +61,7 @@ std::string prettyPrintNanos(double ns) {
 
 AtomicTimer t_total("total"),
 			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
+			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"),
 			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
 void printDebugTimes() {}
 
@@ -671,6 +672,8 @@ bool DatasetReader::loadTile(Image& out) {
 }
 
 bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
+	AtomicTimerMeasurement g(t_rasterIo);
+
 	// Compute overview & tiles needed
 	int ow = out.w;
 	int oh = out.h;
@@ -721,11 +724,11 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 
 	// Find the perspective transformation that takes the sampled image into the
 	// queried quad.
-	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
-			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
-			sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
-	printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
-			bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
+	// printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			// sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
+			// sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
+	// printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			// bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
 
 	float x_scale = sw / (sampledTlbr[2] - sampledTlbr[0]);
 	float y_scale = sh / (sampledTlbr[3] - sampledTlbr[1]);
@@ -775,25 +778,28 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 	//cv::Mat h = cv::getPerspectiveTransform(b,a);
 	if (h.type() == CV_64F) h.convertTo(h, CV_32F);
 	float *H = (float*) h.data;
-	printf(" - in_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
-			in_corners[0], in_corners[1],
-			in_corners[2], in_corners[3],
-			in_corners[4], in_corners[5],
-			in_corners[6], in_corners[7]);
-	printf(" - out_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
-			out_corners[0], out_corners[1],
-			out_corners[2], out_corners[3],
-			out_corners[4], out_corners[5],
-			out_corners[6], out_corners[7]);
+	// printf(" - in_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
+			// in_corners[0], in_corners[1],
+			// in_corners[2], in_corners[3],
+			// in_corners[4], in_corners[5],
+			// in_corners[6], in_corners[7]);
+	// printf(" - out_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
+			// out_corners[0], out_corners[1],
+			// out_corners[2], out_corners[3],
+			// out_corners[4], out_corners[5],
+			// out_corners[6], out_corners[7]);
 
 	// Warp affine must get correct sample w/h
 	int push_w = accessCache.w, push_h = accessCache.h;
 	accessCache.w = sw;
 	accessCache.h = sh;
-	printf(" - Warping %d %d %d -> %d %d %d\n",
-			accessCache.w, accessCache.h, accessCache.channels(),
-			out.w, out.h, out.channels());
-	accessCache.warpPerspective(out, H);
+	// printf(" - Warping %d %d %d -> %d %d %d\n",
+			// accessCache.w, accessCache.h, accessCache.channels(),
+			// out.w, out.h, out.channels());
+	{
+		AtomicTimerMeasurement g(t_warp);
+		accessCache.warpPerspective(out, H);
+	}
 	accessCache.w = push_w;
 	accessCache.h = push_h;
 
@@ -842,11 +848,11 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	// Find the affine transformation that takes the sampled image into the
 	// queried bbox.
-	printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
-			sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
-			sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
-	printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
-			bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
+	// printf(" - sampledTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			// sampledTlbr[0], sampledTlbr[1], sampledTlbr[2], sampledTlbr[3],
+			// sampledTlbr[2] - sampledTlbr[0], sampledTlbr[3] - sampledTlbr[1]);
+	// printf(" - queryTlbr %lf %lf | %lf %lf (%lf %lf)\n",
+			// bboxWm[0], bboxWm[1], bboxWm[2], bboxWm[3], bboxWm[2] - bboxWm[0], bboxWm[3] - bboxWm[1]);
 
 	float in_corners[4] = {
 		(float) ((bboxWm[0] - sampledTlbr[0]) * sw / (sampledTlbr[2] - sampledTlbr[0])),
@@ -898,7 +904,10 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	printf(" - Warping %d %d %d -> %d %d %d\n",
 			accessCache.w, accessCache.h, accessCache.channels(),
 			out.w, out.h, out.channels());
-	accessCache.warpAffine(out, A);
+	{
+		AtomicTimerMeasurement g(t_warp);
+		accessCache.warpAffine(out, A);
+	}
 	accessCache.w = push_w;
 	accessCache.h = push_h;
 
@@ -927,6 +936,7 @@ bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn*
 
 // Returns number of invalid tiles.
 int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
+	AtomicTimerMeasurement g(t_fetchBlocks);
 
 	if (tlbr[0] == fetchedCacheBox[0] and
 	    tlbr[1] == fetchedCacheBox[1] and
@@ -999,8 +1009,8 @@ static int floor_log2_i_(float x) {
 	// Could also convert x to an int and use intrinsics.
 	int i = 0;
 	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
-	//while ((1<<i) < xi) { i++; };
-	while ((1<<(i+1)) < xi) { i++; };
+	while ((1<<i) < xi) { i++; };
+	//while ((1<<(i+1)) < xi) { i++; };
 	return i-2;
 }
 
@@ -1016,8 +1026,8 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
 	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
-	printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
-			boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+	// printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
+			// boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
 
 	static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
 
@@ -1055,8 +1065,8 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
 	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
-	printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
-			boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+	// printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
+			// boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
 
 	//static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
 
@@ -1078,7 +1088,7 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 	while (not good) {
 		double s = (.5 * (1<<lvl)) / WebMercatorScale;
 
-#if 0
+#if 1
 		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
 		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
 		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s));
@@ -1095,8 +1105,8 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 		good = tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) and
 			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn);
 
-		printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[1],tlbr[0], tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) ? "yes" : "no");
-		printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[3],tlbr[2], tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) ? "yes" : "no");
+		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[1],tlbr[0], tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) ? "yes" : "no");
+		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[3],tlbr[2], tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) ? "yes" : "no");
 
 		if (not good)
 			lvl--;

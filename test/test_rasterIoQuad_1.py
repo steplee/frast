@@ -31,7 +31,8 @@ for t in np.linspace(0, 20, 1000):
     quad1 = ((quad.reshape(4,2) - ctr) @ R.T + ctr + off).reshape(-1)
     img2 = (d.rasterIoQuad(img1, quad1))
 
-    img2 = cv2.cvtColor(img2,cv2.COLOR_RGB2BGR)
-    cv2.imshow(' - Fetched 2 -', img2)
+    #img2 = cv2.cvtColor(img2,cv2.COLOR_RGB2BGR)
+    #cv2.imshow(' - Fetched 2 -', img2)
     #cv2.imshow(' - Fetched 4 (bad) -', badImg)
-    cv2.waitKey(433)
+    #cv2.waitKey(433)
+    #cv2.waitKey(1)
