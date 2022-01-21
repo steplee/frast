@@ -169,31 +169,6 @@ Dataset::~Dataset() {
 
 
 
-bool Dataset::get(TileImage& out, const BlockCoordinate& coord, MDB_txn** givenTxn) {
-	MDB_txn* theTxn;
-
-	if (givenTxn == nullptr) {
-		if (auto err = mdb_txn_begin(env, nullptr, MDB_RDONLY, &theTxn))
-			throw std::runtime_error(std::string{"(get) mdb_txn_begin failed with "} + mdb_strerror(err));
-	} else theTxn = *givenTxn;
-
-	MDB_val eimg_;
-	bool ret = get_(eimg_, coord, theTxn);
-
-	if (ret) {
-		if (givenTxn == nullptr) endTxn(&theTxn);
-		return ret != 0;
-	}
-
-	EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
-	{
-		AtomicTimerMeasurement g(t_decodeImage);
-		ret = decode(out, eimg);
-	}
-	if (givenTxn == nullptr) endTxn(&theTxn);
-	return ret != 0;
-}
-
 bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) {
 	MDB_txn* theTxn;
 
@@ -215,6 +190,7 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 		AtomicTimerMeasurement g(t_decodeImage);
 		ret = decode(out, eimg);
 	}
+
 	if (givenTxn == nullptr) endTxn(&theTxn);
 	return ret != 0;
 }
@@ -244,7 +220,7 @@ int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, boo
 	}
 }
 
-int Dataset::put(TileImage& in, const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
+int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
 
 	assert(false); // deprecated: the worker threads should do the encoding!
 
@@ -256,10 +232,9 @@ int Dataset::put(TileImage& in, const BlockCoordinate& coord, MDB_txn** givenTxn
 
 	//MDB_val val;
 	EncodedImage eimg;
-	EncodedImage eimg_tmp;
 	{
 		AtomicTimerMeasurement g(t_encodeImage);
-		encode(eimg, eimg_tmp, in);
+		encode(eimg, in);
 
 		//val = MDB_val{ eimg.size(), static_cast<void*>(eimg.data()) };
 	}
@@ -413,7 +388,7 @@ void WritableTile::copyFrom(const WritableTile& tile) {
 	}
 	coord = tile.coord;
 }
-void WritableTile::fillWith(const TileImage& im, const BlockCoordinate& c, const std::vector<uint8_t>& v) {
+void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v) {
 	AtomicTimerMeasurement g(t_tileBufferCopy);
 	image.copyFrom(im);
 	if (v.size() > eimg.size()) {
@@ -552,7 +527,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		tileBufferCommittedIdx[i] = 0;
 	}
 	for (int i=0; i<nBuffers; i++) {
-		tileBuffers[i].image = TileImage { tileSize, tileSize, channels };
+		tileBuffers[i].image = Image { tileSize, tileSize, channels };
 		tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);

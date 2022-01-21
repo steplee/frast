@@ -376,15 +376,17 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	GdalDset* dset[THREADS];
 	cv::Mat img[THREADS];
 	std::vector<uint8_t> tmpBuf[THREADS];
-	TileImage tileImages[THREADS];
+	//TileImage tileImages[THREADS];
+	Image tileImages[THREADS];
 	cv::Mat tile[THREADS];
 
 	for (int i=0; i<THREADS; i++) {
 		dset[i] = new GdalDset { "/data/naip/mocoNaip/whole.tif" };
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
-		tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
+		//tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
+		//tileImages[i].isOverview = false;
+		tileImages[i] = Image { 256, 256, dset[i]->nbands };
 		tileImages[i].alloc();
-		tileImages[i].isOverview = false;
 		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
 
@@ -429,7 +431,8 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
 						//encode_cv__(outTile.eimg, tile[tid]);
-						encode(outTile.eimg, tmpBuf[tid], tileImages[tid]);
+						//encode(outTile.eimg, tmpBuf[tid], tileImages[tid]);
+						encode(outTile.eimg, tileImages[tid]);
 
 						outTile.coord = coord;
 						//outDset.push(outTile);

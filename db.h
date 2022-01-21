@@ -175,11 +175,10 @@ class Dataset {
 		Dataset(const std::string& path, const DatabaseOptions& dopts=DatabaseOptions{}, OpenMode m=OpenMode::READ_ONLY);
 		~Dataset();
 
-		bool get(TileImage& out, const BlockCoordinate& coord, MDB_txn** txn);
-		bool get(    Image& out, const BlockCoordinate& coord, MDB_txn** txn);
+		bool get(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
 		bool get(std::vector<uint8_t>& out, const BlockCoordinate& coord, MDB_txn** txn); // By re-using output buffer, allocations will stop happening eventually
 		int get_(MDB_val& out, const BlockCoordinate& coord, MDB_txn* txn);
-		int put(TileImage& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
+		int put(Image& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put_(MDB_val& in,  const BlockCoordinate& coord, MDB_txn* txn, bool allowOverwrite);
 
@@ -264,7 +263,7 @@ class Dataset {
  *  eventually)
  */
 struct WritableTile {
-	TileImage image;
+	Image image;
 	BlockCoordinate coord;
 	std::vector<uint8_t> eimg;
 	int bufferIdx;
@@ -277,7 +276,7 @@ struct WritableTile {
 	inline WritableTile(const WritableTile& other) : coord(0,0,0) { copyFrom(other); }
 
 	void copyFrom(const WritableTile& tile);
-	void fillWith(const TileImage& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
+	void fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
 	void fillWith(const BlockCoordinate& c, const MDB_val& val);
 };
 
