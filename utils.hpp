@@ -25,6 +25,7 @@ class LruCache {
 	public:
 
 		inline LruCache(int cap) : capacity(cap) {}
+		inline LruCache() : capacity(0) {}
 
 		// Return true if hit cache
 		inline bool get(V& out, const K& k) const {

@@ -31,9 +31,43 @@
 //#include <omp.h>
 #endif
 
+bool decode(TileImage& out, const EncodedImageRef& eimg) {
+
+	//static_cast<TileHeader&>(out) = static_cast<const TileHeader*>(eimg.data)[0];
+	static_cast<TileHeader&>(out) = ((const TileHeader*)(eimg.data))[0];
+
+	cv::InputArray eimg_ { ((uint8_t*) eimg.data) + sizeof(TileHeader), static_cast<int>(eimg.len-sizeof(TileHeader)) };
+
+	if (out.w > 0 and out.h > 0) {
+		auto old_c = out.channels();
+		auto old_cv_type = old_c == 3 ? CV_8UC3 : old_c == 4 ? CV_8UC4 : CV_8U;
+		//cv::Mat out_ { out.buffer, out.h, out.w, old_cv_type };
+		cv::Mat out_ { out.h, out.w, old_cv_type, out.buffer };
+
+		cv::imdecode(eimg_, cv::IMREAD_UNCHANGED, &out_);
+
+		// TODO: Assert old whc = new whc
+
+		return false;
+	} else {
+		cv::Mat mat = cv::imdecode(eimg_, cv::IMREAD_UNCHANGED);
+		std::cout << " - decoded:\n " << mat << "\n";
+		std::cout << " - decoded:\n " << mat.rows << " " << mat.cols << " " << mat.channels() << "\n";
+
+		out.w = mat.cols;
+		out.h = mat.rows;
+		out.format = mat.channels() == 1 ? Image::Format::GRAY : mat.channels() == 3 ? Image::Format::RGB : Image::Format::RGBA;
+		size_t nbytes = out.size();
+		//out.buffer = (uint8_t*) malloc(nbytes);
+		out.alloc();
+		memcpy(out.buffer, mat.data, nbytes);
+
+		return false;
+	}
+}
 bool decode(Image& out, const EncodedImageRef& eimg) {
 
-	cv::InputArray eimg_ { (uint8_t*) eimg.data, static_cast<int>(eimg.len) };
+	cv::InputArray eimg_ { ((uint8_t*) eimg.data) + sizeof(TileHeader), static_cast<int>(eimg.len-sizeof(TileHeader)) };
 
 	if (out.w > 0 and out.h > 0) {
 		auto old_c = out.channels();
@@ -63,10 +97,18 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 	}
 }
 
-bool encode(EncodedImage& out, const Image& img) {
+
+//bool encode(EncodedImage& out, EncodedImage& tmp, const TileHeader& hdr, const Image& img) {
+bool encode(EncodedImage& out, EncodedImage& tmp, const TileImage& img) {
 	auto cv_type = img.format == Image::Format::GRAY ? CV_8UC1 : img.format == Image::Format::RGB ? CV_8UC3 : CV_8UC4;
 	cv::Mat mat { img.h, img.w, cv_type, img.buffer };
-	cv::imencode(".jpg", mat, out);
+	cv::imencode(".jpg", mat, tmp);
+	if (out.size() < tmp.size() + sizeof(TileHeader)) {
+		out.resize(2*tmp.size() + sizeof(TileHeader));
+	}
+	// Do not preserve struct alignment in encoded rep.
+	((TileHeader*)out.data())[0] = static_cast<const TileHeader&>(img);
+	memcpy(static_cast<uint8_t*>(out.data())+sizeof(TileHeader), tmp.data(), tmp.size());
 	return false;
 }
 

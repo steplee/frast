@@ -242,7 +242,8 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 					printf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
 
 					// Downsample
-					cv::resize(parent, child, cv::Size{tileSize,tileSize});
+					//cv::resize(parent, child, cv::Size{tileSize,tileSize});
+					cv::resize(parent, child, cv::Size{tileSize,tileSize}, 0,0, cv::INTER_LANCZOS4);
 
 					// Put
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);

@@ -19,6 +19,7 @@ extern "C" {
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
 constexpr int READER_TILE_CACHE_SIZE = 64;
+constexpr int WRITER_CACHE_CAPACITY = 16 /* times nthreads */;
 
 // Note: WebMercator the size of the map is actually 2x this.
 constexpr double WebMercatorScale = 20037508.342789248;
@@ -61,7 +62,7 @@ extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 			t_dbWrite, t_dbRead, t_dbEndTxn, t_tileBufferCopy,
 			t_rasterIo, t_fetchBlocks, t_warp,
 			t_total;
-void printDebugTimes();
+void printDebugTimes(); // Not used currenlty: descructors print automatically
 
 
 /*
@@ -129,6 +130,25 @@ struct DatabaseOptions {
 	uint64_t mapSize = 2lu * (1lu << 30lu); // 1GB
 };
 
+// This is a 2KB struct, which is a bit much...
+struct DatasetMeta {
+	// A region is considered a contiguous span of area.
+	// It is recorded at only non-overview levels.
+	struct Region {
+		double tlbr[4];
+	};
+	struct LevelMeta {
+		int64_t tlbr[4];
+		int64_t nTiles;
+	};
+	LevelMeta levelMetas[MAX_LVLS];
+	int nRegions;
+	Region *regions;
+};
+
+
+
+
 
 /*
  *
@@ -155,10 +175,11 @@ class Dataset {
 		Dataset(const std::string& path, const DatabaseOptions& dopts=DatabaseOptions{}, OpenMode m=OpenMode::READ_ONLY);
 		~Dataset();
 
-		bool get(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
+		bool get(TileImage& out, const BlockCoordinate& coord, MDB_txn** txn);
+		bool get(    Image& out, const BlockCoordinate& coord, MDB_txn** txn);
 		bool get(std::vector<uint8_t>& out, const BlockCoordinate& coord, MDB_txn** txn); // By re-using output buffer, allocations will stop happening eventually
 		int get_(MDB_val& out, const BlockCoordinate& coord, MDB_txn* txn);
-		int put(Image& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
+		int put(TileImage& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
 		int put_(MDB_val& in,  const BlockCoordinate& coord, MDB_txn* txn, bool allowOverwrite);
 
@@ -221,9 +242,15 @@ class Dataset {
 
 		MDB_dbi dbs[MAX_LVLS];
 
+		// Called by DatasetWritable every EndLvl.
+		void put_meta();
+
 	private:
 		// Just put this in main() for any program you care about.
 		//std::unique_ptr<AtomicTimerMeasurement> _t_total = std::make_unique<AtomicTimerMeasurement>(t_total);
+
+		// Called when opening.
+		void decode_meta_();
 
 };
 
@@ -237,7 +264,7 @@ class Dataset {
  *  eventually)
  */
 struct WritableTile {
-	Image image;
+	TileImage image;
 	BlockCoordinate coord;
 	std::vector<uint8_t> eimg;
 	int bufferIdx;
@@ -250,7 +277,7 @@ struct WritableTile {
 	inline WritableTile(const WritableTile& other) : coord(0,0,0) { copyFrom(other); }
 
 	void copyFrom(const WritableTile& tile);
-	void fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
+	void fillWith(const TileImage& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
 	void fillWith(const BlockCoordinate& c, const MDB_val& val);
 };
 
@@ -274,10 +301,10 @@ struct Command {
  *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.
  *
- *  TODO:
- *  This should also have a tile cache like DatasetReader does, because it would make
- *  frastAddo faster.
+ *  This also has a tile cache like DatasetReader does.
  *  Unlike DatasetReader::tileCache, however, each cache should be *thread local*.
+ *  It is not safe to use from other threads, and obviously within the current level being processed.
+ *  TODO: barely tested the caching mechanism.
  *
  */
 using atomic_int = std::atomic_int;
@@ -300,9 +327,14 @@ class DatasetWritable : public Dataset {
 		// Wait until all commands processed
 		void blockUntilEmptiedQueue();
 
+		// Not thread safe!
+		bool getCached(int tid, Image& out, const BlockCoordinate& coord, MDB_txn** txn);
+
 		constexpr static int MAX_THREADS = 8;
 	private:
 		int numWorkers, buffersPerWorker, nBuffers;
+
+		LruCache<uint64_t, Image> perThreadTileCache[MAX_THREADS];
 
 		void w_loop();
 		MDB_txn *w_txn = nullptr;
@@ -320,7 +352,6 @@ class DatasetWritable : public Dataset {
 		int tileBufferCommittedIdx[MAX_THREADS];
 		std::mutex tileBufferIdxMtx[MAX_THREADS];
 
-;
 		// A worker pushes the index of the buffer to this list. It never grows larger then N
 		//RingBuffer<int> pushedTileIdxs;
 		//std::vector<Command> waitingCommands;

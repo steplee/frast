@@ -30,6 +30,13 @@ PYBIND11_MODULE(frastpy, m) {
 		bool fetchBlocks(Image& out, uint64_t lvl, uint64_t tlbr[4]);
 	*/
 
+	m.def("getCellSize", [](int lvl) {
+			if (lvl < 0 or lvl >= MAX_LVLS)
+				throw std::runtime_error("Lvl must be >0 and <" + std::to_string(MAX_LVLS));
+				return WebMercatorCellSizes[lvl];
+	});
+	m.attr("WebMercatorScale") = WebMercatorScale;
+
     py::class_<DatasetReaderOptions>(m, "DatasetReaderOptions")
         .def(py::init<>())
 		.def_readwrite("oversampleRation", &DatasetReaderOptions::oversampleRatio)

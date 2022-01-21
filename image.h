@@ -17,6 +17,16 @@ struct EncodedImageRef {
 	uint8_t* data;
 };
 
+struct TileHeader {
+	bool isOverview : 1 = false;
+};
+
+struct Image;
+struct TileImage;
+bool decode(TileImage& out, const EncodedImageRef& eimg);
+bool decode(Image& out, const EncodedImageRef& eimg);
+bool encode(EncodedImage& out, EncodedImage& tmp, const TileImage& img);
+
 
 /*
  * You can 'view' other images, but it assumes the child lifetime does not out-last the view'ed parent.
@@ -137,6 +147,14 @@ struct Image {
 };
 
 
-bool decode(Image& out, const EncodedImageRef& eimg);
-bool encode(EncodedImage& out, const Image& img);
+struct TileImage : public Image, public TileHeader {
+
+	inline TileImage() : Image() {}
+	inline TileImage(int w, int h, int c) : Image(w,h,c) {}
+	inline TileImage(int w, int h, Format f) : Image(w,h,f) {}
+	inline TileImage(int w, int h, Format f, uint8_t* buf) : Image(w,h,f,buf) {}
+	inline TileImage(int w, int h, int c, uint8_t* buf) : Image(w,h,c,buf) {}
+
+};
+//static_assert(sizeof(TileImage) == sizeof(TileHeader) + sizeof(Image));
 

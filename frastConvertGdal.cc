@@ -85,6 +85,7 @@ GdalDset::GdalDset(const std::string& path) {
 	assert(nbands <= 4);
     auto band = dset->GetRasterBand(0 + 1);
     for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i);
+	std::cout << " - nbands: " << nbands << "\n";
 
     gdalType = dset->GetRasterBand(1)->GetRasterDataType();
     if (not(gdalType == GDT_Byte or gdalType == GDT_Int16 or gdalType == GDT_Float32)) {
@@ -373,13 +374,18 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	// Open one DB, and one tiff+buffer per thread
 
 	GdalDset* dset[THREADS];
-	cv::Mat tile[THREADS];
 	cv::Mat img[THREADS];
+	std::vector<uint8_t> tmpBuf[THREADS];
+	TileImage tileImages[THREADS];
+	cv::Mat tile[THREADS];
 
 	for (int i=0; i<THREADS; i++) {
 		dset[i] = new GdalDset { "/data/naip/mocoNaip/whole.tif" };
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
-		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type );
+		tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
+		tileImages[i].alloc();
+		tileImages[i].isOverview = false;
+		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
 
 	DatasetWritable outDset { outPath };
@@ -418,15 +424,16 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 					if (!dset[tid]->getTile(tile[tid], coord.z(), coord.y(), coord.x())) {
 
-					//if (tid == 0) { cv::imshow("img",tile[tid]); cv::waitKey(1); }
+						//if (tid == 0) { cv::imshow("img",tile[tid]); cv::waitKey(1); }
 
-					WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
+						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
-					encode_cv__(outTile.eimg, tile[tid]);
+						//encode_cv__(outTile.eimg, tile[tid]);
+						encode(outTile.eimg, tmpBuf[tid], tileImages[tid]);
 
-					outTile.coord = coord;
-					//outDset.push(outTile);
-					outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
+						outTile.coord = coord;
+						//outDset.push(outTile);
+						outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
 				}
 			}
 
