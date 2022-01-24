@@ -1,22 +1,48 @@
 
 
+######################
+# Options
+# Passing any value counts (only existence of flag is checked)
+# Available options:
+# 		DEBUG_RASTERIO
+# 		DEBUG_PRINT
+# 		NO_TIMING
+######################
+
 CXX := clang++
+
+debugFlags :=
+ifdef DEBUG_RASTERIO
+debugFlags := -DDEBUG_RASTERIO 
+endif
+ifdef DEBUG_PRINT
+debugFlags += -DDEBUG_PRINT 
+endif
+
+ifdef NO_TIMING
+TIMER_CFLAGS :=
+else
+TIMER_CFLAGS := -DUSE_TIMER -lfmt
+endif
+
+OPT := -O3 -g -march=native
+#OPT := -O3 -g -DNDEBUG -march=native
+#OPT := -O0 -g
+
+
+
 #CXX := g++
 HEADERS := $(wildcard *.h *.hpp)
-#SRCS := $(wildcard *.cc)
 main_srcs := image.cc db.cc
 frastConvertGdal_srcs := frastConvertGdal.cc
 gdal_libs := -lgdal
 
-BASE_CFLAGS := -std=c++17 -I/usr/local/include/eigen3 -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc -llmdb -lpthread  -fopenmp -march=native
-OPT := -O3 -g
-#OPT := -O0 -g
-
-TIMER_CFLAGS := -DUSE_TIMER -lfmt
-#TIMER_CFLAGS :=
+libs := -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc -llmdb -lpthread  
 
 pybind_flags := $(shell python3 -m pybind11 --includes)
 py_lib := -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e "\sLDLIBRARY =" | awk -F '=' '{print $$2}' | xargs | head -c -4 | tail -c +4)
+
+BASE_CFLAGS := -std=c++17 -I/usr/local/include/eigen3 -I/usr/local/include/opencv4 $(libs) -fopenmp $(debugFlags)
 
 all: frastConvertGdal frastAddo frastMerge frastInfo dbTest frastpy.so
 

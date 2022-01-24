@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <string>
+#include <unordered_set>
+#include <stack>
 
 #include <sys/stat.h>
 #include <stdexcept>
@@ -61,8 +63,9 @@ std::string prettyPrintNanos(double ns) {
 
 AtomicTimer t_total("total"),
 			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
-			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"),
-			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
+			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"), t_memcpyStrided("memcpyStrided"),
+			t_getCached("getCached"),
+			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbBeginTxn("dbBeginTxn"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
 void printDebugTimes() {}
 
 
@@ -102,6 +105,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 }
 
 bool Dataset::beginTxn(MDB_txn** txn, bool readOnly) const {
+	AtomicTimerMeasurement g(t_dbBeginTxn);
 	int flags = readOnly ? MDB_RDONLY : 0;
 	auto err = mdb_txn_begin(env, nullptr, flags, txn);
 	if (err)
@@ -121,9 +125,18 @@ bool Dataset::endTxn(MDB_txn** txn, bool abort) const {
 void Dataset::open_all_dbs() {
 	MDB_txn *txn;
 
-	int txn_flags = MDB_RDONLY;
+	//int txn_flags = MDB_RDONLY;
+	int txn_flags = readOnly ? MDB_RDONLY : 0;
 	if (auto err = mdb_txn_begin(env, nullptr, txn_flags, &txn)) {
 		throw std::runtime_error(std::string{"(open_all_dbs) mdb_txn_begin failed with "} + mdb_strerror(err));
+	}
+
+	{
+		int flags = 0;
+		flags = MDB_CREATE;
+		if (auto err = mdb_dbi_open(txn, "meta", flags, &metaDb))
+			std::cout << " - (open_all_dbs) failed to open metaDb \n";
+		decode_meta_(txn);
 	}
 
 	for (int i=0; i<MAX_LVLS; i++) {
@@ -137,6 +150,7 @@ void Dataset::open_all_dbs() {
 			//std::cout << " - (open_all_dbs) opened lvl " << i << "\n";
 		}
 	}
+
 
 	mdb_txn_commit(txn);
 }
@@ -364,6 +378,149 @@ bool Dataset::hasLevel(int lvl) const {
 	return dbs[lvl] != INVALID_DB;
 }
 
+void Dataset::decode_meta_(MDB_txn* txn) {
+	uint64_t zero = 0, one = 1;
+	MDB_val key1 { 8, &zero };
+	MDB_val val1;
+	MDB_val key2 { 8, &one };
+	MDB_val val2;
+	if (auto err = mdb_get(txn, metaDb, &key1, &val1)) {
+		printf(" - decode_meta_ failed.\n");
+		memset(&meta, 0, sizeof(DatasetMeta));
+	} else {
+		assert(val1.mv_size == sizeof(DatasetMeta::FixedSizeMeta));
+		memcpy(&meta.fixedSizeMeta, val1.mv_data, val1.mv_size);
+
+		if (auto err = mdb_get(txn, metaDb, &key2, &val2)) {
+		} else {
+			meta.regions.resize(val2.mv_size / sizeof(DatasetMeta::Region));
+			memcpy(meta.regions.data(), val2.mv_data, val2.mv_size);
+		}
+
+		dprintf(" - file has %zu regions, c=%d, tileSize=%d.\n", meta.regions.size(), channels(), tileSize());
+	}
+	for (int i=0; i<MAX_LVLS; i++) {
+		if (meta.fixedSizeMeta.levelMetas[i].nTiles > 0)
+			dprintf(" - (meta) lvl %2d : %6d tiles [%7d %7d -> %7d %7d]\n",
+					i, meta.fixedSizeMeta.levelMetas[i].nTiles,
+					meta.fixedSizeMeta.levelMetas[i].tlbr[0], meta.fixedSizeMeta.levelMetas[i].tlbr[1], meta.fixedSizeMeta.levelMetas[i].tlbr[2], meta.fixedSizeMeta.levelMetas[i].tlbr[3]);
+	}
+}
+void Dataset::recompute_meta_and_write_slow(MDB_txn* txn) {
+	// This function fills in two datas
+	//      1) The global regions
+	//      2) Each levels' tlbr
+	//
+	// My way of filling regions is to find connected components.
+	// But tiles are only considered if they have no parents.
+	//
+	// The level tlbr is simpler.
+	// Both done at the same time.
+
+	std::vector<DatasetMeta::Region> regions;
+
+	std::unordered_set<uint64_t> lastLvl;
+	for (int lvl=MAX_LVLS-1; lvl>=0; lvl--) {
+		std::unordered_set<uint64_t> curLvl;
+		std::unordered_set<uint64_t> curLvlCopy;
+		uint64_t lvlTlbr[4] = { (uint64_t)9e19, (uint64_t)9e19, 0, 0 };
+		//double curRegion[4] = { 9e19, 9e19, -9e19, -9e19 };
+		uint64_t curRegion[4] = { (uint64_t)9e19, (uint64_t)9e19, 0, 0 };
+		DatasetMeta::LevelMeta newLevelMeta = {{(uint64_t)9e19,(uint64_t)9e19,0,0}, 0};
+		if (not hasLevel(lvl)) {
+			newLevelMeta.nTiles = 0;
+			meta.fixedSizeMeta.levelMetas[lvl] = newLevelMeta;
+		} else {
+			iterLevel(lvl, txn, [&](const BlockCoordinate& coord, MDB_val& val) {
+				curLvl.insert(coord.c);
+				if (coord.x() < newLevelMeta.tlbr[0]) newLevelMeta.tlbr[0] = coord.x();
+				if (coord.y() < newLevelMeta.tlbr[1]) newLevelMeta.tlbr[1] = coord.y();
+				if (coord.x() > newLevelMeta.tlbr[2]) newLevelMeta.tlbr[2] = coord.x();
+				if (coord.y() > newLevelMeta.tlbr[3]) newLevelMeta.tlbr[3] = coord.y();
+			});
+
+			newLevelMeta.nTiles = curLvl.size();
+			meta.fixedSizeMeta.levelMetas[lvl] = newLevelMeta;
+
+			// Below, we erase from the map. But we need to save it to
+			// move it to lastLvl for the next iter. So make a copy here.
+			curLvlCopy = curLvl;
+			uint64_t ulvl = (uint64_t) lvl;
+
+			// Find connected components
+			while (not curLvl.empty()) {
+				std::stack<decltype(curLvl)::iterator> st;
+				st.push(curLvl.begin());
+				int nInRegion = 0;
+				std::unordered_set<uint64_t> seen;
+				seen.insert(*curLvl.begin());
+				while (not st.empty()) {
+					auto it = st.top();
+					st.pop();
+					BlockCoordinate coord = *it;
+					//seen.insert(*it);
+					curLvl.erase(it);
+					bool hasParent =
+						lastLvl.find(BlockCoordinate{ulvl+1, coord.y()*2+0, coord.x()*2+0}.c) != lastLvl.end() or
+						lastLvl.find(BlockCoordinate{ulvl+1, coord.y()*2+1, coord.x()*2+0}.c) != lastLvl.end() or
+						lastLvl.find(BlockCoordinate{ulvl+1, coord.y()*2+1, coord.x()*2+1}.c) != lastLvl.end() or
+						lastLvl.find(BlockCoordinate{ulvl+1, coord.y()*2+0, coord.x()*2+1}.c) != lastLvl.end();
+					if (hasParent) {
+						// Has parent, so this is not a valid tile to expand
+						//printf(" - Tile %luz %luy %lux has parent, stopping.\n", coord.z(),coord.y(),coord.x());
+					} else {
+						if (coord.x() < curRegion[0]) curRegion[0] = coord.x();
+						if (coord.y() < curRegion[1]) curRegion[1] = coord.y();
+						if (coord.x() > curRegion[2]) curRegion[2] = coord.x();
+						if (coord.y() > curRegion[3]) curRegion[3] = coord.y();
+						nInRegion++;
+						//printf(" - Growing with tile %luz %luy %lux.\n", coord.z(),coord.y(),coord.x());
+
+						for (int j=0; j<4; j++) {
+							int dy = j == 0 ? -1 : j == 1 ? 1 : 0;
+							int dx = j == 2 ? -1 : j == 3 ? 1 : 0;
+							BlockCoordinate neighCoord { ulvl, coord.y()+dy, coord.x()+dx };
+							auto neigh = curLvl.find(neighCoord.c);
+							if (neigh != curLvl.end() and seen.find(neighCoord.c) == seen.end()) {
+								seen.insert(neighCoord.c);
+								st.push(neigh);
+							}
+						}
+					}
+				}
+
+				// We've exhausted a connected component.
+				// If curRegion is valid, it is a new one!
+				if (nInRegion > 0) {
+					regions.push_back({
+							curRegion[0] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
+							curRegion[1] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
+							curRegion[2] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
+							curRegion[3] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale });
+					printf(" - Found region (lvl %d) (%d tiles) (%lf %lf -> %lf %lf)\n", lvl,
+							nInRegion, regions.back().tlbr[0],regions.back().tlbr[1], regions.back().tlbr[2], regions.back().tlbr[3]);
+				}
+			}
+		}
+		lastLvl = curLvlCopy;
+	}
+
+	dprintf(" - Found %d regions.\n", regions.size());
+	// Put fixed size level tlbrs
+	// Put variable sized regions
+	uint64_t zero = 0, one = 1;
+	MDB_val key1 { 8, &zero };
+	MDB_val key2 { 8, &one };
+	MDB_val val1 { sizeof(meta.fixedSizeMeta), (void*) &meta.fixedSizeMeta };
+	MDB_val val2 { sizeof(DatasetMeta::Region)*regions.size(), (void*)regions.data() };
+	if (auto err = mdb_put(txn, metaDb, &key1, &val1, 0))
+		throw std::runtime_error("mdb_put error");
+	if (auto err = mdb_put(txn, metaDb, &key2, &val2, 0))
+		throw std::runtime_error("mdb_put error");
+
+	meta.regions = std::move(regions);
+}
+
 
 
 
@@ -411,7 +568,7 @@ DatasetWritable::~DatasetWritable() {
 	doStop = true;
 	w_cv.notify_one();
 	if (w_thread.joinable()) w_thread.join();
-	printf (" - (~DatasetWritable join w_thread)\n");
+	dprintf (" - (~DatasetWritable join w_thread)\n");
 }
 
 void DatasetWritable::w_loop() {
@@ -432,30 +589,30 @@ void DatasetWritable::w_loop() {
 			}
 
 			if (doStop and nWaitingCommands == 0) {
-				printf(" - (wthread exiting.)\n");
+				dprintf(" - (wthread exiting.)\n");
 				break;
 			}
 			if (!doStop and nWaitingCommands == 0) {
-				printf(" - (wthread, spurious wakeup.\n");
+				dprintf(" - (wthread, spurious wakeup.\n");
 			}
 
 
 			// Lock the mutex if creating or ending a level.
 			// The TileReady command needn't hold mutex.
 			if (theCommand.cmd == Command::BeginLvl) {
-				printf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
+				dprintf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) endTxn(&w_txn);
 				this->createLevelIfNeeded(theCommand.data.lvl);
 				beginTxn(&w_txn, false);
 				nWaitingCommands--;
 			} else if (theCommand.cmd == Command::EndLvl) {
-				printf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
+				dprintf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				assert(w_txn);
 				endTxn(&w_txn);
 				//beginTxn(&w_txn, false);
 				nWaitingCommands--;
 			} else if (theCommand.cmd == Command::EraseLvl) {
-				printf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
+				dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) {
 					printf(" - Cannot have open w_txn while erasing level. Should sent 'EndLvl' first.\n"); fflush(stdout);
 					exit(1);
@@ -527,7 +684,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		tileBufferCommittedIdx[i] = 0;
 	}
 	for (int i=0; i<nBuffers; i++) {
-		tileBuffers[i].image = Image { tileSize, tileSize, channels };
+		tileBuffers[i].image = Image { tileSize(), tileSize(), channels() };
 		tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);
@@ -616,20 +773,20 @@ void DatasetWritable::blockUntilEmptiedQueue() {
 
 bool DatasetWritable::getCached(int tid, Image& out, const BlockCoordinate& coord, MDB_txn** txn) {
 	if (tid < 0 or tid >= MAX_THREADS) {
-		printf(" - (getCached) bad tid, not looking at cache", coord.z(), coord.y(), coord.x());
+		dprintf(" - (getCached) bad tid, not looking at cache", coord.z(), coord.y(), coord.x());
 		return get(out,coord,txn);
 	}
 
 	auto& tileCache = perThreadTileCache[tid];
 	if (tileCache.get(out, coord.c)) {
-		printf(" - (getCached) [thr %d] cache hit for tile %luz %luy %lux\n", tid, coord.z(), coord.y(), coord.x());
+		//printf(" - (getCached) [thr %d] cache hit for tile %luz %luy %lux\n", tid, coord.z(), coord.y(), coord.x());
 		return false;
 	}
 	if (get(out,coord,txn)) {
 		// Failed. Do not cache.
 		return true;
 	}
-	printf(" - (getCached) [thr %d] cache miss for tile %luz %luy %lux\n", tid, coord.z(), coord.y(), coord.x());
+	//printf(" - (getCached) [thr %d] cache miss for tile %luz %luy %lux\n", tid, coord.z(), coord.y(), coord.x());
 	tileCache.set(coord.c, out);
 	return false;
 }
@@ -663,8 +820,8 @@ DatasetReader::DatasetReader(const std::string& path, const DatasetReaderOptions
 		threadIds[i] = threads[i].get_id();
 	}
 
-	accessCache1 = Image {                      tileSize,                      tileSize, channels };
-	accessCache  = Image { dopts.maxSampleTiles*tileSize, dopts.maxSampleTiles*tileSize, channels };
+	accessCache1 = Image {                      tileSize(),                      tileSize(), channels() };
+	accessCache  = Image { dopts.maxSampleTiles*tileSize(), dopts.maxSampleTiles*tileSize(), channels() };
 	accessCache1.calloc();
 	accessCache .calloc();
 }
@@ -716,8 +873,24 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 		*std::max_element(quadColMajor+4, quadColMajor+8)
 	};
 
+	double edgeLen;
+	{
+		// Heron's formula. This is a bit overkill.
+		auto length_ = [](float x1, float y1, float x2, float y2) { return sqrtf((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)); };
+		/*
+		float a = length_(quad[0*2+0], quad[0*2+1], quad[1*2+0], quad[1*2+1]);
+		float b = length_(quad[0*2+0], quad[0*2+1], quad[2*2+0], quad[2*2+1]);
+		float c = length_(quad[0*2+0], quad[0*2+1], quad[3*2+0], quad[3*2+1]);
+		float s = (a+b+c) / 2.f;
+		edgeLen = sqrtf(2.f * sqrtf(s * (s-a) * (s-b) * (s-c)));
+		*/
+		edgeLen = .5 * (
+			length_(quad[0*2+0], quad[0*2+1], quad[1*2+0], quad[1*2+1]) +
+			length_(quad[1*2+0], quad[1*2+1], quad[3*2+0], quad[3*2+1]));
+	}
+	dprintf(" - Edge Len: %f with ow oh %d %d\n", edgeLen, ow, oh);
 	uint64_t tileTlbr[4];
-	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, bboxWm, r_txn_);
+	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, edgeLen, bboxWm, r_txn_);
 	double s = (.5 * (1<<lvl)) / WebMercatorScale;
 
 	/*
@@ -735,9 +908,9 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 
 	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
 	// sampled width/height
-	int sw = nx*tileSize, sh = ny*tileSize;
-	printf(" - (rasterIoQuad) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
-			ny,nx, sh,sw, oh,ow);
+	int sw = nx*tileSize(), sh = ny*tileSize();
+	dprintf(" - (rasterIoQuad) sampling [%d %d tiles] [%d %d px] [lvl %2d] to fill outputBuffer of size [%d %d px]\n",
+			ny,nx, sh,sw, lvl, oh,ow);
 
 	// If >2 tiles, and enabled, use bg threads
 	// In either case, after this, accessCache will have the needed tiles.
@@ -783,8 +956,8 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 
 #ifdef DEBUG_RASTERIO
 	cv::Mat dbgImg1 = cv::Mat(sh, sw, accessCache.channels()==3?CV_8UC3:CV_8UC1, accessCache.buffer).clone();
-	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize, sw, 1)) = cv::Scalar{0};
-	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize, 0, 1, sh)) = cv::Scalar{0};
+	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize(), sw, 1)) = cv::Scalar{0};
+	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize(), 0, 1, sh)) = cv::Scalar{0};
 	for (int i=0; i<4; i++)
 		//cv::circle(dbgImg1, cv::Point{(int)in_corners[2*i+0], (int)in_corners[2*i+1]}, 2, cv::Scalar{0,0,255}, -1);
 		cv::line(dbgImg1,
@@ -859,8 +1032,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
 	// sampled width/height
-	int sw = nx*tileSize, sh = ny*tileSize;
-	printf(" - (rasterIo) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
+	int sw = nx*tileSize(), sh = ny*tileSize();
+	dprintf(" - (rasterIo) sampling [%d %d tiles] [%d %d px] to fill outputBuffer of size [%d %d px]\n",
 			ny,nx, sh,sw, oh,ow);
 
 	// If >2 tiles, and enabled, use bg threads
@@ -905,8 +1078,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 #ifdef DEBUG_RASTERIO
 	cv::Mat dbgImg1 = cv::Mat(sh, sw, accessCache.channels()==3?CV_8UC3:CV_8UC1, accessCache.buffer).clone();
-	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize, sw, 1)) = cv::Scalar{0};
-	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize, 0, 1, sh)) = cv::Scalar{0};
+	for (int y=0; y<ny; y++) dbgImg1(cv::Rect(0, y*tileSize(), sw, 1)) = cv::Scalar{0};
+	for (int x=0; x<nx; x++) dbgImg1(cv::Rect(x*tileSize(), 0, 1, sh)) = cv::Scalar{0};
 	cv::Point pt1 { (int)(inset_tl_x_i), (int)(inset_tl_y_i) };
 	cv::Point pt2 { (int)(inset_tl_x_i+scale_x*ow), (int)(inset_tl_y_i*scale_y*oh) };
 	cv::rectangle(dbgImg1, pt1, pt2, cv::Scalar{255,0,0}, 2);
@@ -925,7 +1098,7 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	int push_w = accessCache.w, push_h = accessCache.h;
 	accessCache.w = sw;
 	accessCache.h = sh;
-	printf(" - Warping %d %d %d -> %d %d %d\n",
+	dprintf(" - Warping %d %d %d -> %d %d %d\n",
 			accessCache.w, accessCache.h, accessCache.channels(),
 			out.w, out.h, out.channels());
 	{
@@ -940,25 +1113,32 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 }
 
 bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn) {
+	AtomicTimerMeasurement g(t_getCached);
 	if (opts.nthreads > 1) tileCacheMtx.lock();
-	if (tileCache.get(out, coord.c)) {
-		printf(" - (getCached) cache hit for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
-		if (opts.nthreads > 1) tileCacheMtx.unlock();
-		return false;
+	{
+		if (tileCache.get(out, coord.c)) {
+			//printf(" - (getCached) cache hit for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
+			if (opts.nthreads > 1) tileCacheMtx.unlock();
+			return false;
+		}
 	}
+
 	if (opts.nthreads > 1) tileCacheMtx.unlock();
 	if (get(out,coord,txn)) {
 		// Failed. Do not cache.
 		return true;
 	}
-	printf(" - (getCached) cache miss for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
+	//printf(" - (getCached) cache miss for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
 	if (opts.nthreads > 1) tileCacheMtx.lock();
-	tileCache.set(coord.c, out);
+	{
+		tileCache.set(coord.c, out);
+	}
 	if (opts.nthreads > 1) tileCacheMtx.unlock();
 	return false;
 }
 
 // Returns number of invalid tiles.
+// Note: the w and h of 'out' may be changed by function! (But capacity will not, and should be high enough)
 int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	AtomicTimerMeasurement g(t_fetchBlocks);
 
@@ -966,8 +1146,9 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 	    tlbr[1] == fetchedCacheBox[1] and
 	    tlbr[2] == fetchedCacheBox[2] and
 	    tlbr[3] == fetchedCacheBox[3]) {
+		//AtomicTimerMeasurement g(t_encodeImage);
 		out = fetchedCache;
-		printf(" - (fetchBlocks) cache hit.\n");
+		dprintf(" - (fetchBlocks) cache hit.\n");
 		return fetchedCacheMissing;
 	}
 
@@ -980,10 +1161,13 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 
 	int32_t nx = tlbr[2] - tlbr[0];
 	int32_t ny = tlbr[3] - tlbr[1];
-	assert(out.w >= tileSize*nx);
-	assert(out.h >= tileSize*ny);
-	int sw = nx*tileSize; // Sampled width and height
-	int sh = ny*tileSize;
+	//assert(out.w >= tileSize()*nx);
+	//assert(out.h >= tileSize()*ny);
+	int sw = nx*tileSize(); // Sampled width and height
+	int sh = ny*tileSize();
+	assert(out.capacity >= sw*sh*out.channels());
+	out.w = sw;
+	out.h = sh;
 
 	int nMissing = 0;
 
@@ -993,15 +1177,15 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 		for (int xi=0; xi<nx; xi++) {
 			BlockCoordinate tileCoord { lvl, tlbr[1]+yi, tlbr[0]+xi };
 			if (getCached(accessCache1, tileCoord, &txn0)) {
-				printf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
-				memset(accessCache1.buffer, 0, tileSize*tileSize*channels);
+				dprintf(" - Failed to get tile %lu %lu %lu\n", tileCoord.z(), tileCoord.y(), tileCoord.x());
+				memset(accessCache1.buffer, 0, tileSize()*tileSize()*channels());
 				nMissing++;
 			}
 			//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
-			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize*sw*channels) + xi*(tileSize*channels);
-			if (channels == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize, tileSize);
-			else if (channels == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize, tileSize);
-			else if (channels == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize, tileSize);
+			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
+			if (channels() == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+			else if (channels() == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+			else if (channels() == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 		}
 		}
 	} else {
@@ -1015,7 +1199,11 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 
 
 	// Populate cache.
+	dprintf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
+	{
+	//AtomicTimerMeasurement g(t_encodeImage);
 	fetchedCache = out;
+	}
 	fetchedCacheMissing = nMissing;
 	fetchedCacheBox[0] = tlbr[0];
 	fetchedCacheBox[1] = tlbr[1];
@@ -1033,8 +1221,9 @@ static int floor_log2_i_(float x) {
 	// Could also convert x to an int and use intrinsics.
 	int i = 0;
 	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
-	while ((1<<i) < xi) { i++; };
-	//while ((1<<(i+1)) < xi) { i++; };
+	//while ((1<<i) < xi) { i++; };
+	while ((1<<(i+1)) < xi) { i++; };
+	//i=1; while ((1<<(i-1)) < xi) { i++; };
 	return i-2;
 }
 
@@ -1048,10 +1237,10 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 	double boxW = bboxWm[2] - bboxWm[0];
 	double boxH = bboxWm[3] - bboxWm[1];
 	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
-	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
+	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize());
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
-	// printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
-			// boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+	// printf(" - Given bboxWm %lfw %lfh, tileSize() %d, selecting level %d with cell size %f\n",
+			// boxW,boxH,tileSize(),lvl_,WebMercatorCellSizesf[lvl_]);
 
 	static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
 
@@ -1062,10 +1251,10 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 		lvl += step;
 		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
 		if (lvl == -1) {
-			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
+			dprintf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
 		}
 	}
-	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
+	if (lvl_ != lvl) dprintf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
 
 	// (3)
 
@@ -1074,6 +1263,12 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 }
 
 uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
+	double boxW = bboxWm[2] - bboxWm[0];
+	double boxH = bboxWm[3] - bboxWm[1];
+	float meanEdgeLen = (boxW + boxH) * .5f; // geometric mean makes more sense really.
+	return findBestLvlAndTlbr_dataDependent(tlbr,imgH,imgW, meanEdgeLen, bboxWm, txn);
+}
+uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn) {
 
 	// 1. Find optimal level
 	// 2. Find closest level that exists in entire db
@@ -1084,13 +1279,10 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 	//       all interior tiles exist, without actually checking.
 
 	// (1)
-	double boxW = bboxWm[2] - bboxWm[0];
-	double boxH = bboxWm[3] - bboxWm[1];
-	float mean = (boxW + boxH) * .5f; // geometric mean makes more sense really.
-	float x = (mean / static_cast<float>(std::min(imgH,imgW))) * (tileSize);
+	float x = (edgeLen / static_cast<float>(std::min(imgH,imgW))) * (tileSize());
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
-	// printf(" - Given bboxWm %lfw %lfh, tileSize %d, selecting level %d with cell size %f\n",
-			// boxW,boxH,tileSize,lvl_,WebMercatorCellSizesf[lvl_]);
+	//printf(" - Given bboxWm %lfw %lfh, tileSize() %d, selecting level %d with cell size %f\n",
+			//bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],tileSize(),lvl_,WebMercatorCellSizesf[lvl_]);
 
 	//static constexpr int permOrder[MAX_LVLS] = { 10,11,12,13,14,15,16,17,18, 9,8,7,6,5,4, 19,20,21,22, 3,2,1,0, 23,24,25 };
 
@@ -1101,10 +1293,10 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 		lvl += step;
 		if (lvl == MAX_LVLS) { lvl = lvl_-1; step = -1; }
 		if (lvl == -1) {
-			printf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
+			dprintf(" - Failed to find valid db for lvl (originally selected %d)\n", lvl_);
 		}
 	}
-	if (lvl_ != lvl) printf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
+	if (lvl_ != lvl) dprintf(" - Originally picked lvl %d, but not index there, so used lvl %lu\n", lvl_, lvl);
 	lvl_ = lvl;
 
 	// (3)
@@ -1132,8 +1324,10 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[1],tlbr[0], tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) ? "yes" : "no");
 		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[3],tlbr[2], tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) ? "yes" : "no");
 
-		if (not good)
+		if (not good) {
 			lvl--;
+			//printf(" - (findBestLvlAndTlbr_dataDependent) missing tile on lvl %d, going down one to %d\n", lvl+1,lvl);
+		}
 
 		if (lvl <= 0) {
 			printf(" - (findBestLvlAndTlbr) picked lvl %d, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);

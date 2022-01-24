@@ -13,8 +13,11 @@ extern "C" {
 #include <condition_variable>
 #include <cassert>
 
+#include "common.h"
 #include "image.h"
 #include "utils.hpp"
+#include "timer.hpp"
+
 
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
@@ -47,65 +50,24 @@ constexpr float WebMercatorCellSizesf[MAX_LVLS] = {
 	2.3886571339117584, 1.1943285669558792
 };
 
-// Assumes channelStride = 1.
-template <int channels>
-inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowStride, size_t w, size_t h) {
-	for (int y=0; y<h; y++)
-	for (int x=0; x<w; x++)
-	for (int c=0; c<channels; c++) {
-		dst[y*rowStride*channels + x*channels + c] = src[y*w*channels+x*channels+c];
-	}
-}
-
-#include "timer.hpp"
 extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
-			t_dbWrite, t_dbRead, t_dbEndTxn, t_tileBufferCopy,
-			t_rasterIo, t_fetchBlocks, t_warp,
+			t_dbWrite, t_dbRead, t_dbBeginTxn, t_dbEndTxn, t_tileBufferCopy,
+			t_rasterIo, t_fetchBlocks, t_warp, t_memcpyStrided,
+			t_getCached,
 			t_total;
 void printDebugTimes(); // Not used currenlty: descructors print automatically
 
-
-/*
-extern std::atomic<double> _encodeTime;
-extern std::atomic<double> _decodeTime;
-extern std::atomic<double> _imgMergeTime;
-extern double _dbWriteTime;
-extern double _dbReadTime;
-extern double _dbEndTxnTime;
-extern double _totalTime;
-extern std::atomic<double> _tileBufferCopyTime;
-void printDebugTimes();
-
-template <class T>
-double getNanoDiff(T b, T a) {
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(b-a).count() * 1e-3;
+// Assumes channelStride = 1.
+template <int channels>
+inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowStride, size_t w, size_t h) {
+	AtomicTimerMeasurement g(t_memcpyStrided);
+	for (int y=0; y<h; y++)
+	for (int x=0; x<w; x++)
+	for (int c=0; c<channels; c++) {
+		//dst[y*rowStride*channels + x*channels + c] = src[y*w*channels+x*channels+c];
+		dst[y*rowStride*channels + x*channels + c] = *(src++);
+	}
 }
-std::string prettyPrintNanos(double us);
-
-struct AddTimeGuard {
-	std::chrono::time_point<std::chrono::high_resolution_clock> st;
-	double& acc;
-	inline AddTimeGuard(double& acc) : acc(acc) {
-		st = std::chrono::high_resolution_clock::now();
-	}
-	inline ~AddTimeGuard() {
-		auto et = std::chrono::high_resolution_clock::now();
-		acc += std::chrono::duration_cast<std::chrono::nanoseconds>(et-st).count();
-	}
-};
-struct AddTimeGuardAsync {
-	std::chrono::time_point<std::chrono::high_resolution_clock> st;
-	std::atomic<double>& acc;
-	inline AddTimeGuardAsync(std::atomic<double>& acc) : acc(acc) {
-		st = std::chrono::high_resolution_clock::now();
-	}
-	inline ~AddTimeGuardAsync() {
-		auto et = std::chrono::high_resolution_clock::now();
-		double old = acc.load();
-		acc = old + std::chrono::duration_cast<std::chrono::nanoseconds>(et-st).count();
-	}
-};
-*/
 
 struct BlockCoordinate {
 	uint64_t c;
@@ -130,20 +92,23 @@ struct DatabaseOptions {
 	uint64_t mapSize = 2lu * (1lu << 30lu); // 1GB
 };
 
-// This is a 2KB struct, which is a bit much...
+// This is a >2KB struct, which is a bit much...
 struct DatasetMeta {
 	// A region is considered a contiguous span of area.
 	// It is recorded at only non-overview levels.
 	struct Region {
-		double tlbr[4];
+		double tlbr[4] = {0};
 	};
 	struct LevelMeta {
-		int64_t tlbr[4];
-		int64_t nTiles;
+		uint64_t tlbr[4] = {0};
+		uint64_t nTiles = 0;
 	};
-	LevelMeta levelMetas[MAX_LVLS];
-	int nRegions;
-	Region *regions;
+	struct FixedSizeMeta {
+		LevelMeta levelMetas[MAX_LVLS];
+		uint32_t channels;
+		uint32_t tileSize;
+	} fixedSizeMeta;
+	std::vector<Region> regions;
 };
 
 
@@ -160,16 +125,6 @@ class Dataset {
 		enum class OpenMode {
 			READ_ONLY,
 			READ_WRITE
-		};
-
-		struct __attribute__((packed)) LevelHeader {
-			bool valid : 1;
-			int32_t tlbr[4];
-		};
-		struct __attribute__((packed)) DatasetHeader {
-			LevelHeader lvlHeaders[MAX_LVLS];
-			int channels;
-			int tileSize;
 		};
 
 		Dataset(const std::string& path, const DatabaseOptions& dopts=DatabaseOptions{}, OpenMode m=OpenMode::READ_ONLY);
@@ -223,14 +178,21 @@ class Dataset {
 		int dropLvl(int lvl, MDB_txn* txn);
 
 		// TODO: Read this from header, it is not done right now.
-		int channels = 3;
-		int tileSize = 256;
+
+		// This is a slow and naive function. Only call after a modifying app is finished
+		// doing stuff on all levels.
+		// TODO: Replace with something more elegant
+		void recompute_meta_and_write_slow(MDB_txn* txn);
+
+		void setChannels(int32_t c) { meta.fixedSizeMeta.channels = c; }
+		void setTileSize(int32_t c) { meta.fixedSizeMeta.tileSize = c; }
+		inline int32_t channels() { return meta.fixedSizeMeta.channels; }
+		inline int32_t tileSize() { return meta.fixedSizeMeta.tileSize; }
 
 	protected:
 		std::string path;
 		bool readOnly;
 		bool doStop = false;
-
 
 		MDB_env *env = nullptr;
 
@@ -240,16 +202,17 @@ class Dataset {
 		double extent[4];
 
 		MDB_dbi dbs[MAX_LVLS];
+		MDB_dbi metaDb;
 
-		// Called by DatasetWritable every EndLvl.
-		void put_meta();
+
+		DatasetMeta meta;
 
 	private:
 		// Just put this in main() for any program you care about.
 		//std::unique_ptr<AtomicTimerMeasurement> _t_total = std::make_unique<AtomicTimerMeasurement>(t_total);
 
 		// Called when opening.
-		void decode_meta_();
+		void decode_meta_(MDB_txn* txn);
 
 };
 
@@ -295,7 +258,7 @@ struct Command {
 
 /*
  * This makes the assumption that no workers commit any of the same tiles!
- * (At least, invetween BeginLvl and EndLvl commands)
+ * (At least, inbetween BeginLvl and EndLvl commands)
  * This is because only one lonnnng write transaction is held the entire duration.
  *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.
@@ -341,19 +304,15 @@ class DatasetWritable : public Dataset {
 		std::condition_variable w_cv;
 		std::mutex w_mtx;
 		std::vector<WritableTile> tileBuffers; // We will have exactly numThreads * buffersPerWorker elements.
-		// Sequence number of lended buffer &
-		// Sequence number of commited-to-database image.
-		// Originally I used these atomic ints, but I thought they caused a bug, which they weren't.
-		// Still I'm not convinced it is correct, since they are not atomic w.r.t eachother.
-		//atomic_int tileBufferLendedIdx[MAX_THREADS];
-		//atomic_int tileBufferCommittedIdx[MAX_THREADS];
+
+		// Would be better to use one atomic int that stores the difference between lended/commited,
+		// then does compare-and-swap, rather than locking.
 		int tileBufferLendedIdx[MAX_THREADS];
 		int tileBufferCommittedIdx[MAX_THREADS];
 		std::mutex tileBufferIdxMtx[MAX_THREADS];
 
-		// A worker pushes the index of the buffer to this list. It never grows larger then N
-		//RingBuffer<int> pushedTileIdxs;
-		//std::vector<Command> waitingCommands;
+		// A worker pushes the index of the buffer to this list. It never grows larger then N.
+		// If it would, sendCommand() blocks
 		RingBuffer<Command> pushedCommands;
 
 };
@@ -362,7 +321,7 @@ class DatasetWritable : public Dataset {
 
 struct DatasetReaderOptions : public DatabaseOptions {
 	float oversampleRatio = 1.f;
-	int maxSampleTiles = 5;
+	int maxSampleTiles = 6;
 	bool forceGray = false;
 	bool forceRgb = false;
 
@@ -435,6 +394,7 @@ class DatasetReader : public Dataset {
 		// the second func finds the best level that *actually covers* the AABB.
 		uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]);
 		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn);
+		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn);
 
 };
 

@@ -199,7 +199,8 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 
 	constexpr bool debug = false;
 
-	constexpr int rtN = 128;
+	//constexpr int rtN = 128;
+	constexpr int rtN = 8;
 	constexpr int N = rtN * rtN;
 	assert(tileSize % rtN == 0);
 
@@ -210,16 +211,18 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	// Start off as wm, but transformed to prj
 	RowMatrix2Xd pts { 2 , N };
 	{
-		double start = 0;
-		double end   = 1.;
+		double start = 0, end = 1.;
 		//start = .5 / rtN;
 		//end   = 1. - .5 / rtN;
 		//start = 1. / rtN;
 		//end   = 1. - 1. / rtN;
+		//start = -1. / rtN;
+		//end = 1. + 1. / rtN;
 		double s = static_cast<double>(1 << z);
 		double scale = WebMercatorScale / (s * .5);
 		double off_x = (static_cast<double>(x)) * WebMercatorScale / s * 2 - WebMercatorScale;
 		double off_y = (static_cast<double>(y)) * WebMercatorScale / s * 2 - WebMercatorScale;
+		
 		//using ArrayT = Array<double,rtN,1>;
 		using ArrayT = Array<double,-1,1>;
 		auto X = ArrayT::LinSpaced(rtN, start, end) * scale + off_x;
@@ -276,16 +279,25 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	}
 	//if (y_flipped) for (int i=0; i<N/2; i++) std::swap(meshPtsf(i,1), meshPtsf(N-i-1,1));
 
+#if 0
 	cv::Mat meshMat { rtN, rtN, CV_32FC2, meshPtsf.data() };
+	//meshMat = meshMat(cv::Rect(1,1,rtN-2,rtN-2));
+	//std::cout << meshMat << "\n";
 	if (meshMat.cols != ow or meshMat.rows != oh) {
-	cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_LINEAR);
-	//cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_CUBIC);
+		cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_LINEAR);
+		//cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_CUBIC);
 	}
 	//std::cout << meshMat << "\n";
 
 	//out.create(imgPrj.rows, imgPrj.cols, imgPrj.type());
-	//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
-	cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
+	cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+	//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
+#else
+	int channels = imgPrj.channels();
+	Image src { imgPrj.rows, imgPrj.cols, channels, imgPrj.data };
+	Image dst { out.rows, out.cols, channels, out.data };
+	src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
+#endif
 
 	return false;
 }
@@ -381,7 +393,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	cv::Mat tile[THREADS];
 
 	for (int i=0; i<THREADS; i++) {
-		dset[i] = new GdalDset { "/data/naip/mocoNaip/whole.tif" };
+		dset[i] = new GdalDset { srcTiff };
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
 		//tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
 		//tileImages[i].isOverview = false;
@@ -391,6 +403,14 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	}
 
 	DatasetWritable outDset { outPath };
+
+	// Configure #channels and tileSize.
+	int32_t channels = dset[0]->nbands;
+	int32_t tileSize = 256;
+	outDset.setChannels(channels);
+	outDset.setTileSize(tileSize);
+
+
 	outDset.configure(THREADS, 4);
 	std::cout << " - beginning" << std::endl;
 
@@ -426,7 +446,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 					if (!dset[tid]->getTile(tile[tid], coord.z(), coord.y(), coord.x())) {
 
-						//if (tid == 0) { cv::imshow("img",tile[tid]); cv::waitKey(1); }
+						//if (tid == 0) { cv::imshow("tile", tile[tid]); cv::waitKey(0); }
 
 						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
@@ -459,6 +479,14 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		printf(" - Final Tlbr on Lvl %d:\n", lvl);
 		printf(" -        %lu %lu -> %lu %lu\n", finalTlbr[0], finalTlbr[1], finalTlbr[2], finalTlbr[3]);
 		printf(" -        %lu tiles (%lu missing interior, %lu missing from input aoi)\n", nHere, nExpected-nHere, nExpectedInput-nHere);
+	}
+
+
+	{
+		MDB_txn* txn;
+		outDset.beginTxn(&txn, false);
+		outDset.recompute_meta_and_write_slow(txn);
+		outDset.endTxn(&txn);
 	}
 
 	printDebugTimes();

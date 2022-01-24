@@ -382,3 +382,90 @@ void Image::warpPerspective(Image& out, float H[9]) const {
 #endif
 }
 
+
+
+
+template <int C> void my_remapRemap(Image& out, const Image& in, const float* map, int mw, int mh);
+
+// There is no cv implementation here anyway, so just write full func below.
+void Image::remapRemap(Image& out, const float* map, int mapSizeW, int mapSizeH) const {
+	if (out.channels() == 1) my_remapRemap<1>(out, *this, map, mapSizeW, mapSizeH);
+	else if (out.channels() == 3) my_remapRemap<3>(out, *this, map, mapSizeW, mapSizeH);
+	else if (out.channels() == 4) my_remapRemap<4>(out, *this, map, mapSizeW, mapSizeH);
+	else throw std::runtime_error(std::string{"Image::remapReamp() unsupported number channels "} + std::to_string(out.channels()));
+}
+
+template <int C> void my_remapRemap(Image& out, const Image& in, const float* map, int mw, int mh) {
+	const int oh = out.h, ow = out.w;
+	const int ih = in.h, iw = in.w;
+	const int istep = iw * C;
+	const int ostep = ow * C;
+	const int mstep = mw * 2;
+
+	auto IDX_MAP = [mh,mw,mstep](int y, int x) {
+		y = y < 0 ? 0 : y >= mh ? mh-1 : y;
+		x = x < 0 ? 0 : x >= mw ? mw-1 : x;
+		return y * mstep + x * 2;
+	};
+
+	auto IDX = [ih,iw,istep](int y, int x, int c) {
+		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
+		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
+		return y * istep + x * C + c;
+	};
+
+	// This is the required interpolation range.
+	// If grid is 8x8 and image is 256x256,
+	// grid should be sampled in range [0, 6.9999]
+	//const float fmw = mw - 1.f, fmh = mh - 1.f;
+	const float fmw = mw - 1.f, fmh = mh - 1.f;
+	const float fow = ow, foh = oh;
+
+
+	//omp_set_num_threads(4);
+	#pragma omp parallel for schedule(static,4) num_threads(4)
+	for (int oy=0; oy<oh; oy++) {
+	for (int ox=0; ox<ow; ox++) {
+		// 1) Compute/sample map coord/weights
+		// 2) Compute/sample pixel coord/weights
+
+		float ax = (((float)ox) / fow) * fmw;
+		float ay = (((float)oy) / foh) * fmh;
+		float mx0 = ax - floorf(ax), my0 = ay - floorf(ay);
+
+		float ix = 0, iy = 0;
+		ix += map[IDX_MAP(ay  , ax  )  ] * (1.f-my0) * (1.f-mx0);
+		ix += map[IDX_MAP(ay  , ax+1)  ] * (1.f-my0) * (    mx0);
+		ix += map[IDX_MAP(ay+1, ax+1)  ] * (    my0) * (    mx0);
+		ix += map[IDX_MAP(ay+1, ax  )  ] * (    my0) * (1.f-mx0);
+		iy += map[IDX_MAP(ay  , ax  )+1] * (1.f-my0) * (1.f-mx0);
+		iy += map[IDX_MAP(ay  , ax+1)+1] * (1.f-my0) * (    mx0);
+		iy += map[IDX_MAP(ay+1, ax+1)+1] * (    my0) * (    mx0);
+		iy += map[IDX_MAP(ay+1, ax  )+1] * (    my0) * (1.f-mx0);
+
+		float mx = ix - floorf(ix), my = iy - floorf(iy);
+
+#if INTEGER_MIXING
+		using Scalar = uint16_t;
+		using Vec = Scalar[C];
+		Vec p = {0};
+		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+0) , (((int)ix)+0) , c)] * ((Scalar)(64.f * (1.f-my) * (1.f-mx)));
+		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+0) , (((int)ix)+1) , c)] * ((Scalar)(64.f * (1.f-my) * (    mx)));
+		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(64.f * (    my) * (    mx)));
+		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(64.f * (    my) * (1.f-mx)));
+		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c] / 64);
+#else
+		using Scalar = float;
+		using Vec = Scalar[C];
+		Vec p = {0.f};
+		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+0) , (((int)ix)+0) , c)]) * ((Scalar)((1.f-my) * (1.f-mx)));
+		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+0) , (((int)ix)+1) , c)]) * ((Scalar)((1.f-my) * (    mx)));
+		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
+		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
+		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c]);
+#endif
+	}
+	}
+}
+
+

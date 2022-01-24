@@ -9,6 +9,8 @@
 #include <cstring>
 #include <cstdlib>
 
+#include "common.h"
+
 
 //using EncodedImage = std::vector<std::byte>;
 using EncodedImage = std::vector<uint8_t>;
@@ -36,12 +38,17 @@ struct Image {
 	inline Image(const Image& other) { copyFrom(other); }
 	inline Image& operator=(const Image& other) { copyFrom(other); return *this; }
 
+	inline Image(Image&& other) { moveFrom(other); }
+	inline Image& operator=(Image&& other) { moveFrom(other); return *this; }
+
+
 	inline ~Image() {
 		if (buffer and ownBuffer) { free(buffer); buffer = 0; }
 		buffer = 0;
 		w = h = 0;
 	}
 
+	/*
 	static inline Image view(int hh, int ww, Format fmt, uint8_t* buffer_) {
 		Image out;
 		out.ownBuffer = false;
@@ -60,14 +67,32 @@ struct Image {
 		out.ownBuffer = false;
 		return out;
 	}
+	*/
+
+	void moveFrom(Image& other) {
+		if (this == &other) return;
+		w = other.w; h = other.h; format = other.format;
+		ownBuffer = other.ownBuffer;
+		capacity = other.capacity;
+		buffer = other.buffer;
+		other.w = other.h = 0;
+		other.capacity = 0;
+		other.buffer = nullptr;
+	}
 
 	void copyFrom(const Image& other) {
 		//if (other.buffer and buffer and ownBuffer and w == other.w and h == other.h and channels() == other.channels())
-		if (other.buffer and buffer and capacity >= other.capacity)
-			memcpy(buffer, other.buffer, size());
-		else if (buffer and !ownBuffer and capacity < other.capacity)
+		auto otherSize = other.size();
+		if (other.buffer and buffer and capacity >= otherSize) {
+			//dprintf (" - (Image::copyFrom) copying without realloc (cap %d, other %d, cpSize %d).\n", capacity, other.capacity, other.size());
+			w = other.w;
+			h = other.h;
+			format = other.format;
+			memcpy(buffer, other.buffer, other.size());
+		} else if (buffer and !ownBuffer and capacity < otherSize)
 			throw std::runtime_error("copyFrom() called on a viewed image that was too small.");
 		else {
+			dprintf (" - (Image::copyFrom) free'ing and reallocating buffer (cap %d, other %d).\n", capacity, other.capacity);
 			if (buffer and ownBuffer) { free(buffer); buffer = 0; }
 			if (other.w > 0 and other.h > 0) {
 				w = other.w;
@@ -95,8 +120,9 @@ struct Image {
 	inline Image() : w(0), h(0), buffer(nullptr), format(Format::GRAY) {}
 	inline Image(int w, int h, int c) : w(w), h(h), buffer(nullptr), format(c2format(c)) {}
 	inline Image(int w, int h, Format f) : w(w), h(h), format(f), buffer(nullptr) { }
-	inline Image(int w, int h, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf) { }
-	inline Image(int w, int h, int c, uint8_t* buf) : w(w), h(h), format(c2format(c)), buffer(buf) { }
+	// View()ing constructors
+	inline Image(int w, int h, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
+	inline Image(int w, int h, int c, uint8_t* buf) : w(w), h(h), format(c2format(c)), buffer(buf), ownBuffer(false) { capacity=size(); }
 
 	inline int32_t size() const {
 		return w * h * channels();
@@ -134,6 +160,14 @@ struct Image {
 	void warpAffine(Image& out, const float H[6]) const;
 	// H is not const: it may be divided by H[8].
 	void warpPerspective(Image& out, float H[9]) const;
+
+	// Remap pixels, where the map is possibly a different size.
+	// This is like doing two bilinear interpolations: once on map coords, once on pixels.
+	// This is used for example to compute a projection using only a small 8x8 grid, then interpolate
+	// a 256x256 image using it. It is still accurate as long as the warp is nearly planar (which will be true usually)
+	// (I originally tried using cv::resize followed by cv::remap, but it does not
+	//  treat corners properly)
+	void remapRemap(Image& out, const float* map, int mapSizeW, int mapSizeH) const;
 };
 
 

@@ -4,7 +4,7 @@
 #include <deque>
 #include <vector>
 
-#include <cstdio>
+#include "common.h"
 
 
 // TODO: Test this a bit more rigorously
@@ -16,8 +16,27 @@ class LruCache {
 		std::deque<K> lst;
 
 		struct ValueAndIdx {
+			using It = typename decltype(lst)::iterator;
 			V v;
-			typename decltype(lst)::iterator i;
+			It i;
+
+			inline ValueAndIdx(const V& v, const It& i) : v(v), i(i) {
+				//printf(" - (ValueAndIdx) copy const\n");
+			}
+			inline ValueAndIdx(V&& v, const It&& i) : v(v), i(i) {
+				//printf(" - (ValueAndIdx) move const\n");
+			}
+			inline ValueAndIdx(ValueAndIdx&& o) {
+				//printf(" - (ValueAndIdx) move assn\n");
+				v = std::move(o.v);
+				i = o.i;
+			}
+			inline ValueAndIdx& operator=(ValueAndIdx&& o) {
+				//printf(" - (ValueAndIdx) move assn\n");
+				v = std::move(o.v);
+				i = o.i;
+				return *this;
+			}
 		};
 
 		std::unordered_map<K, ValueAndIdx> map;
@@ -42,13 +61,30 @@ class LruCache {
 			if (it == map.end()) {
 				// Maybe pop oldest, then add new.
 				if (lst.size() >= capacity) {
+					// Avoid reallocations by re-using buffer that was removed.
+					
 					//printf(" - (LruCache) Evicting lru entry at back (cache at capacity %d)\n", lst.size());
 					auto remove_k = lst.back();
-					map.erase(remove_k);
+					
+					auto it = map.find(remove_k);
+					auto node = map.extract(it);
+					//auto reuse = map.erase(map.find(remove_k));
 					lst.pop_back();
+
+					// Call the copy assignment operator (but *NO* constructors)
+					//printf(" - Copying val to old val.\n"); fflush(stdout);
+					node.mapped().v = v;
+
+					lst.push_front(k);
+					node.key() = k;
+					node.mapped().i = lst.begin();
+					map.insert(std::move(node));
+				} else {
+					//printf(" - not full, allocating new val.\n");
+					lst.push_front(k);
+					//map.emplace(std::make_pair(k, ValueAndIdx{v, lst.begin()}));
+					map.emplace(std::make_pair(k, ValueAndIdx{v, lst.begin()}));
 				}
-				lst.push_front(k);
-				map.insert({k, {v, lst.begin()}});
 				return false;
 			} else {
 				// Must move to front.

@@ -292,8 +292,8 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 	int64_t nrows = lvlTlbr[2] - lvlTlbr[0];
 	int64_t ncols = lvlTlbr[3] - lvlTlbr[1];
 
-	int channels = dset.channels;
-	int tileSize = dset.tileSize;
+	int channels = dset.channels();
+	int tileSize = dset.tileSize();
 	int cv_type = channels == 3 ? CV_8UC3 : channels == 4 ? CV_8UC4 : CV_8U;
 
 	Image tmpImage_[ADDO_THREADS];
@@ -413,6 +413,13 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 		if (tid == 0)
 			dset.blockUntilEmptiedQueue();
 #pragma omp barrier
+	}
+
+	{
+		MDB_txn* txn;
+		dset.beginTxn(&txn, false);
+		dset.recompute_meta_and_write_slow(txn);
+		dset.endTxn(&txn);
 	}
 
 	return 0;

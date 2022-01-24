@@ -20,9 +20,13 @@ int image_signature(const Image& i) {
 
 
 int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
-	Image img { 256, 256, 3 }; img.alloc();
+	int32_t c = dset.channels();
+	int ts = dset.tileSize();
+	Image img { ts, ts, c }; img.alloc();
 
-	cv::Mat mat ( 256 * w, 256 * h, CV_8UC3 );
+
+	auto cv_type = c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
+	cv::Mat mat ( ts * w, ts * h, cv_type );
 
 	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
 	for (uint64_t xx=x, xi=0; xx<x+h; xx++, xi++) {
@@ -32,8 +36,8 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 			return 1;
 		}
 
-		cv::Mat imgRef { img.h, img.w, CV_8UC3, img.buffer };
-		imgRef.copyTo(mat(cv::Rect({((int)xi)*256, (int)(h-1-yi)*256, 256, 256})));
+		cv::Mat imgRef { img.h, img.w, cv_type, img.buffer };
+		imgRef.copyTo(mat(cv::Rect({((int)xi)*ts, (int)(h-1-yi)*ts, ts, ts})));
 	}
 
 	if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
