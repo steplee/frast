@@ -43,12 +43,27 @@ PYBIND11_MODULE(frastpy, m) {
     py::class_<DatasetReader>(m, "DatasetReader")
         .def(py::init<const std::string&, const DatasetReaderOptions&>())
 
+        .def("channels", &DatasetReader::channels)
+        .def("tileSize", &DatasetReader::tileSize)
+        .def("getRegions", [](DatasetReader& dset) {
+			py::list list;
+			for (const auto& r : dset.getMeta().regions) {
+				py::list list_;
+				list_.append(r.tlbr[0]);
+				list_.append(r.tlbr[1]);
+				list_.append(r.tlbr[2]);
+				list_.append(r.tlbr[3]);
+				list.append(list_);
+			}
+			return list;
+		})
+
 		// Output buffer is passed in. Returned result is a *view* of it, possibly smaller.
 		// Also note: the output stride *may not match* input stride.
 		//
 		// Note: Parameter if parameter 'safe' is true, if there are *any* missing tiles, None is returned.
 		// If 'safe' is false, we may return a partially or entirely blank image.
-		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t> tlbr_, bool safe) -> int {
+		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t> tlbr_, bool safe) -> py::object {
 				AtomicTimerMeasurement g(t_total);
 				if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
@@ -80,9 +95,9 @@ PYBIND11_MODULE(frastpy, m) {
 				Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
 
 				int nMissing = dset.fetchBlocks(imgView, lvl, tlbr, nullptr);
-				//if (safe and nMissing > 0) return py::none();
+				if (safe and nMissing > 0) return py::none();
 
-				return nMissing;
+				return result;
 		})
 
 

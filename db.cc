@@ -32,35 +32,6 @@
  *		- Using a single txn for many reads is marginally faster, if at all.
  */
 
-	/*
-std::atomic<double> _encodeTime = 0;
-std::atomic<double> _decodeTime = 0;
-std::atomic<double> _imgMergeTime = 0;
-double _dbWriteTime = 0;
-double _dbReadTime = 0;
-double _dbEndTxnTime = 0;
-double _totalTime = 0;
-std::atomic<double> _tileBufferCopyTime = 0;
-
-void printDebugTimes() {
-	std::cout << " - Timing 'encodeTime'   : " << prettyPrintNanos(_encodeTime) << " (" << (_encodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'decodeTime'   : " << prettyPrintNanos(_decodeTime) << " (" << (_decodeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'imgMergeTime' : " << prettyPrintNanos(_imgMergeTime) << " (" << (_imgMergeTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbWriteTime'  : " << prettyPrintNanos(_dbWriteTime) << " (" << (_dbWriteTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbReadTime'   : " << prettyPrintNanos(_dbReadTime) << " (" << (_dbReadTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'dbEndTxnTime' : " << prettyPrintNanos(_dbEndTxnTime) << " (" << (_dbEndTxnTime/_totalTime) * 100 << "%)\n";
-	std::cout << " - Timing 'tileBufCopy'  : " << prettyPrintNanos(_tileBufferCopyTime) << " (" << (_tileBufferCopyTime/_totalTime) * 100 << "%)\n";
-}
-std::string prettyPrintNanos(double ns) {
-	std::string                  out = "";
-	if (ns < 1'000)              out = std::to_string(ns) + "μs";
-	if (ns < 1'000'000)          out = std::to_string(ns/1e3) + "μs";
-	else if (ns < 1'000'000'000) out = std::to_string(ns/1e6) + "ms";
-	else                         out = std::to_string(ns/1e9) + "s";
-	return out;
-}
-	*/
-
 AtomicTimer t_total("total"),
 			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
 			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"), t_memcpyStrided("memcpyStrided"),

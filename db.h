@@ -88,8 +88,7 @@ constexpr static unsigned int INVALID_DB = 2147483648;
 
 struct DatabaseOptions {
 	//int64_t mapSize = 10485760l; // lmdb default: 10MB
-	//int64_t mapSize = 10485760l * 8l; // 80MB
-	uint64_t mapSize = 2lu * (1lu << 30lu); // 1GB
+	uint64_t mapSize = 10lu * (1lu << 30lu); // x 1GB
 };
 
 // This is a >2KB struct, which is a bit much...
@@ -188,6 +187,8 @@ class Dataset {
 		void setTileSize(int32_t c) { meta.fixedSizeMeta.tileSize = c; }
 		inline int32_t channels() { return meta.fixedSizeMeta.channels; }
 		inline int32_t tileSize() { return meta.fixedSizeMeta.tileSize; }
+
+		inline const DatasetMeta& getMeta() const { return meta; }
 
 	protected:
 		std::string path;

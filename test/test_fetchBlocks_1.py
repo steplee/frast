@@ -11,13 +11,13 @@ tlbr = tlbr[0:1] # This fails
 tlbr = tlbr[0]   # this works
 img1 = np.zeros((256*4,4*256,3), dtype=np.uint8)
 # Copy required, img3 overwrites the img1 buffer below.
-img2 = np.copy(d.fetchBlocks(img1, 17, tlbr), 'C')
+img2 = np.copy(d.fetchBlocks(img1, 17, tlbr, False), 'C')
 tlbr = [37400, 81080, 37400+3, 81080+3]
-img3 = d.fetchBlocks(img1, 17, tlbr)
+img3 = d.fetchBlocks(img1, 17, tlbr, False)
 
 # Acessing invalid pixels, this will silently fail,
 # returning a black image.
-badImg = d.fetchBlocks(img1, 17, [1,1,2,2])
+badImg = d.fetchBlocks(img1, 17, [1,1,2,2], False)
 #print(badImg)
 
 print(img1.shape)

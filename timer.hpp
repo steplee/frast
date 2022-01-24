@@ -87,6 +87,9 @@ struct Timer {
 	inline Timer(const std::string& name) : name(name) {
 	}
 	inline ~Timer() {
+
+		if (n == 0) return;
+
 		double nd = n;
 		double mu = acc1 / nd;
 		double sd = std::sqrt(acc2/nd - mu*mu);
