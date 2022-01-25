@@ -38,19 +38,6 @@ namespace {
 			0, 1.f/b_scale, -b_mu(1)/b_scale,
 			0, 0, 1.f;
 
-		/*
-		Eigen::Matrix<float, 3,3> Ta; Ta <<
-			a_scale, 0, a_mu(0),
-			0, a_scale, a_mu(1),
-			0, 0, 1.f;
-		Eigen::Matrix<float, 3,3> Tb; Tb <<
-			b_scale, 0, b_mu(0),
-			0, b_scale, b_mu(1),
-			0, 0, 1.f;
-		Ta = Ta.inverse().eval();
-		Tb = Tb.inverse().eval();
-		*/
-
 
 		Eigen::Matrix<float,4,2> A1 = (A.rowwise().homogeneous() * Ta.transpose()).leftCols(2);
 		Eigen::Matrix<float,4,2> B1 = (B.rowwise().homogeneous() * Tb.transpose()).leftCols(2);

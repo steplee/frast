@@ -12,11 +12,16 @@
 CXX ?= clang++
 
 debugFlags :=
-#cv_libs :=
+jpeg_libs := -lturbojpeg
 cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
+
+# Libs to link into main library. OpenCV not needed unless debug rasterio is passed.
+# (Currently, opencv is needed by some apps too, but will completely remove later)
+all_libs := $(jpeg_libs)
+
 ifdef DEBUG_RASTERIO
 debugFlags := -DDEBUG_RASTERIO 
-cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
+all_libs += cv_libs
 endif
 ifdef DEBUG_PRINT
 debugFlags += -DDEBUG_PRINT 
@@ -37,7 +42,7 @@ OPT ?= -O3 -g -march=native
 HEADERS := $(wildcard src/*.h src/*.hpp)
 gdal_libs := -lgdal
 
-libs := $(cv_libs) -llmdb -lpthread
+libs := $(all_libs) -llmdb -lpthread
 
 pybind_flags := $(shell python3 -m pybind11 --includes)
 py_lib := -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e "\sLDLIBRARY =" | awk -F '=' '{print $$2}' | xargs | head -c -4 | tail -c +4)
@@ -70,7 +75,7 @@ build/frastConvertGdal: $(HEADERS) src/frastConvertGdal.cc build/frast.a
 	$(CXX) src/frastConvertGdal.cc -o $@ build/frast.a $(APP_CFLAGS) $(gdal_libs)
 
 build/frastAddo: $(HEADERS) src/frastAddo.cc build/frast.a
-	$(CXX) src/frastAddo.cc -o $@ build/frast.a $(APP_CFLAGS)
+	$(CXX) src/frastAddo.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs)
 
 build/frastMerge: $(HEADERS) src/frastMerge.cc build/frast.a
 	$(CXX) src/frastMerge.cc -o $@ build/frast.a $(gdal_libs) $(APP_CFLAGS)
@@ -79,7 +84,7 @@ build/frastInfo: $(HEADERS) src/frastInfo.cc build/frast.a
 	$(CXX) src/frastInfo.cc -o $@ build/frast.a $(APP_CFLAGS)
 
 build/dbTest: $(HEADERS) src/dbTest.cc build/frast.a
-	$(CXX) src/dbTest.cc -o $@ build/frast.a $(APP_CFLAGS)
+	$(CXX) src/dbTest.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs)
 
 ######################
 # Python lib

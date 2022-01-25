@@ -2,15 +2,20 @@
 #include <iostream>
 #include <cmath>
 
+
+// These two flags offer alternatives to OpenCV's warping and image encoding.
+// I'm currently phasing opencv out, so I'll leave the old code for now.
+#define USE_MY_WARP
 #define USE_TURBOJPEG
+
 #ifdef USE_TURBOJPEG
-#include <jpeglib.h>
+//#include <jpeglib.h>
+#include <turbojpeg.h>
 #else
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-enum-enum-conversion"
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
 #pragma clang diagnostic pop
 #endif
 
@@ -26,21 +31,80 @@
 // TODO: Used fixed point arithmetic for bilinear weights as well.
 //       Might need to use uint32_t instead of 16-bit.
 
-#define USE_MY_WARP
 #ifdef USE_MY_WARP
 #include <Eigen/Core>
 #include <Eigen/LU>
 #ifndef _OPENMP
 #error "if using my warp (USE_MY_WARP defined), you must pass -fopenmp"
-#endif
 //#include <omp.h>
+#endif
+#else
+#include <opencv2/imgproc.hpp>
 #endif
 
 #ifdef USE_TURBOJPEG
+// Based on https://github.com/libjpeg-turbo/libjpeg-turbo/blob/c23672ce52ae53bd846b555439aa0a070b6d2c07/tjbench.c#L139
 bool decode(Image& out, const EncodedImageRef& eimg) {
+    tjhandle handle = tjInitDecompress();
+
+	long jpegSize = eimg.len;
+	uint8_t* jpegBuf = (uint8_t*) eimg.data;
+	uint8_t* destBuf = out.buffer;
+	auto pitch = out.w * out.channels();
+
+    int pf = out.channels() == 1 ? TJPF_GRAY : TJPF_RGB;
+	int flags = 0;
+
+	if (tjDecompress2(handle, jpegBuf, jpegSize,
+				destBuf, out.w, pitch, out.h, pf,
+				flags) == -1)
+		throw std::runtime_error("executing tjDecompress2()");
+
+	if (tjDestroy(handle) == -1) throw std::runtime_error("executing tjDestroy()");
 	return false;
 }
 bool encode(EncodedImage& out, const Image& img) {
+    tjhandle handle = tjInitCompress();
+
+    if(handle == NULL)
+    {
+        const char *err = (const char *) tjGetErrorStr();
+		std::cerr << "TJ Error: " << err << " UNABLE TO INIT TJ Compressor Object\n";
+        return true;
+    }
+    int jpegQual = 92;
+    int width = img.w;
+    int height = img.h;
+    int nbands = img.channels();
+    int flags = 0;
+    unsigned char* jpegBuf = NULL;
+    int pitch = width * nbands;
+    int pixelFormat = TJPF_GRAY;
+    int jpegSubsamp = TJSAMP_GRAY;
+    if(nbands == 3)
+    {
+        pixelFormat = TJPF_RGB;
+        jpegSubsamp = TJSAMP_411;
+    }
+    unsigned long jpegSize = 0;
+
+    int tj_stat = tjCompress2( handle, img.buffer, width, pitch, height,
+        pixelFormat, &(jpegBuf), &jpegSize, jpegSubsamp, jpegQual, flags);
+    if(tj_stat != 0)
+    {
+        const char *err = (const char *) tjGetErrorStr();
+		std::cerr << "TurboJPEG Error: " << err << " UNABLE TO COMPRESS JPEG IMAGE\n";
+        tjDestroy(handle);
+        handle = NULL;
+        return true;
+    }
+
+	if (out.capacity() < jpegSize) out.reserve(jpegSize * 2);
+	out.resize(jpegSize);
+	memcpy(out.data(), jpegBuf, jpegSize);
+
+    int tjstat = tjDestroy(handle); // should deallocate data buffer
+    handle = 0;
 	return false;
 }
 #else
