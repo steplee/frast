@@ -1,5 +1,6 @@
 #include "db.h"
 #include "image.h"
+#include "utils/solve.hpp"
 
 #include <cassert>
 #include <string>
@@ -21,11 +22,6 @@
 #include <opencv2/highgui.hpp>
 #endif
 
-// Needed for rasterIoQuad.
-// TODO: Replace with simple DLT solve, using eigen cholesky solve.
-#include <opencv2/imgproc.hpp>
-
-
 /*
  * LMDB observations:
  *		- Using a single txn for many writes is MUCH faster
@@ -35,7 +31,7 @@
 AtomicTimer t_total("total"),
 			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
 			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"), t_memcpyStrided("memcpyStrided"),
-			t_getCached("getCached"),
+			t_getCached("getCached"), t_solve("solve"),
 			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbBeginTxn("dbBeginTxn"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
 void printDebugTimes() {}
 
@@ -926,7 +922,7 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 
 	float x_scale = sw / (sampledTlbr[2] - sampledTlbr[0]);
 	float y_scale = sh / (sampledTlbr[3] - sampledTlbr[1]);
-	float in_corners[8] = {
+	alignas(16) float in_corners[8] = {
 		// pt1
 		((float)(quad[0] - sampledTlbr[0])) * x_scale,
 		((float)(quad[1] - sampledTlbr[1])) * y_scale,
@@ -940,7 +936,7 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 		((float)(quad[6] - sampledTlbr[0])) * x_scale,
 		((float)(quad[7] - sampledTlbr[1])) * y_scale,
 	};
-	float out_corners[8] = {
+	alignas(16) float out_corners[8] = {
 		0, 0,
 		(float) ow, 0,
 		(float) ow, (float) oh,
@@ -966,12 +962,28 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 	cv::waitKey(1);
 #endif
 
-	cv::Mat a { 4, 2, CV_32F,  in_corners };
-	cv::Mat b { 4, 2, CV_32F, out_corners };
-	cv::Mat h = cv::getPerspectiveTransform(a,b);
-	//cv::Mat h = cv::getPerspectiveTransform(b,a);
-	if (h.type() == CV_64F) h.convertTo(h, CV_32F);
-	float *H = (float*) h.data;
+	alignas(16) float H[9];
+	//float *H;
+	{
+		AtomicTimerMeasurement g(t_solve);
+		/*
+		cv::Mat a { 4, 2, CV_32F,  in_corners };
+		cv::Mat b { 4, 2, CV_32F, out_corners };
+		cv::Mat h = cv::getPerspectiveTransform(a,b);
+		//cv::Mat h = cv::getPerspectiveTransform(b,a);
+		if (h.type() == CV_64F) h.convertTo(h, CV_32F);
+		float *H = (float*) h.data;
+		*/
+		// My Eigen-based solve is 2x faster than cv one.
+		solveHomography(H, in_corners, out_corners);
+	}
+	/*printf(" - Got H:\n");
+	for (int y=0;y<3;y++) {
+	for (int x=0;x<3;x++)
+		printf("%f ", H[y*3+x]);
+		printf("\n");
+	}*/
+
 	// printf(" - in_corners:\n %f %f\n %f %f\n %f %f\n %f %f\n",
 			// in_corners[0], in_corners[1],
 			// in_corners[2], in_corners[3],

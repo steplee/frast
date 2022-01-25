@@ -11,10 +11,10 @@
 #include <ogr_core.h>
 #include <ogr_spatialref.h>
 
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/highgui.hpp>
+//#include <opencv2/core.hpp>
+//#include <opencv2/imgproc.hpp>
+//#include <opencv2/imgcodecs.hpp>
+//#include <opencv2/highgui.hpp>
 
 #include <Eigen/Core>
 #include <Eigen/LU>
@@ -58,9 +58,9 @@ struct GdalDset {
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
 
-	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, cv::Mat& out) const;
-	bool getTile(cv::Mat& out, int z, int y, int x, int tileSize=256);
-	cv::Mat remapBuf;
+	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
+	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
+	//cv::Mat remapBuf;
 };
 
 static std::once_flag flag__;
@@ -92,10 +92,15 @@ GdalDset::GdalDset(const std::string& path) {
         std::cerr << " == ONLY uint8_t/int16_t/float32 dsets supported right now." << std::endl;
         exit(1);
     }
-    if (nbands == 3 and gdalType == GDT_Byte) cv_type = CV_8UC3, eleSize = 1;
-	else if (nbands == 1 and gdalType == GDT_Byte) cv_type = CV_8UC1, eleSize = 1;
-	else if (nbands == 1 and gdalType == GDT_Int16) cv_type = CV_16SC1, eleSize = 2;
-	else if (nbands == 1 and gdalType == GDT_Float32) cv_type = CV_32FC1, eleSize = 4;
+    //if (nbands == 3 and gdalType == GDT_Byte) cv_type = CV_8UC3, eleSize = 1;
+	//else if (nbands == 1 and gdalType == GDT_Byte) cv_type = CV_8UC1, eleSize = 1;
+	//else if (nbands == 1 and gdalType == GDT_Int16) cv_type = CV_16SC1, eleSize = 2;
+	//else if (nbands == 1 and gdalType == GDT_Float32) cv_type = CV_32FC1, eleSize = 4;
+	//else assert(false);
+    if (nbands == 3 and gdalType == GDT_Byte) eleSize = 1;
+	else if (nbands == 1 and gdalType == GDT_Byte) eleSize = 1;
+	else if (nbands == 1 and gdalType == GDT_Int16) eleSize = 2;
+	else if (nbands == 1 and gdalType == GDT_Float32) eleSize = 4;
 	else assert(false);
 
     OGRSpatialReference sr_prj, sr_3857, sr_4326;
@@ -130,8 +135,8 @@ GdalDset::~GdalDset() {
 
 
 
-bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, cv::Mat& out) const {
-    out.create(outh, outw, cv_type);
+bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const {
+    //out.create(outh, outw, cv_type);
 
     Vector2d tl = (prj2pix * Vector3d{bboxProj(0), bboxProj(1), 1.});
     Vector2d br = (prj2pix * Vector3d{bboxProj(2) + bboxProj(0), bboxProj(3) + bboxProj(1), 1.});
@@ -157,13 +162,14 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, cv::Mat& o
         arg.bFloatingPointWindowValidity = 0;
         auto err                         = dset->RasterIO(GF_Read,
                                   xoff, yoff, xsize, ysize,
-                                  out.data, outw, outh, gdalType,
+                                  out.buffer, outw, outh, gdalType,
                                   nbands, nullptr,
                                   eleSize * nbands, eleSize * nbands * outw, eleSize,
                                   &arg);
         return err != CE_None;
     } else {
-        out = cv::Scalar{0};
+        //out = cv::Scalar{0};
+		memset(out.buffer, 0, out.w*out.h*out.channels());
         return true;
     }
 }
@@ -194,8 +200,8 @@ static void computeTlbr(Vector4d& out, const double *pts) {
 //
 //
 
-bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
-	int ow = out.cols, oh = out.rows;
+bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
+	int ow = out.w, oh = out.h;
 
 	constexpr bool debug = false;
 
@@ -206,7 +212,7 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 
 	bool y_flipped = pix2prj(1,1) < 0;
 	double sampleScale = 2; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
-	int sw = out.cols*sampleScale+.1, sh = out.rows*sampleScale+.1;
+	int sw = out.w*sampleScale+.1, sh = out.h*sampleScale+.1;
 
 	// Start off as wm, but transformed to prj
 	RowMatrix2Xd pts { 2 , N };
@@ -251,8 +257,11 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 			tlbr_prj(0), tlbr_prj(1), tlbr_prj(2), tlbr_prj(3),
 			tlbr_prj(2)-tlbr_prj(0), tlbr_prj(3)-tlbr_prj(1));
 
-	cv::Mat imgPrj;
-	assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
+	Image imgPrj { sh, sw, nbands };
+	imgPrj.alloc();
+
+	//cv::Mat imgPrj;
+	//assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
 	//imgPrj.create(oh,ow,cv_type);
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
 	if (res) {
@@ -293,9 +302,9 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 	cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
 	//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
 #else
-	int channels = imgPrj.channels();
-	Image src { imgPrj.rows, imgPrj.cols, channels, imgPrj.data };
-	Image dst { out.rows, out.cols, channels, out.data };
+	//Image dst { out.rows, out.cols, channels, out.data };
+	Image& src = imgPrj;
+	Image& dst = out;
 	src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
 #endif
 
@@ -308,17 +317,8 @@ bool GdalDset::getTile(cv::Mat& out, int z, int y, int x, int tileSize) {
 
 
 
-bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
-	AtomicTimerMeasurement g(t_encodeImage);
-	cv::imencode(".jpg", mat, out);
-	return false;
-}
 
-
-
-
-
-
+/*
 static void test1() {
 	GdalDset dset { "/data/naip/mocoNaip/whole.tif" };
 
@@ -365,6 +365,7 @@ static void test2() {
 	for (int i=0; i<THREADS; i++) delete dset[i];
 #undef THREADS
 }
+*/
 
 static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
 	double s = (1lu<<((int64_t)lvl));
@@ -386,11 +387,10 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	// Open one DB, and one tiff+buffer per thread
 
 	GdalDset* dset[THREADS];
-	cv::Mat img[THREADS];
 	std::vector<uint8_t> tmpBuf[THREADS];
 	//TileImage tileImages[THREADS];
 	Image tileImages[THREADS];
-	cv::Mat tile[THREADS];
+	//cv::Mat tile[THREADS];
 
 	for (int i=0; i<THREADS; i++) {
 		dset[i] = new GdalDset { srcTiff };
@@ -399,7 +399,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		//tileImages[i].isOverview = false;
 		tileImages[i] = Image { 256, 256, dset[i]->nbands };
 		tileImages[i].alloc();
-		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
+		//tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
 
 	DatabaseOptions opts;
@@ -446,13 +446,13 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 				BlockCoordinate coord { (uint64_t)lvl, y, x};
 				//printf(" - on tile %lu %lu %lu\n", lvl,y,x);
 
-					if (!dset[tid]->getTile(tile[tid], coord.z(), coord.y(), coord.x())) {
+					//if (!dset[tid]->getTile(tile[tid], coord.z(), coord.y(), coord.x())) {
+					if (!dset[tid]->getTile(tileImages[tid], coord.z(), coord.y(), coord.x())) {
 
 						//if (tid == 0) { cv::imshow("tile", tile[tid]); cv::waitKey(0); }
 
 						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
-						//encode_cv__(outTile.eimg, tile[tid]);
 						//encode(outTile.eimg, tmpBuf[tid], tileImages[tid]);
 						encode(outTile.eimg, tileImages[tid]);
 

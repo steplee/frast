@@ -53,7 +53,7 @@ constexpr float WebMercatorCellSizesf[MAX_LVLS] = {
 extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 			t_dbWrite, t_dbRead, t_dbBeginTxn, t_dbEndTxn, t_tileBufferCopy,
 			t_rasterIo, t_fetchBlocks, t_warp, t_memcpyStrided,
-			t_getCached,
+			t_getCached, t_solve,
 			t_total;
 void printDebugTimes(); // Not used currenlty: descructors print automatically
 

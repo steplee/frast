@@ -12,8 +12,11 @@
 CXX ?= clang++
 
 debugFlags :=
+#cv_libs :=
+cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 ifdef DEBUG_RASTERIO
 debugFlags := -DDEBUG_RASTERIO 
+cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 endif
 ifdef DEBUG_PRINT
 debugFlags += -DDEBUG_PRINT 
@@ -34,12 +37,12 @@ OPT ?= -O3 -g -march=native
 HEADERS := $(wildcard src/*.h src/*.hpp)
 gdal_libs := -lgdal
 
-libs := -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc -llmdb -lpthread
+libs := $(cv_libs) -llmdb -lpthread
 
 pybind_flags := $(shell python3 -m pybind11 --includes)
 py_lib := -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e "\sLDLIBRARY =" | awk -F '=' '{print $$2}' | xargs | head -c -4 | tail -c +4)
 
-BASE_CFLAGS := -std=c++17 -I/usr/local/include/eigen3 -I/usr/local/include/opencv4 $(libs) -fopenmp $(debugFlags)
+BASE_CFLAGS := -std=c++17 -I/usr/local/include/eigen3  $(libs) -fopenmp $(debugFlags)
 
 all: build build/frastConvertGdal build/frastAddo build/frastMerge build/frastInfo build/dbTest build/frastpy.so
 

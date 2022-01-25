@@ -2,13 +2,17 @@
 #include <iostream>
 #include <cmath>
 
+#define USE_TURBOJPEG
+#ifdef USE_TURBOJPEG
+#include <jpeglib.h>
+#else
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-enum-enum-conversion"
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #pragma clang diagnostic pop
-
+#endif
 
 // Use my implementation of a bilinear affine warp.
 // Probably better to use cv::warpAffine anyway.
@@ -22,6 +26,7 @@
 // TODO: Used fixed point arithmetic for bilinear weights as well.
 //       Might need to use uint32_t instead of 16-bit.
 
+#define USE_MY_WARP
 #ifdef USE_MY_WARP
 #include <Eigen/Core>
 #include <Eigen/LU>
@@ -31,6 +36,14 @@
 //#include <omp.h>
 #endif
 
+#ifdef USE_TURBOJPEG
+bool decode(Image& out, const EncodedImageRef& eimg) {
+	return false;
+}
+bool encode(EncodedImage& out, const Image& img) {
+	return false;
+}
+#else
 bool decode(Image& out, const EncodedImageRef& eimg) {
 
 	cv::InputArray eimg_ { (uint8_t*) eimg.data, static_cast<int>(eimg.len) };
@@ -62,13 +75,13 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 		return false;
 	}
 }
-
 bool encode(EncodedImage& out, const Image& img) {
 	auto cv_type = img.format == Image::Format::GRAY ? CV_8UC1 : img.format == Image::Format::RGB ? CV_8UC3 : CV_8UC4;
 	cv::Mat mat { img.h, img.w, cv_type, img.buffer };
 	cv::imencode(".jpg", mat, out);
 	return false;
 }
+#endif
 
 
 // Should be optimized heavily with -O3.
