@@ -402,7 +402,9 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
 
-	DatasetWritable outDset { outPath };
+	DatabaseOptions opts;
+	//opts.mapSize = 1 << 20;
+	DatasetWritable outDset { outPath , opts };
 
 	// Configure #channels and tileSize.
 	int32_t channels = dset[0]->nbands;

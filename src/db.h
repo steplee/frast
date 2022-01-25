@@ -13,10 +13,10 @@ extern "C" {
 #include <condition_variable>
 #include <cassert>
 
-#include "common.h"
+#include "utils/common.h"
+#include "utils/data_structures.hpp"
+#include "utils/timer.hpp"
 #include "image.h"
-#include "utils.hpp"
-#include "timer.hpp"
 
 
 constexpr int MAX_LVLS = 26;
@@ -88,10 +88,9 @@ constexpr static unsigned int INVALID_DB = 2147483648;
 
 struct DatabaseOptions {
 	//int64_t mapSize = 10485760l; // lmdb default: 10MB
-	uint64_t mapSize = 10lu * (1lu << 30lu); // x 1GB
+	uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
 };
 
-// This is a >2KB struct, which is a bit much...
 struct DatasetMeta {
 	// A region is considered a contiguous span of area.
 	// It is recorded at only non-overview levels.
@@ -106,6 +105,7 @@ struct DatasetMeta {
 		LevelMeta levelMetas[MAX_LVLS];
 		uint32_t channels;
 		uint32_t tileSize;
+		uint64_t mapSize;
 	} fixedSizeMeta;
 	std::vector<Region> regions;
 };

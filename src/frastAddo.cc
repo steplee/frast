@@ -349,7 +349,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 				if (dset.tileExists(myCoord, r_txn)) {
 					// Skip.
 					// TODO: Actually: should merge with downsampled version.
-					printf(" - [thr %d] skipping existing tile %luz %luy %lux\n", tid, lvl,y,x);
+					dprintf(" - [thr %d] skipping existing tile %luz %luy %lux\n", tid, lvl,y,x);
 					continue;
 				}
 
@@ -372,7 +372,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 				if (nMissingParents == 4) {
 					printf(" - [thr %d] Strange: tile %luz %luy %lux was missing all parents? Skipping it.\n", tid, lvl,y,x);
 				} else {
-					printf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
+					dprintf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
 
 					// Downsample
 					cv::resize(parent, child, cv::Size{tileSize,tileSize});

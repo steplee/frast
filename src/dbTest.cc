@@ -64,24 +64,24 @@ int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
 
 int main(int argc, char** argv) {
 	if (argc > 1 and strcmp(argv[1],"dumpTile") == 0) {
-		assert(argc == 5 or argc == 7);
-		int z = std::atoi(argv[2]);
-		int y = std::atoi(argv[3]);
-		int x = std::atoi(argv[4]);
-		int w = argc == 7 ? std::atoi(argv[5]) : 1;
-		int h = argc == 7 ? std::atoi(argv[6]) : 1;
-		Dataset dset("out");
+		assert(argc == 6 or argc == 8);
+		int z = std::atoi(argv[3]);
+		int y = std::atoi(argv[4]);
+		int x = std::atoi(argv[5]);
+		int w = argc == 8 ? std::atoi(argv[6]) : 1;
+		int h = argc == 8 ? std::atoi(argv[7]) : 1;
+		Dataset dset(std::string{argv[2]});
 		return dumpTile(dset, z,y,x, w,h);
 	}
 
 	if (argc > 1 and strcmp(argv[1],"rasterIo") == 0) {
-		assert(argc == 6);
+		assert(argc == 7);
 		double tlbr[4] = {
-			std::atof(argv[2]),
 			std::atof(argv[3]),
 			std::atof(argv[4]),
-			std::atof(argv[5]) };
-		DatasetReader dset("out");
+			std::atof(argv[5]),
+			std::atof(argv[6]) };
+		DatasetReader dset(std::string{argv[2]});
 		return rasterIo_it(dset, tlbr);
 	}
 

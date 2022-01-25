@@ -61,15 +61,19 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	}
 
 	mdb_env_set_mapsize(env, dopts.mapSize);
+	printf(" - Setting mapSize (initial  ) to %lu\n", dopts.mapSize);
 
 	mdb_env_set_maxdbs(env, MAX_LVLS+1);
 
-	int flags = 0;
-	if (readOnly) flags = MDB_RDONLY;
+	int flags = MDB_NOSUBDIR;
+	if (readOnly) flags |= MDB_RDONLY;
 	mode_t fileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 	if (auto err = mdb_env_open(env, path.c_str(), flags, fileMode)) {
 		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err));
 	}
+
+	memset(&meta, 0, sizeof(DatasetMeta));
+	meta.fixedSizeMeta.mapSize = dopts.mapSize;
 
 	open_all_dbs();
 
@@ -109,6 +113,9 @@ void Dataset::open_all_dbs() {
 			std::cout << " - (open_all_dbs) failed to open metaDb \n";
 		decode_meta_(txn);
 	}
+
+	mdb_env_set_mapsize(env, meta.fixedSizeMeta.mapSize);
+	printf(" - Setting mapSize (from meta) to %lu\n", meta.fixedSizeMeta.mapSize);
 
 	for (int i=0; i<MAX_LVLS; i++) {
 		std::string name = std::string{"lvl"} + std::to_string(i);
@@ -248,13 +255,26 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 	}
 
 	else if (err == MDB_MAP_FULL and givenTxn != nullptr) {
+
+		// Below approach does not work: the old db gets erase on mdb_env_set_mapsize.
+		// So you need to have two envs open and copy old into resized new.
+		// But for now, I'll just assume the env mapSize is always large enough.
 		throw std::runtime_error("DB grew too large! Must increase size!");
+		/*
+
 		// Commit, then transparently create new transaction, and re-run
-		//mdb_txn_commit(*givenTxn);
+		mdb_txn_commit(*givenTxn);
+
+		meta.fixedSizeMeta.mapSize <<= 1;
+		printf(" - Map was full, doubling size to %lu\n", meta.fixedSizeMeta.mapSize);
+		mdb_env_set_mapsize(env, meta.fixedSizeMeta.mapSize);
+
 		//std::cout << " - (put) [silently commiting and recreating input txn]\n";
-		//beginTxn(givenTxn);
-		//theTxn = *givenTxn;
-		//err = put_(val, coord, theTxn);
+		beginTxn(givenTxn);
+		theTxn = *givenTxn;
+		err = put_(val, coord, theTxn, allowOverwrite);
+		if (err) std::cout << " - mdb_put error (after map resize): " << mdb_strerror(err) << "\n";
+		*/
 	} else if (err) std::cout << " - mdb_put error: " << mdb_strerror(err) << "\n";
 
 	if (givenTxn == nullptr) endTxn(&theTxn);
@@ -350,6 +370,8 @@ bool Dataset::hasLevel(int lvl) const {
 }
 
 void Dataset::decode_meta_(MDB_txn* txn) {
+
+
 	uint64_t zero = 0, one = 1;
 	MDB_val key1 { 8, &zero };
 	MDB_val val1;
@@ -357,7 +379,6 @@ void Dataset::decode_meta_(MDB_txn* txn) {
 	MDB_val val2;
 	if (auto err = mdb_get(txn, metaDb, &key1, &val1)) {
 		printf(" - decode_meta_ failed.\n");
-		memset(&meta, 0, sizeof(DatasetMeta));
 	} else {
 		assert(val1.mv_size == sizeof(DatasetMeta::FixedSizeMeta));
 		memcpy(&meta.fixedSizeMeta, val1.mv_data, val1.mv_size);
@@ -470,6 +491,11 @@ void Dataset::recompute_meta_and_write_slow(MDB_txn* txn) {
 							curRegion[3] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale });
 					printf(" - Found region (lvl %d) (%d tiles) (%lf %lf -> %lf %lf)\n", lvl,
 							nInRegion, regions.back().tlbr[0],regions.back().tlbr[1], regions.back().tlbr[2], regions.back().tlbr[3]);
+
+					curRegion[0] = (uint64_t) 9e19;
+					curRegion[1] = (uint64_t) 9e19;
+					curRegion[2] = (uint64_t) 0;
+					curRegion[3] = (uint64_t) 0;
 				}
 			}
 		}

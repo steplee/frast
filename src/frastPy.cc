@@ -168,6 +168,21 @@ PYBIND11_MODULE(frastpy, m) {
 				return result;
 		})
 
+		.def("doTensor", [](DatasetReader& dset, py::object x) -> py::object {
+				int ndim = x.attr("ndim").cast<int>();
+				uint8_t* ptr = (uint8_t*) x.attr("data_ptr")().cast<int64_t>();
+				int32_t strides[3] = {1}, size[3] = {1};
+				strides[0] = x.attr("stride")(0).cast<int>();
+				if (ndim>1) strides[1] = x.attr("stride")(1).cast<int>();
+				if (ndim>2) strides[2] = x.attr("stride")(2).cast<int>();
+				size[0] = x.attr("size")(0).cast<int>();
+				if (ndim>1) size[1] = x.attr("size")(1).cast<int>();
+				if (ndim>2) size[2] = x.attr("size")(2).cast<int>();
+				printf(" - Tensor (nd %d) (stride %d %d %d) (sz %d %d %d) (ptr %p)\n",
+						ndim, strides[0], strides[1], strides[2], size[0], size[1],size[2], ptr);
+				return x;
+		});
+
 		;
 
 }
