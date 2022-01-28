@@ -120,7 +120,7 @@ GdalDset::GdalDset(const std::string& path) {
     if (ptsPrj[0] > ptsPrj[2]) std::swap(ptsPrj[0], ptsPrj[2]);
     if (ptsPrj[1] > ptsPrj[3]) std::swap(ptsPrj[1], ptsPrj[3]);
 	for (int i=0; i<4; i++) tlbr_prj(i) = ptsPrj[i];
-    double s = .5 / WebMercatorScale;
+    double s = .5 / WebMercatorMapScale;
     tlbr_uwm(0) = (pts_[0] * s + .5);
     tlbr_uwm(1) = (pts_[2] * s + .5);
     tlbr_uwm(2) = (pts_[1] * s + .5);
@@ -136,6 +136,7 @@ GdalDset::~GdalDset() {
 
 
 bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const {
+	AtomicTimerMeasurement tg(t_gdal);
     //out.create(outh, outw, cv_type);
 
     Vector2d tl = (prj2pix * Vector3d{bboxProj(0), bboxProj(1), 1.});
@@ -225,9 +226,9 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		//start = -1. / rtN;
 		//end = 1. + 1. / rtN;
 		double s = static_cast<double>(1 << z);
-		double scale = WebMercatorScale / (s * .5);
-		double off_x = (static_cast<double>(x)) * WebMercatorScale / s * 2 - WebMercatorScale;
-		double off_y = (static_cast<double>(y)) * WebMercatorScale / s * 2 - WebMercatorScale;
+		double scale = WebMercatorMapScale / (s * .5);
+		double off_x = (static_cast<double>(x)) * WebMercatorMapScale / s * 2 - WebMercatorMapScale;
+		double off_y = (static_cast<double>(y)) * WebMercatorMapScale / s * 2 - WebMercatorMapScale;
 		
 		//using ArrayT = Array<double,rtN,1>;
 		using ArrayT = Array<double,-1,1>;
@@ -289,23 +290,29 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	//if (y_flipped) for (int i=0; i<N/2; i++) std::swap(meshPtsf(i,1), meshPtsf(N-i-1,1));
 
 #if 0
-	cv::Mat meshMat { rtN, rtN, CV_32FC2, meshPtsf.data() };
-	//meshMat = meshMat(cv::Rect(1,1,rtN-2,rtN-2));
-	//std::cout << meshMat << "\n";
-	if (meshMat.cols != ow or meshMat.rows != oh) {
-		cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_LINEAR);
-		//cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_CUBIC);
-	}
-	//std::cout << meshMat << "\n";
+	{
+		AtomicTimerMeasurement tg(t_warp);
+		cv::Mat meshMat { rtN, rtN, CV_32FC2, meshPtsf.data() };
+		//meshMat = meshMat(cv::Rect(1,1,rtN-2,rtN-2));
+		//std::cout << meshMat << "\n";
+		if (meshMat.cols != ow or meshMat.rows != oh) {
+			cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_LINEAR);
+			//cv::resize(meshMat, meshMat, cv::Size{ow, oh}, 0,0, cv::INTER_CUBIC);
+		}
+		//std::cout << meshMat << "\n";
 
-	//out.create(imgPrj.rows, imgPrj.cols, imgPrj.type());
-	cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
-	//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
+		//out.create(imgPrj.rows, imgPrj.cols, imgPrj.type());
+		cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+		//cv::remap(imgPrj, out, meshMat, cv::noArray(), cv::INTER_AREA, cv::BORDER_REPLICATE);
+	}
 #else
 	//Image dst { out.rows, out.cols, channels, out.data };
 	Image& src = imgPrj;
 	Image& dst = out;
-	src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
+	{
+		AtomicTimerMeasurement tg(t_warp);
+		src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
+	}
 #endif
 
 	return false;
@@ -453,11 +460,12 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
-						//encode(outTile.eimg, tmpBuf[tid], tileImages[tid]);
-						encode(outTile.eimg, tileImages[tid]);
+						{
+							AtomicTimerMeasurement tg(t_encodeImage);
+							encode(outTile.eimg, tileImages[tid]);
+						}
 
 						outTile.coord = coord;
-						//outDset.push(outTile);
 						outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
 				}
 			}
@@ -485,6 +493,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 
 	{
+		printf(" - Recomputing Dataset Meta.\n");
 		MDB_txn* txn;
 		outDset.beginTxn(&txn, false);
 		outDset.recompute_meta_and_write_slow(txn);

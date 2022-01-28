@@ -31,7 +31,7 @@
 AtomicTimer t_total("total"),
 			t_encodeImage("encodeImage"), t_decodeImage("decodeImage"), t_mergeImage("mergeImage"),
 			t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"), t_memcpyStrided("memcpyStrided"),
-			t_getCached("getCached"), t_solve("solve"),
+			t_getCached("getCached"), t_solve("solve"), t_gdal("gdal"),
 			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbBeginTxn("dbBeginTxn"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
 void printDebugTimes() {}
 
@@ -481,10 +481,10 @@ void Dataset::recompute_meta_and_write_slow(MDB_txn* txn) {
 				// If curRegion is valid, it is a new one!
 				if (nInRegion > 0) {
 					regions.push_back({
-							curRegion[0] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
-							curRegion[1] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
-							curRegion[2] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale,
-							curRegion[3] * WebMercatorScale * 2. / (1<<ulvl) - WebMercatorScale });
+							curRegion[0] * WebMercatorMapScale * 2. / (1<<ulvl) - WebMercatorMapScale,
+							curRegion[1] * WebMercatorMapScale * 2. / (1<<ulvl) - WebMercatorMapScale,
+							curRegion[2] * WebMercatorMapScale * 2. / (1<<ulvl) - WebMercatorMapScale,
+							curRegion[3] * WebMercatorMapScale * 2. / (1<<ulvl) - WebMercatorMapScale });
 					printf(" - Found region (lvl %d) (%d tiles) (%lf %lf -> %lf %lf)\n", lvl,
 							nInRegion, regions.back().tlbr[0],regions.back().tlbr[1], regions.back().tlbr[2], regions.back().tlbr[3]);
 
@@ -657,10 +657,10 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 		} else {
 			tileBufferIdxMtx[thread].unlock();
 
-			if (nwaited++ % 1 == 0)
+			if (nwaited++ % 10 == 0)
 				printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
 						thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
-			usleep(2'000);
+			usleep(10'000);
 		}
 	}
 }
@@ -883,21 +883,21 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 	}
 	dprintf(" - Edge Len: %f with ow oh %d %d\n", edgeLen, ow, oh);
 	uint64_t tileTlbr[4];
-	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, edgeLen, bboxWm, r_txn_);
-	double s = (.5 * (1<<lvl)) / WebMercatorScale;
+	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, edgeLen, bboxWm, r_txn_);
+	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 	/*
 	double sampledTlbr[4] = {
-		std::floor((WebMercatorScale + bboxWm[0]) * s) / s - WebMercatorScale,
-		std::floor((WebMercatorScale + bboxWm[1]) * s) / s - WebMercatorScale,
-		std::ceil((WebMercatorScale + bboxWm[2]) * s) / s - WebMercatorScale,
-		std::ceil((WebMercatorScale + bboxWm[3]) * s) / s  - WebMercatorScale};
+		std::floor((WebMercatorMapScale + bboxWm[0]) * s) / s - WebMercatorMapScale,
+		std::floor((WebMercatorMapScale + bboxWm[1]) * s) / s - WebMercatorMapScale,
+		std::ceil((WebMercatorMapScale + bboxWm[2]) * s) / s - WebMercatorMapScale,
+		std::ceil((WebMercatorMapScale + bboxWm[3]) * s) / s  - WebMercatorMapScale};
 	*/
 	double sampledTlbr[4] = {
-		((double)tileTlbr[0]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[1]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[2]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[3]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale };
+		((double)tileTlbr[0]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[1]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[2]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[3]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale };
 
 	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
 	// sampled width/height
@@ -1024,8 +1024,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 		throw std::runtime_error(std::string{"(findBestLvlAndTlbr) mdb_txn_begin failed with "} + mdb_strerror(err));
 
 	uint64_t tileTlbr[4];
-	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, oh,ow, bboxWm, r_txn_);
-	double s = (.5 * (1<<lvl)) / WebMercatorScale;
+	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, bboxWm, r_txn_);
+	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 
 	// double sampledTlbr[4] = {
@@ -1034,10 +1034,10 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 		// std::ceil(bboxWm[2] * s) / s,
 		// std::ceil(bboxWm[3] * s) / s };
 	double sampledTlbr[4] = {
-		((double)tileTlbr[0]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[1]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[2]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale,
-		((double)tileTlbr[3]) * WebMercatorScale * 2. / (1<<lvl) - WebMercatorScale };
+		((double)tileTlbr[0]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[1]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[2]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale,
+		((double)tileTlbr[3]) * WebMercatorMapScale * 2. / (1<<lvl) - WebMercatorMapScale };
 
 	int ny = tileTlbr[3] - tileTlbr[1], nx = tileTlbr[2] - tileTlbr[0];
 	// sampled width/height
@@ -1174,7 +1174,8 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 	//assert(out.h >= tileSize()*ny);
 	int sw = nx*tileSize(); // Sampled width and height
 	int sh = ny*tileSize();
-	assert(out.capacity >= sw*sh*out.channels());
+	if (out.capacity < sw*sh*channels())
+		throw std::runtime_error("output buffer was too small for fetchBlocks (sw,sh " + std::to_string(sw) + "," + std::to_string(sh) + ")");
 	out.w = sw;
 	out.h = sh;
 
@@ -1230,8 +1231,12 @@ static int floor_log2_i_(float x) {
 	// Could also convert x to an int and use intrinsics.
 	int i = 0;
 	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
-	//while ((1<<i) < xi) { i++; };
-	while ((1<<(i+1)) < xi) { i++; };
+
+	// Bad quality
+	//while ((1<<(i+1)) < xi) { i++; };
+	// Medium quality
+	while ((1<<i) < xi) { i++; };
+	// Good quality
 	//i=1; while ((1<<(i-1)) < xi) { i++; };
 	return i-2;
 }
@@ -1271,13 +1276,13 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 	return lvl;
 }
 
-uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
+uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint32_t outCapacity, int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
 	double boxW = bboxWm[2] - bboxWm[0];
 	double boxH = bboxWm[3] - bboxWm[1];
 	float meanEdgeLen = (boxW + boxH) * .5f; // geometric mean makes more sense really.
-	return findBestLvlAndTlbr_dataDependent(tlbr,imgH,imgW, meanEdgeLen, bboxWm, txn);
+	return findBestLvlAndTlbr_dataDependent(tlbr, outCapacity, imgH,imgW, meanEdgeLen, bboxWm, txn);
 }
-uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn) {
+uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint32_t outCapacity, int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn) {
 
 	// 1. Find optimal level
 	// 2. Find closest level that exists in entire db
@@ -1311,24 +1316,31 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], int i
 	// (3)
 	bool good = false;
 	while (not good) {
-		double s = (.5 * (1<<lvl)) / WebMercatorScale;
+		double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 #if 1
-		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
-		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
-		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[2]) * s));
-		tlbr[3] = static_cast<uint64_t>(std::ceil((WebMercatorScale + bboxWm[3]) * s));
+		tlbr[0] = static_cast<uint64_t>((WebMercatorMapScale + bboxWm[0]) * s);
+		tlbr[1] = static_cast<uint64_t>((WebMercatorMapScale + bboxWm[1]) * s);
+		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorMapScale + bboxWm[2]) * s));
+		tlbr[3] = static_cast<uint64_t>(std::ceil((WebMercatorMapScale + bboxWm[3]) * s));
 #else
-		uint64_t w = 1 + std::max(std::ceil((WebMercatorScale + bboxWm[2]) * s) - (WebMercatorScale + bboxWm[0]) * s,
-							  std::ceil((WebMercatorScale + bboxWm[3]) * s) - (WebMercatorScale + bboxWm[1]) * s);
-		tlbr[0] = static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
-		tlbr[1] = static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
-		tlbr[2] = w + static_cast<uint64_t>((WebMercatorScale + bboxWm[0]) * s);
-		tlbr[3] = w + static_cast<uint64_t>((WebMercatorScale + bboxWm[1]) * s);
+		uint64_t w = 1 + std::max(std::ceil((WebMercatorMapScale + bboxWm[2]) * s) - (WebMercatorMapScale + bboxWm[0]) * s,
+							  std::ceil((WebMercatorMapScale + bboxWm[3]) * s) - (WebMercatorMapScale + bboxWm[1]) * s);
+		tlbr[0] = static_cast<uint64_t>((WebMercatorMapScale + bboxWm[0]) * s);
+		tlbr[1] = static_cast<uint64_t>((WebMercatorMapScale + bboxWm[1]) * s);
+		tlbr[2] = w + static_cast<uint64_t>((WebMercatorMapScale + bboxWm[0]) * s);
+		tlbr[3] = w + static_cast<uint64_t>((WebMercatorMapScale + bboxWm[1]) * s);
 #endif
 
+		int32_t nx = tlbr[2] - tlbr[0];
+		int32_t ny = tlbr[3] - tlbr[1];
+		int sw = nx*tileSize(); // Sampled width and height
+		int sh = ny*tileSize();
+
 		good = tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) and
-			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn);
+			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) and
+			   outCapacity >= sw*sh*channels();
+		dprintf(" - Testing capacity %d vs %d\n", outCapacity, sw*sh*channels());
 
 		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[1],tlbr[0], tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) ? "yes" : "no");
 		//printf(" - does tile %luz %luy %lux exist? -> %s\n", lvl,tlbr[3],tlbr[2], tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) ? "yes" : "no");

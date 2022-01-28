@@ -26,8 +26,10 @@ ctr = np.array(tlbr).reshape(2,2).mean(0)[np.newaxis]
 
 img1 = cv2.cvtColor(img1,cv2.COLOR_RGB2BGR)
 
-for t in np.linspace(0, 1, 1500):
+#for t in np.linspace(0, 1, 1500):
+for t in np.linspace(0, 100, 150000):
     off = 8000 * np.array((np.cos(t), np.sin(t)))[np.newaxis]
+    #off = 0
     R = np.array((np.cos(t), -np.sin(t), np.sin(t), np.cos(t))).reshape(2,2)
     #R = np.eye(2)
     quad1 = ((quad.reshape(4,2) - ctr) @ R.T + ctr + off).reshape(-1)

@@ -5,8 +5,6 @@ extern "C" {
 }
 
 #include <string>
-#include <array>
-#include <chrono>
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -25,7 +23,7 @@ constexpr int READER_TILE_CACHE_SIZE = 64;
 constexpr int WRITER_CACHE_CAPACITY = 16 /* times nthreads */;
 
 // Note: WebMercator the size of the map is actually 2x this.
-constexpr double WebMercatorScale = 20037508.342789248;
+constexpr double WebMercatorMapScale = 20037508.342789248;
 // Level 0 holds 2*WebMercatorScale, Level 1 half that, and so on.
 constexpr double WebMercatorCellSizes[MAX_LVLS] = {
 	40075016.685578495, 20037508.342789248, 10018754.171394624,
@@ -53,7 +51,7 @@ constexpr float WebMercatorCellSizesf[MAX_LVLS] = {
 extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 			t_dbWrite, t_dbRead, t_dbBeginTxn, t_dbEndTxn, t_tileBufferCopy,
 			t_rasterIo, t_fetchBlocks, t_warp, t_memcpyStrided,
-			t_getCached, t_solve,
+			t_getCached, t_solve, t_gdal,
 			t_total;
 void printDebugTimes(); // Not used currenlty: descructors print automatically
 
@@ -322,7 +320,7 @@ class DatasetWritable : public Dataset {
 
 struct DatasetReaderOptions : public DatabaseOptions {
 	float oversampleRatio = 1.f;
-	int maxSampleTiles = 6;
+	int maxSampleTiles = 8;
 	bool forceGray = false;
 	bool forceRgb = false;
 
@@ -379,8 +377,8 @@ class DatasetReader : public Dataset {
 		std::mutex tileCacheMtx;
 
 		MDB_txn* r_txns[MAX_READER_THREADS];
-		std::array<std::thread, MAX_READER_THREADS> threads;
-		std::array<std::thread::id, MAX_READER_THREADS> threadIds;
+		std::thread threads[MAX_READER_THREADS];
+		std::thread::id threadIds[MAX_READER_THREADS];
 		void loaderThreadLoop(int idx);
 		bool loadTile(Image& out);
 
@@ -393,9 +391,12 @@ class DatasetReader : public Dataset {
 
 		// the first func finds without insepcting which tiles exist in the database.
 		// the second func finds the best level that *actually covers* the AABB.
+		// the 'dataDependent' ensures:
+		//			1) The tiles needed do exist on that level, otherwise go up until they do.
+		//			2) The sample size is not too large for the output buffer (passed as outCapacity)
 		uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]);
-		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], int imgH, int imgW, const double bboxWm[4], MDB_txn* txn);
-		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn);
+		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], uint32_t outCapacity, int imgH, int imgW, const double bboxWm[4], MDB_txn* txn);
+		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], uint32_t outCapacity, int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn);
 
 };
 

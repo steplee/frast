@@ -29,7 +29,7 @@ PYBIND11_MODULE(frastpy, m) {
 				throw std::runtime_error("Lvl must be >0 and <" + std::to_string(MAX_LVLS));
 			return WebMercatorCellSizes[lvl];
 	});
-	m.attr("WebMercatorScale") = WebMercatorScale;
+	m.attr("WebMercatorMapScale") = WebMercatorMapScale;
 
     py::class_<DatasetReaderOptions>(m, "DatasetReaderOptions")
         .def(py::init<>())
@@ -58,12 +58,18 @@ PYBIND11_MODULE(frastpy, m) {
 			return list;
 		})
 
+		.def("getExistingLevels", [](DatasetReader& dset) {
+				std::vector<int> out;
+				dset.getExistingLevels(out);
+				return out;
+		})
+
 		// Output buffer is passed in. Returned result is a *view* of it, possibly smaller.
 		// Also note: the output stride *may not match* input stride.
 		//
 		// Note: Parameter if parameter 'safe' is true, if there are *any* missing tiles, None is returned.
 		// If 'safe' is false, we may return a partially or entirely blank image.
-		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t> tlbr_, bool safe) -> py::object {
+		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t>& tlbr_, bool safe) -> py::object {
 				AtomicTimerMeasurement g(t_total);
 				if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
@@ -76,7 +82,6 @@ PYBIND11_MODULE(frastpy, m) {
 				py::buffer_info bufIn = out.request();
 				verifyShapeOrThrow(outh, outw, dset.channels(), bufIn);
 
-				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2)
 					outShape = {outh, outw};
@@ -88,13 +93,18 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
 				// WHich one is correct? Do I need to inc_ref() manually()
-				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
-				//Image imgView = Image::view(outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
-				Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+				int nMissing = 0;
+				{
+					py::gil_scoped_release release;
 
-				int nMissing = dset.fetchBlocks(imgView, lvl, tlbr, nullptr);
+					//Image imgView = Image::view(outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+					Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+
+					nMissing = dset.fetchBlocks(imgView, lvl, tlbr, nullptr);
+				}
 				if (safe and nMissing > 0) return py::none();
 
 				return result;
@@ -114,7 +124,6 @@ PYBIND11_MODULE(frastpy, m) {
 				py::buffer_info bufIn = out.request();
 				verifyShapeOrThrow(outh, outw, dset.channels(), bufIn);
 
-				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2)
 					outShape = {outh, outw};
@@ -126,12 +135,16 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
 				// WHich one is correct? Do I need to inc_ref() manually()
-				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
+
+				{
+				py::gil_scoped_release release;
 				Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
-
 				dset.rasterIo(imgView, tlbr);
+				}
+
 				return result;
 		})
 
@@ -147,7 +160,6 @@ PYBIND11_MODULE(frastpy, m) {
 				py::buffer_info bufIn = out.request();
 				verifyShapeOrThrow(outh, outw, dset.channels(), bufIn);
 
-				py::gil_scoped_release release;
 
 				if (bufIn.ndim == 2)
 					outShape = {outh, outw};
@@ -159,12 +171,14 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
 				// WHich one is correct? Do I need to inc_ref() manually()
-				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
-				Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
-
-				dset.rasterIoQuad(imgView, quad_);
+				{
+					py::gil_scoped_release release;
+					Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+					dset.rasterIoQuad(imgView, quad_);
+				}
 				return result;
 		})
 

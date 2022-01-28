@@ -8,6 +8,10 @@
 #define USE_MY_WARP
 #define USE_TURBOJPEG
 
+#define TURBOJPEG_QUALITY 92
+//#define TURBOJPEG_QUALITY 95
+//#define TURBOJPEG_QUALITY 100
+
 #ifdef USE_TURBOJPEG
 //#include <jpeglib.h>
 #include <turbojpeg.h>
@@ -72,7 +76,7 @@ bool encode(EncodedImage& out, const Image& img) {
 		std::cerr << "TJ Error: " << err << " UNABLE TO INIT TJ Compressor Object\n";
         return true;
     }
-    int jpegQual = 92;
+    int jpegQual = TURBOJPEG_QUALITY;
     int width = img.w;
     int height = img.h;
     int nbands = img.channels();

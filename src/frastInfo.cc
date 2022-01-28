@@ -45,11 +45,11 @@ int main(int argc, char** argv) {
 		printf(" - Lvl %2d: %6lu %6lu -> %6lu %6lu (%4luw %4luh, %7lu total)\n",
 				lvl, tlbr[0],tlbr[1], tlbr[2],tlbr[3], w,h,n);
 
-		double s = 2. * WebMercatorScale / (1 << lvl);
-		double x1 = tlbr[0] * s - WebMercatorScale;
-		double x2 = tlbr[2] * s - WebMercatorScale;
-		double y1 = tlbr[1] * s - WebMercatorScale;
-		double y2 = tlbr[3] * s - WebMercatorScale;
+		double s = 2. * WebMercatorMapScale / (1 << lvl);
+		double x1 = tlbr[0] * s - WebMercatorMapScale;
+		double x2 = tlbr[2] * s - WebMercatorMapScale;
+		double y1 = tlbr[1] * s - WebMercatorMapScale;
+		double y2 = tlbr[3] * s - WebMercatorMapScale;
 
 		// Taking all levels actually results in a much too large box, due to partially blank overviews.
 		if (i == lvls.size() - 1) {
@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 
 	double wm_w = circumBox[2] - circumBox[0];
 	double wm_h = circumBox[3] - circumBox[1];
-	double scaleFactorInv = 1. / std::cosh((circumBox[1] + circumBox[3]) / (2. * WebMercatorScale) * M_PI);
+	double scaleFactorInv = 1. / std::cosh((circumBox[1] + circumBox[3]) / (2. * WebMercatorMapScale) * M_PI);
 	printf(" - Total tiles: %lu\n", nTotal);
 	printf(" - Deepest level enclosing box: %lf %lf %lf %lf\n", circumBox[0], circumBox[1], circumBox[2], circumBox[3]);
 	printf("                                %.2lf %.2lf [WebMercator scaled-meters]\n", wm_w, wm_h);

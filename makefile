@@ -7,11 +7,13 @@
 # 		DEBUG_RASTERIO
 # 		DEBUG_PRINT
 # 		NO_TIMING
+# 		RELEASE
 ######################
 
 CXX ?= clang++
 
 debugFlags :=
+#jpeg_libs := -l:libturbojpeg.a
 jpeg_libs := -lturbojpeg
 cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 
@@ -30,18 +32,23 @@ endif
 ifdef NO_TIMING
 TIMER_CFLAGS :=
 else
-TIMER_CFLAGS := -DUSE_TIMER -lfmt
+TIMER_CFLAGS := -DUSE_TIMER -l:libfmt.a
 endif
 
+ifdef RELEASE
+OPT ?= -O3 -march=native -DNDEBUG
+else
 OPT ?= -O3 -g -march=native
+endif
 #OPT := -O3 -g -DNDEBUG -march=native
 #OPT := -O0 -g
 
 
 
-HEADERS := $(wildcard src/*.h src/*.hpp)
+HEADERS := $(wildcard src/*.h src/*.hpp src/utils/*.h src/utils/*.hpp)
 gdal_libs := -lgdal
 
+#libs := $(all_libs) -l:liblmdb.a -lpthread
 libs := $(all_libs) -llmdb -lpthread
 
 pybind_flags := $(shell python3 -m pybind11 --includes)
@@ -114,10 +121,13 @@ PREFIX ?= /usr/local
 
 $(PREFIX)/include/frast:
 	mkdir $(PREFIX)/include/frast
+$(PREFIX)/include/frast/utils:
+	mkdir -p $(PREFIX)/include/frast/utils
 
 DIST_PKGS := $(shell python3 -c "import site; print(site.getsitepackages()[0])")
 
-install: all $(PREFIX)/include/frast
+install: all $(PREFIX)/include/frast/utils
 	cp build/frast.a $(PREFIX)/lib/libfrast.a
 	cp src/db.h src/image.h -t $(PREFIX)/include/frast/
+	cp src/utils/common.h src/utils/data_structures.hpp src/utils/solve.hpp src/utils/timer.hpp -t $(PREFIX)/include/frast/utils/
 	cp build/frastpy.so $(DIST_PKGS)

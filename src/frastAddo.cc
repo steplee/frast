@@ -38,12 +38,6 @@
 static_assert(ADDO_THREADS < DatasetWritable::MAX_THREADS);
 
 namespace {
-	bool encode_cv__(EncodedImage& out, const cv::Mat& mat) {
-		AtomicTimerMeasurement g(t_encodeImage);
-		cv::imencode(".jpg", mat, out);
-		return false;
-	}
-
 std::vector<int> findExistingLvls(DatasetWritable& dset) {
 	std::vector<int> out;
 	dset.getExistingLevels(out);
@@ -244,6 +238,7 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 					// Downsample
 					//cv::resize(parent, child, cv::Size{tileSize,tileSize});
 					cv::resize(parent, child, cv::Size{tileSize,tileSize}, 0,0, cv::INTER_LANCZOS4);
+					cv::resize(parent, child, cv::Size{tileSize,tileSize}, 0,0, cv::INTER_LANCZOS4);
 
 					// Put
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);
@@ -366,7 +361,10 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					//cv::Mat tmpMat  = cv::Mat ( tileSize, tileSize, cv_type, tmpImage.buffer );
 					//cv::imshow("child",tmpMat);
 					//cv::waitKey(1);
-					tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
+					{
+						AtomicTimerMeasurement tg(t_memcpyStrided);
+						tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
+					}
 				}
 
 				if (nMissingParents == 4) {
@@ -375,15 +373,21 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					dprintf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
 
 					// Downsample
-					cv::resize(parent, child, cv::Size{tileSize,tileSize});
+					{
+						AtomicTimerMeasurement tg(t_warp);
+						cv::resize(parent, child, cv::Size{tileSize,tileSize});
+					}
 
 					//if (tid == 0) { cv::imshow("parent",parent); cv::waitKey(1); }
 
 					// Put
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);
-					encode_cv__(wtile.eimg, child);
+					Image childImg { child.cols, child.rows, child.channels(), child.data };
+					{
+						AtomicTimerMeasurement tg(t_encodeImage);
+						encode(wtile.eimg, childImg);
+					}
 					wtile.coord = myCoord;
-					//dset.push(wtile);
 					dset.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
 				}
 			}
