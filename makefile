@@ -15,7 +15,7 @@ CXX ?= clang++
 debugFlags :=
 #jpeg_libs := -l:libturbojpeg.a
 jpeg_libs := -lturbojpeg
-cv_libs := -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
+cv_libs :=  -I/usr/include/opencv4 -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 
 # Libs to link into main library. OpenCV not needed unless debug rasterio is passed.
 # (Currently, opencv is needed by some apps too, but will completely remove later)
@@ -46,13 +46,13 @@ endif
 
 
 HEADERS := $(wildcard src/*.h src/*.hpp src/utils/*.h src/utils/*.hpp)
-gdal_libs := -lgdal
+gdal_libs := -I/usr/include/gdal -lgdal
 
 #libs := $(all_libs) -l:liblmdb.a -lpthread
 libs := $(all_libs) -llmdb -lpthread
 
 pybind_flags := $(shell python3 -m pybind11 --includes)
-py_lib := -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e "\sLDLIBRARY =" | awk -F '=' '{print $$2}' | xargs | head -c -4 | tail -c +4)
+py_lib ?= -L /usr/lib/x86_64-linux-gnu -l$(shell python3 -m sysconfig | grep -e "\sLDLIBRARY =" | awk -F '=' '{print $$2}' | xargs | head -c -4 | tail -c +4)
 
 BASE_CFLAGS := -std=c++17 -I/usr/local/include/eigen3  $(libs) -fopenmp $(debugFlags)
 
