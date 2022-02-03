@@ -567,6 +567,167 @@ DatasetWritable::~DatasetWritable() {
 	dprintf (" - (~DatasetWritable join w_thread)\n");
 }
 
+#if 1
+void DatasetWritable::w_loop() {
+	//beginTxn(&w_txn, false);
+
+	while (true) {
+		int nWaitingCommands = 0;
+		std::vector<Command> commands;
+		//usleep(20'000);
+		{
+			std::unique_lock<std::mutex> lck(w_mtx);
+			
+			w_cv.wait(lck, [this]{return doStop or pushedCommands.size();});
+			nWaitingCommands = pushedCommands.size();
+			while (pushedCommands.size()) {
+				commands.push_back(Command{});
+				pushedCommands.pop_front(commands.back());
+			}
+
+			if (doStop and nWaitingCommands == 0) {
+				dprintf(" - (wthread exiting.)\n");
+				break;
+			}
+			if (!doStop and nWaitingCommands == 0) {
+				dprintf(" - (wthread, spurious wakeup.\n");
+			}
+		}
+
+		std::sort(commands.begin(), commands.end(), [](const Command& a, const Command& b) {
+				if (a.cmd == Command::BeginLvl) return true;
+				if (a.cmd == Command::EndLvl) return true;
+				if (a.cmd == Command::EraseLvl) return true;
+				if (b.cmd == Command::BeginLvl) return false;
+				if (b.cmd == Command::EndLvl) return false;
+				if (b.cmd == Command::EraseLvl) return false;
+				return a.data.tileBufferIdx < b.data.tileBufferIdx;
+		});
+
+		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
+		//if (commands.size() > 1) printf(" - (awoke to %d avail)\n", commands.size()); fflush(stdout);
+
+		for (auto &theCommand : commands) {
+			if (theCommand.cmd != Command::NoCommand) {
+
+				if (theCommand.cmd == Command::BeginLvl) {
+					std::unique_lock<std::mutex> lck(w_mtx);
+					printf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
+					if (w_txn) endTxn(&w_txn);
+					this->createLevelIfNeeded(theCommand.data.lvl);
+					beginTxn(&w_txn, false);
+					nWaitingCommands--;
+					curTransactionWriteCount = 0;
+
+					for (int i=0; i<numWorkers; i++) {
+						tileBufferIdxMtx[i].lock();
+						tileBufferCommittedIdx[i] = 0;
+						tileBufferLendedIdx[i] = 0;
+						tileBufferIdxMtx[i].unlock();
+					}
+				} else if (theCommand.cmd == Command::EndLvl) {
+					std::unique_lock<std::mutex> lck(w_mtx);
+					printf(" - recv command to end lvl %d, with %d other cmds\n", theCommand.data.lvl, commands.size()); fflush(stdout);
+
+					// TODO XXX Messy spagghetti code while i test this out...
+					// Finish all remaining images.
+					for (int i=0; i<numWorkers; i++) {
+						tileBufferIdxMtx[i].lock();
+						while (tileBufferCommittedIdx[i] < tileBufferLendedIdx[i]) {
+							int theTileIdx = i * buffersPerWorker + ((tileBufferCommittedIdx[i]) % buffersPerWorker);
+							tileBufferCommittedIdx[i]++;
+							WritableTile& tile = tileBuffers[theTileIdx];
+							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+							curTransactionWriteCount++;
+						}
+						tileBufferIdxMtx[i].unlock();
+					}
+
+
+					assert(w_txn);
+					endTxn(&w_txn);
+					//beginTxn(&w_txn, false);
+					nWaitingCommands--;
+					printf(" - recv command to end lvl %d ... done\n", theCommand.data.lvl); fflush(stdout);
+				} else if (theCommand.cmd == Command::EraseLvl) {
+					std::unique_lock<std::mutex> lck(w_mtx);
+					dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
+					if (w_txn) {
+						printf(" - Cannot have open w_txn while erasing level. Should sent 'EndLvl' first.\n"); fflush(stdout);
+						exit(1);
+					}
+					beginTxn(&w_txn, false);
+					dropLvl(theCommand.data.lvl, w_txn);
+					endTxn(&w_txn);
+					nWaitingCommands--;
+				}
+
+
+
+
+
+				/*
+				if (theCommand.cmd == Command::TileReady) {
+					int theTileIdx = theCommand.data.tileBufferIdx;
+					int theWorker = theTileIdx / buffersPerWorker;
+					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
+					WritableTile& tile = tileBuffers[theTileIdx];
+					this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+					curTransactionWriteCount++;
+
+					tileBufferIdxMtx[theWorker].lock();
+					tileBufferCommittedIdx[theWorker] += 1;
+					tileBufferIdxMtx[theWorker].unlock();
+				}
+				*/
+
+				// Only commit a full set. That helps the in-order-ness
+				int setSize = buffersPerWorker / 2;
+				if (theCommand.cmd == Command::TileReady) {
+					int theTileIdx = theCommand.data.tileBufferIdx;
+					int theWorker = theTileIdx / buffersPerWorker;
+					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
+
+					if (theTileIdx % setSize == setSize - 1) {
+						//printf(" - committing range ");
+						for (int j=setSize-1; j>=0; j--) {
+							int theTileIdx_ = (theTileIdx - j);
+							if (theTileIdx_ < 0) theTileIdx_ = buffersPerWorker + theTileIdx_;
+							//printf("%d ",theTileIdx_);
+							WritableTile& tile = tileBuffers[theTileIdx_];
+							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+							curTransactionWriteCount++;
+						}
+						//printf("\n");
+
+						tileBufferIdxMtx[theWorker].lock();
+						tileBufferCommittedIdx[theWorker] += setSize;
+						tileBufferIdxMtx[theWorker].unlock();
+					}
+					theCommand.cmd = Command::NoCommand;
+				}
+				nWaitingCommands--;
+			}
+		}
+
+		// Force a write.
+		// prevents mdb_spill_page from dominating cycles.
+		if (curTransactionWriteCount >= maxTransactionWriteCount) {
+			//std::unique_lock<std::mutex> lck(w_mtx);
+			printf(" - Ending large (%d) transaction, worker threads may block!\n", curTransactionWriteCount);
+
+			endTxn(&w_txn);
+			beginTxn(&w_txn, false);
+			curTransactionWriteCount = 0;
+		}
+
+
+		//if (doStop or nWaitingCommands > 0) w_cv.notify_one();
+	}
+
+	//if (w_txn) endTxn(&w_txn);
+}
+#else
 void DatasetWritable::w_loop() {
 	//beginTxn(&w_txn, false);
 
@@ -656,6 +817,7 @@ void DatasetWritable::w_loop() {
 
 	//if (w_txn) endTxn(&w_txn);
 }
+#endif
 
 // Note: this ASSUMES the correct thread is calling the func.
 WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
@@ -675,7 +837,7 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 			tileBufferIdxMtx[thread].unlock();
 
 			nwaited++;
-			if (nwaited == 10 or nwaited == 50 or nwaited == 100 or nwaited == 250 or nwaited % 500 == 0)
+			if (thread == 0 and (nwaited == 20 or nwaited == 50 or nwaited == 100 or nwaited == 250 or nwaited % 500 == 0))
 				printf(" - too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
 						thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
 			usleep(sleepTime);

@@ -253,8 +253,8 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 #pragma omp barrier
 
 		int tid = omp_get_thread_num();
-		//printf(" - post loop, tid: %d\n", tid);
 		if (tid == 0) {
+			printf(" - post loop, sending endlvl.\n");
 			dset.sendCommand(Command{Command::EndLvl, (int32_t) lvl});
 
 			for (int i=0; i<4; i++) lvlTlbr[i] >>= 1;
@@ -270,9 +270,8 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 		// Note: It is necessary to synchronize with the w_thread before moving onto next level,
 		//       since we read parent tiles from it.
 		if (tid == 0)
-			while (dset.hasOpenWrite()) {
-				usleep(10'000);
-			}
+			dset.blockUntilEmptiedQueue();
+			//while (dset.hasOpenWrite()) { usleep(10'000); }
 #pragma omp barrier
 	}
 
@@ -407,11 +406,13 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 		}
 #pragma omp barrier
 		if (nrows <= 1 and ncols <= 1) {
-			if (tid == 0) printf(" - Stopping Addo on lvl %lu [%lu %lu -> %lu %lu] (nrows %lu, ncols %lu)\n", lvl,
+			 printf(" - Stopping [thr %d] Addo on lvl %lu [%lu %lu -> %lu %lu] (nrows %lu, ncols %lu)\n", tid, lvl,
 					lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3],
 					nrows, ncols);
 			break;
-		} else if (tid == 0) {
+		}
+#pragma omp barrier
+		if (tid == 0) {
 			for (int i=0; i<4; i++) lvlTlbr[i] >>= 1lu;
 			ncols = lvlTlbr[2] - lvlTlbr[0];
 			nrows = lvlTlbr[3] - lvlTlbr[1];
@@ -422,8 +423,8 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 
 		// Note: It is necessary to synchronize with the w_thread before moving onto next level,
 		//       since we read parent tiles from it.
-		if (tid == 0)
-			dset.blockUntilEmptiedQueue();
+		if (tid == 0) dset.blockUntilEmptiedQueue();
+		//usleep(50'000);
 #pragma omp barrier
 	}
 

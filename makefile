@@ -45,7 +45,8 @@ endif
 
 ADDO_THREADS ?= 8
 CONVERT_THREADS ?= 8
-WRITER_NBUF ?= 8
+#WRITER_NBUF ?= 8
+WRITER_NBUF ?= 32
 defs := -DWRITER_NBUF=$(WRITER_NBUF)
 
 HEADERS := $(wildcard src/*.h src/*.hpp src/utils/*.h src/utils/*.hpp)
