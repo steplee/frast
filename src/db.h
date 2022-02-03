@@ -86,7 +86,8 @@ constexpr static unsigned int INVALID_DB = 2147483648;
 
 struct DatabaseOptions {
 	//int64_t mapSize = 10485760l; // lmdb default: 10MB
-	uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
+	//uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
+	uint64_t mapSize = 100lu * (1lu << 30lu); // x 1GB
 };
 
 struct DatasetMeta {

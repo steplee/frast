@@ -409,6 +409,8 @@ void Dataset::recompute_meta_and_write_slow(MDB_txn* txn) {
 	//
 	// The level tlbr is simpler.
 	// Both done at the same time.
+	//
+	// TODO: set mapSize to a smaller but safe value.
 
 	std::vector<DatasetMeta::Region> regions;
 
