@@ -15,7 +15,7 @@ CXX ?= clang++
 debugFlags :=
 #jpeg_libs := -l:libturbojpeg.a
 jpeg_libs := -lturbojpeg
-cv_libs :=  -I/usr/include/opencv4 -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
+cv_libs :=  -L/usr/local/lib -I/usr/include/opencv4 -I/usr/local/include/opencv4 -lopencv_highgui -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 
 # Libs to link into main library. OpenCV not needed unless debug rasterio is passed.
 # (Currently, opencv is needed by some apps too, but will completely remove later)
