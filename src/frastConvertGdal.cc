@@ -19,6 +19,7 @@
 #include <Eigen/Core>
 #include <Eigen/LU>
 //#include <Eigen/Geometry>
+#include <chrono>
 
 
 // Moved to makefile
@@ -449,6 +450,8 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		//#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
 		#pragma omp parallel for schedule(dynamic,4) num_threads(CONVERT_THREADS)
 		for (uint64_t y=tileTlbr[1]; y<tileTlbr[3]; y++) {
+			int tilesInRow = 0;
+			auto startTime = std::chrono::high_resolution_clock::now();
 			for (uint64_t x=tileTlbr[0]; x<tileTlbr[2]; x++) {
 
 				int tid = omp_get_thread_num();
@@ -469,13 +472,17 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 						outTile.coord = coord;
 						outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
+						tilesInRow++;
 				}
 			}
 
 			int tid = omp_get_thread_num();
 			if (tid == 0) {
 				float yyy = y - tileTlbr[1];
-				printf(" - ~%.2f%% finished (row %d / %d)\n", 100.f * yyy / nrows, y-tileTlbr[1], nrows); fflush(stdout);
+				auto endTime = std::chrono::high_resolution_clock::now();
+				double seconds = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count() * 1e-9;
+				double tps = tilesInRow / seconds;
+				printf(" - ~%.2f%% finished (row %d / %d, %d tiles, %.2f tile/sec)\n", 100.f * yyy / nrows, y-tileTlbr[1], nrows, tilesInRow, tps); fflush(stdout);
 			}
 		}
 
