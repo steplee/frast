@@ -664,7 +664,8 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 		} else {
 			tileBufferIdxMtx[thread].unlock();
 
-			if (nwaited++ % 10 == 0)
+			nwaited++;
+			if (nwaited % 10 == 0 and nwaited > 0)
 				printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
 						thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
 			usleep(10'000);

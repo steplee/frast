@@ -34,8 +34,9 @@
  *
  */
 
-#define ADDO_THREADS 4
-static_assert(ADDO_THREADS < DatasetWritable::MAX_THREADS);
+// Moved to makefile
+//#define ADDO_THREADS 4
+static_assert(ADDO_THREADS <= DatasetWritable::MAX_THREADS);
 
 namespace {
 std::vector<int> findExistingLvls(DatasetWritable& dset) {
@@ -461,7 +462,7 @@ int main(int argc, char** argv) {
 	AtomicTimerMeasurement _tg_total(t_total);
 	DatasetWritable dset { argv[1] };
 
-	dset.configure(ADDO_THREADS, 8);
+	dset.configure(ADDO_THREADS, WRITER_NBUF);
 
 	std::vector<int> existingLvls = findExistingLvls(dset);
 

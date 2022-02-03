@@ -21,6 +21,10 @@
 //#include <Eigen/Geometry>
 
 
+// Moved to makefile
+//#define CONVERT_THREADS 4
+static_assert(CONVERT_THREADS <= DatasetWritable::MAX_THREADS);
+
 
 using namespace Eigen;
 template <class T, int r, int c>
@@ -349,11 +353,10 @@ static void test1() {
 }
 
 static void test2() {
-#define THREADS 4
-	GdalDset* dset[THREADS];
-	cv::Mat tile[THREADS];
+	GdalDset* dset[CONVERT_THREADS];
+	cv::Mat tile[CONVERT_THREADS];
 
-	for (int i=0; i<THREADS; i++) {
+	for (int i=0; i<CONVERT_THREADS; i++) {
 		dset[i] = new GdalDset { "/data/naip/mocoNaip/whole.tif" };
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
 		tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type );
@@ -362,15 +365,14 @@ static void test2() {
 	std::cout << " - Making level 16.\n";
 
 	constexpr int N = 10;
-	#pragma omp parallel for schedule(static,4) num_threads(THREADS)
+	#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
 	for (int y=0; y<N; y++)
 	for (int x=0; x<N; x++) {
 		int tid = omp_get_thread_num();
 		dset[tid]->getTile(tile[tid], 20-4, 648536/16-15+y, 299283/16-15+x);
 	}
 
-	for (int i=0; i<THREADS; i++) delete dset[i];
-#undef THREADS
+	for (int i=0; i<CONVERT_THREADS; i++) delete dset[i];
 }
 */
 
@@ -389,17 +391,16 @@ static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
 
 }
 
-#define THREADS 4
 static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls) {
 	// Open one DB, and one tiff+buffer per thread
 
-	GdalDset* dset[THREADS];
-	std::vector<uint8_t> tmpBuf[THREADS];
-	//TileImage tileImages[THREADS];
-	Image tileImages[THREADS];
-	//cv::Mat tile[THREADS];
+	GdalDset* dset[CONVERT_THREADS];
+	std::vector<uint8_t> tmpBuf[CONVERT_THREADS];
+	//TileImage tileImages[CONVERT_THREADS];
+	Image tileImages[CONVERT_THREADS];
+	//cv::Mat tile[CONVERT_THREADS];
 
-	for (int i=0; i<THREADS; i++) {
+	for (int i=0; i<CONVERT_THREADS; i++) {
 		dset[i] = new GdalDset { srcTiff };
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
 		//tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
@@ -420,7 +421,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	outDset.setTileSize(tileSize);
 
 
-	outDset.configure(THREADS, 4);
+	outDset.configure(CONVERT_THREADS, WRITER_NBUF);
 	std::cout << " - beginning" << std::endl;
 
 	// For each level
@@ -445,7 +446,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		printf(" -        %lu rows\n", nrows);
 		printf(" -        %lu cols\n", ncols);
 
-		#pragma omp parallel for schedule(static,4) num_threads(THREADS)
+		#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
 		for (uint64_t y=tileTlbr[1]; y<tileTlbr[3]; y++) {
 			for (uint64_t x=tileTlbr[0]; x<tileTlbr[2]; x++) {
 
@@ -504,7 +505,6 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 	return 0;
 }
-#undef THREADS
 
 int main(int argc, char** argv) {
 

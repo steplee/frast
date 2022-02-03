@@ -43,7 +43,10 @@ endif
 #OPT := -O3 -g -DNDEBUG -march=native
 #OPT := -O0 -g
 
-
+ADDO_THREADS ?= 8
+CONVERT_THREADS ?= 8
+WRITER_NBUF ?= 8
+defs := -DWRITER_NBUF=$(WRITER_NBUF)
 
 HEADERS := $(wildcard src/*.h src/*.hpp src/utils/*.h src/utils/*.hpp)
 gdal_libs := -I/usr/include/gdal -lgdal
@@ -79,13 +82,13 @@ build/frast.a: build/db.o build/image.o
 ######################
 
 build/frastConvertGdal: $(HEADERS) src/frastConvertGdal.cc build/frast.a
-	$(CXX) src/frastConvertGdal.cc -o $@ build/frast.a $(APP_CFLAGS) $(gdal_libs)
+	$(CXX) src/frastConvertGdal.cc -o $@ build/frast.a $(APP_CFLAGS) $(gdal_libs) $(defs) -DCONVERT_THREADS=$(CONVERT_THREADS)
 
 build/frastAddo: $(HEADERS) src/frastAddo.cc build/frast.a
-	$(CXX) src/frastAddo.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs)
+	$(CXX) src/frastAddo.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs) $(defs) -DADDO_THREADS=$(ADDO_THREADS)
 
 build/frastMerge: $(HEADERS) src/frastMerge.cc build/frast.a
-	$(CXX) src/frastMerge.cc -o $@ build/frast.a $(gdal_libs) $(APP_CFLAGS)
+	$(CXX) src/frastMerge.cc -o $@ build/frast.a $(gdal_libs) $(APP_CFLAGS) $(defs)
 
 build/frastInfo: $(HEADERS) src/frastInfo.cc build/frast.a
 	$(CXX) src/frastInfo.cc -o $@ build/frast.a $(APP_CFLAGS)
