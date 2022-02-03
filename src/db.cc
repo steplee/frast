@@ -197,15 +197,9 @@ int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, boo
 	AtomicTimerMeasurement g(t_dbWrite);
 
 	MDB_val key { 8, (void*)(&coord.c) };
-
-	//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << "\n";
-	{
-		AtomicTimerMeasurement g(t_dbWrite);
-		//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << " to lvl " << coord.z() << "\n";
-
-		auto err = mdb_put(txn, dbs[coord.z()], &key, &val, allowOverwrite ? 0 : MDB_NOOVERWRITE);
-		return err;
-	}
+	//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << " to lvl " << coord.z() << "\n";
+	auto err = mdb_put(txn, dbs[coord.z()], &key, &val, allowOverwrite ? 0 : MDB_NOOVERWRITE);
+	return err;
 }
 
 int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
@@ -605,6 +599,7 @@ void DatasetWritable::w_loop() {
 				this->createLevelIfNeeded(theCommand.data.lvl);
 				beginTxn(&w_txn, false);
 				nWaitingCommands--;
+				curTransactionWriteCount = 0;
 			} else if (theCommand.cmd == Command::EndLvl) {
 				dprintf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				assert(w_txn);
@@ -633,12 +628,24 @@ void DatasetWritable::w_loop() {
 				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
 				WritableTile& tile = tileBuffers[theTileIdx];
 				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+				curTransactionWriteCount++;
 
 				tileBufferIdxMtx[theWorker].lock();
 				tileBufferCommittedIdx[theWorker] += 1;
 				tileBufferIdxMtx[theWorker].unlock();
 			}
 			nWaitingCommands--;
+		}
+
+		// Force a write.
+		// prevents mdb_spill_page from dominating cycles.
+		if (curTransactionWriteCount >= maxTransactionWriteCount) {
+			//std::unique_lock<std::mutex> lck(w_mtx);
+			printf(" - Ending large (%d) transaction, worker threads may block!\n", curTransactionWriteCount);
+
+			endTxn(&w_txn);
+			beginTxn(&w_txn, false);
+			curTransactionWriteCount = 0;
 		}
 
 
@@ -652,6 +659,7 @@ void DatasetWritable::w_loop() {
 WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 	int nwaited = 0;
 
+	uint32_t sleepTime = 2'500;
 	while (1) {
 		tileBufferIdxMtx[thread].lock();
 		int lendIdx = tileBufferLendedIdx[thread];
@@ -665,16 +673,17 @@ WritableTile& DatasetWritable::blockingGetTileBufferForThread(int thread) {
 			tileBufferIdxMtx[thread].unlock();
 
 			nwaited++;
-			if (nwaited % 10 == 0 and nwaited > 0)
-				printf(" - (blockingGetTileBufferForThread : too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
+			if (nwaited == 10 or nwaited == 50 or nwaited == 100 or nwaited == 250 or nwaited % 500 == 0)
+				printf(" - too many buffers lent [thr %d] (cmt %d, lnd %d, nbuf %d), waited %d times...\n",
 						thread, comtIdx, lendIdx, buffersPerWorker, nwaited);
-			usleep(10'000);
+			usleep(sleepTime);
+			if (sleepTime < 150'000) sleepTime += sleepTime/2;
 		}
 	}
 }
 
 void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
-	assert(numWorkerThreads < MAX_THREADS);
+	assert(numWorkerThreads <= MAX_THREADS);
 	this->numWorkers = numWorkerThreads;
 	this->buffersPerWorker = buffersPerWorker;
 
@@ -695,7 +704,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		perThreadTileCache[i] = LruCache<uint64_t, Image>(WRITER_CACHE_CAPACITY);
 	}
 
-	pushedCommands = RingBuffer<Command>(128);
+	pushedCommands = RingBuffer<Command>(nBuffers + 16);
 	w_thread = std::thread(&DatasetWritable::w_loop, this);
 }
 
@@ -716,7 +725,7 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 		while (full) {
 			printf(" - commandQ full, sleeping.\n");
 			lck.unlock();
-			usleep(100'000);
+			usleep(10'000);
 			w_cv.notify_one();
 			lck.lock();
 			full = pushedCommands.isFull();
@@ -762,12 +771,18 @@ void DatasetWritable::blockUntilEmptiedQueue() {
 		//printf(" - blockUntilEmptiedQueue :: size at start: %d\n", pushedCommands.size());
 		empty = pushedCommands.empty();
 	}
+
+	uint32_t sleepTime = 5'000;
+	int steps = 0;
 	while (not empty) {
-		usleep(20'000);
+		usleep(sleepTime);
 		{
 			std::lock_guard<std::mutex> lck(w_mtx);
 			empty = pushedCommands.empty();
 		}
+		if (sleepTime < 50'000) sleepTime += sleepTime / 2;
+		steps++;
+		if (steps % 10 == 0) printf(" - blockUntilEmptiedQueue, waited %d times\n", steps);
 	}
 	//printf(" - blockUntilEmptiedQueue :: size at end: %d\n", pushedCommands.size());
 }

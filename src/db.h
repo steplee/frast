@@ -315,6 +315,11 @@ class DatasetWritable : public Dataset {
 		// If it would, sendCommand() blocks
 		RingBuffer<Command> pushedCommands;
 
+		// LMDB has bad performance for very large write transactions.
+		// So break up large ones.
+		int curTransactionWriteCount = 0;
+		int maxTransactionWriteCount = 150'000;
+
 };
 
 
