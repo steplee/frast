@@ -338,6 +338,11 @@ uint64_t Dataset::determineLevelAABB(uint64_t tlbr[4], int lvl) const {
 	if (endTxn(&txn))
 		throw std::runtime_error("Failed to close txn.");
 
+	if (nn > 0) {
+		tlbr[2] += 1;
+		tlbr[3] += 1;
+	}
+
 	//printf(" - determineLevelAABB searched %d\n", nn);
 	return (tlbr[2]-tlbr[0]) * (tlbr[3]-tlbr[1]);
 }
@@ -1077,7 +1082,7 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	float inset_tl_y = -(sh - in_corners[3]) * scale_y;
 
 
-	//printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
+	printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
 	assert(scale_x > 0.f);
 	assert(scale_y > 0.f);
 	assert(inset_tl_x <= 0.f); assert(inset_tl_y <= 0.f);
@@ -1100,6 +1105,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	cv::rectangle(dbgImg1, pt1_, pt2_, cv::Scalar{0,255,0}, 2);
 	//cv::imwrite("out/rasterioSampled.jpg", dbgImg1);
 	cv::imshow("debug", dbgImg1);
+	cv::Mat dbgImg2 = cv::Mat(out.h, out.w, accessCache.channels()==3?CV_8UC3:CV_8UC1, out.buffer).clone();
+	cv::imshow("warped", dbgImg2);
 	cv::waitKey(1);
 #endif
 
@@ -1107,7 +1114,7 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	int push_w = accessCache.w, push_h = accessCache.h;
 	accessCache.w = sw;
 	accessCache.h = sh;
-	dprintf(" - Warping %d %d %d -> %d %d %d\n",
+	printf(" - Warping %d %d %d -> %d %d %d\n",
 			accessCache.w, accessCache.h, accessCache.channels(),
 			out.w, out.h, out.channels());
 	{
@@ -1117,8 +1124,8 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	accessCache.w = push_w;
 	accessCache.h = push_h;
 
-	return false;
 
+	return false;
 }
 
 bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn) {
@@ -1323,6 +1330,8 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 		tlbr[1] = static_cast<uint64_t>((WebMercatorMapScale + bboxWm[1]) * s);
 		tlbr[2] = static_cast<uint64_t>(std::ceil((WebMercatorMapScale + bboxWm[2]) * s));
 		tlbr[3] = static_cast<uint64_t>(std::ceil((WebMercatorMapScale + bboxWm[3]) * s));
+		//tlbr[2] = static_cast<uint64_t>(std::floor((WebMercatorMapScale + bboxWm[2]) * s));
+		//tlbr[3] = static_cast<uint64_t>(std::floor((WebMercatorMapScale + bboxWm[3]) * s));
 #else
 		uint64_t w = 1 + std::max(std::ceil((WebMercatorMapScale + bboxWm[2]) * s) - (WebMercatorMapScale + bboxWm[0]) * s,
 							  std::ceil((WebMercatorMapScale + bboxWm[3]) * s) - (WebMercatorMapScale + bboxWm[1]) * s);
@@ -1338,7 +1347,7 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 		int sh = ny*tileSize();
 
 		good = tileExists(BlockCoordinate{lvl,tlbr[1],tlbr[0]},txn) and
-			   tileExists(BlockCoordinate{lvl,tlbr[3],tlbr[2]},txn) and
+			   tileExists(BlockCoordinate{lvl,tlbr[3]-1,tlbr[2]-1},txn) and
 			   outCapacity >= sw*sh*channels();
 		dprintf(" - Testing capacity %d vs %d\n", outCapacity, sw*sh*channels());
 

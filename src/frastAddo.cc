@@ -261,7 +261,7 @@ int makeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls) {
 			ncols = lvlTlbr[3] - lvlTlbr[1];
 		}
 #pragma omp barrier
-		if (nrows <= 1 or ncols <= 1) {
+		if (nrows <= 1 and ncols <= 1) {
 			if (tid == 0) printf(" - Stopping Addo on lvl %lu (nrows %lu, ncols %lu)\n", lvl, nrows, ncols);
 			break;
 		}
@@ -327,7 +327,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 #pragma omp barrier
 
 #pragma omp for schedule(static)
-		for (uint64_t y=lvlTlbr[1]; y<lvlTlbr[3]; y++) {
+		for (uint64_t y=lvlTlbr[1]; y<=lvlTlbr[3]; y++) {
 
 			int tid = omp_get_thread_num();
 			Image& tmpImage = tmpImage_[tid];
@@ -337,7 +337,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 			EncodedImage& eimg = eimg_[tid];
 
 
-			for (uint64_t x=lvlTlbr[0]; x<lvlTlbr[2]; x++) {
+			for (uint64_t x=lvlTlbr[0]; x<=lvlTlbr[2]; x++) {
 				BlockCoordinate myCoord { lvl, y, x };
 				//printf(" - [thr %d] checking if existing tile %luz %luy %lux with txn %p\n", tid, lvl,y,x, r_txn);
 
@@ -402,15 +402,21 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 		if (tid == 0) {
 			dset.sendCommand(Command{Command::EndLvl, (int32_t) lvl});
 
-			for (int i=0; i<4; i++) lvlTlbr[i] >>= 1;
-			nrows = lvlTlbr[2] - lvlTlbr[0];
-			ncols = lvlTlbr[3] - lvlTlbr[1];
 		}
 #pragma omp barrier
-		if (nrows <= 1 or ncols <= 1) {
-			if (tid == 0) printf(" - Stopping Addo on lvl %lu (nrows %lu, ncols %lu)\n", lvl, nrows, ncols);
+		if (nrows <= 1 and ncols <= 1) {
+			if (tid == 0) printf(" - Stopping Addo on lvl %lu [%lu %lu -> %lu %lu] (nrows %lu, ncols %lu)\n", lvl,
+					lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3],
+					nrows, ncols);
 			break;
+		} else if (tid == 0) {
+			for (int i=0; i<4; i++) lvlTlbr[i] >>= 1lu;
+			ncols = lvlTlbr[2] - lvlTlbr[0];
+			nrows = lvlTlbr[3] - lvlTlbr[1];
+			lvlTlbr[3] += 1;
+			lvlTlbr[2] += 1;
 		}
+#pragma omp barrier
 
 		// Note: It is necessary to synchronize with the w_thread before moving onto next level,
 		//       since we read parent tiles from it.

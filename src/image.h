@@ -118,11 +118,11 @@ struct Image {
 	}
 
 	inline Image() : w(0), h(0), buffer(nullptr), format(Format::GRAY) {}
-	inline Image(int w, int h, int c) : w(w), h(h), buffer(nullptr), format(c2format(c)) {}
-	inline Image(int w, int h, Format f) : w(w), h(h), format(f), buffer(nullptr) { }
+	inline Image(int h, int w, int c) : w(w), h(h), buffer(nullptr), format(c2format(c)) {}
+	inline Image(int h, int w, Format f) : w(w), h(h), format(f), buffer(nullptr) { }
 	// View()ing constructors
-	inline Image(int w, int h, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
-	inline Image(int w, int h, int c, uint8_t* buf) : w(w), h(h), format(c2format(c)), buffer(buf), ownBuffer(false) { capacity=size(); }
+	inline Image(int h, int w, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
+	inline Image(int h, int w, int c, uint8_t* buf) : w(w), h(h), format(c2format(c)), buffer(buf), ownBuffer(false) { capacity=size(); }
 
 	inline int32_t size() const {
 		return w * h * channels();

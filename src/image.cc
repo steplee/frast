@@ -1,6 +1,7 @@
 #include "image.h"
 #include <iostream>
 #include <cmath>
+#include <cstdio>
 
 
 // These two flags offer alternatives to OpenCV's warping and image encoding.
@@ -336,6 +337,7 @@ template <int C>
 void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	float iH[6];
 	inv_3x2(iH,H);
+
 
 	const int oh = out.h, ow = out.w;
 	const int ih = in.h, iw = in.w;

@@ -23,7 +23,7 @@ all_libs := $(jpeg_libs)
 
 ifdef DEBUG_RASTERIO
 debugFlags := -DDEBUG_RASTERIO 
-all_libs += cv_libs
+all_libs += $(cv_libs)
 endif
 ifdef DEBUG_PRINT
 debugFlags += -DDEBUG_PRINT 

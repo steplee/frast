@@ -24,19 +24,28 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	int ts = dset.tileSize();
 	Image img { ts, ts, c }; img.alloc();
 
+	if (x == -1 or y == -1) {
+		uint64_t tlbr[4];
+		dset.determineLevelAABB(tlbr, z);
+		x = tlbr[0];
+		y = tlbr[1];
+		w = tlbr[2] - tlbr[0];
+		h = tlbr[3] - tlbr[1];
+	}
 
 	auto cv_type = c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
-	cv::Mat mat ( ts * w, ts * h, cv_type );
+	cv::Mat mat ( ts * h, ts * w, cv_type );
 
 	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
-	for (uint64_t xx=x, xi=0; xx<x+h; xx++, xi++) {
+	for (uint64_t xx=x, xi=0; xx<x+w; xx++, xi++) {
 		BlockCoordinate coord { z,yy,xx };
+		cv::Mat imgRef ( ts, ts, cv_type, img.buffer );
 		if (dset.get(img, coord, nullptr)) {
-			printf(" - accessed bad block, exiting.\n");
-			return 1;
+			printf(" - accessed bad block %d %lu %lu.\n", z,yy,xx);
+			imgRef = cv::Scalar{0};
+			//return 1;
 		}
 
-		cv::Mat imgRef { img.h, img.w, cv_type, img.buffer };
 		imgRef.copyTo(mat(cv::Rect({((int)xi)*ts, (int)(h-1-yi)*ts, ts, ts})));
 	}
 
@@ -68,8 +77,8 @@ int main(int argc, char** argv) {
 		int z = std::atoi(argv[3]);
 		int y = std::atoi(argv[4]);
 		int x = std::atoi(argv[5]);
-		int w = argc == 8 ? std::atoi(argv[6]) : 1;
-		int h = argc == 8 ? std::atoi(argv[7]) : 1;
+		int w = argc == 8 ? std::atoi(argv[6]) : -1;
+		int h = argc == 8 ? std::atoi(argv[7]) : -1;
 		Dataset dset(std::string{argv[2]});
 		return dumpTile(dset, z,y,x, w,h);
 	}
