@@ -71,10 +71,15 @@ struct BlockCoordinate {
 	uint64_t c;
 	inline BlockCoordinate(uint64_t cc) : c(cc) {}
 	inline BlockCoordinate(const BlockCoordinate& bc) : c(bc.c) {}
-	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(z<<58 | y<<29 | x) {}
+	// See if this order is slower.
+	// inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(z<<58 | y<<29 | x) {}
+	// inline uint64_t z() const { return (c >> 58) & 0b111111; }
+	// inline uint64_t y() const { return (c >> 29) & 0b11111111111111111111111111111; }
+	// inline uint64_t x() const { return (c      ) & 0b11111111111111111111111111111; }
+	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(z<<58 | x<<29 | y) {}
 	inline uint64_t z() const { return (c >> 58) & 0b111111; }
-	inline uint64_t y() const { return (c >> 29) & 0b11111111111111111111111111111; }
-	inline uint64_t x() const { return (c      ) & 0b11111111111111111111111111111; }
+	inline uint64_t x() const { return (c >> 29) & 0b11111111111111111111111111111; }
+	inline uint64_t y() const { return (c      ) & 0b11111111111111111111111111111; }
 	inline bool operator==(const BlockCoordinate& other) const { return c == other.c; }
 	inline operator uint64_t() const { return c; }
 	inline operator const uint64_t*() const { return &c; }
