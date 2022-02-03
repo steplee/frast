@@ -243,7 +243,8 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 
 	if (err == MDB_KEYEXIST) {
 		printf(" - duplicate coord %ld %ld %ld.\n", coord.z(), coord.y(), coord.x());
-		assert(false);
+		return err;
+		//assert(false);
 	}
 
 	else if (err == MDB_MAP_FULL and givenTxn != nullptr) {
