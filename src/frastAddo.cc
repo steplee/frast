@@ -327,7 +327,8 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 		}
 #pragma omp barrier
 
-#pragma omp for schedule(static)
+//#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic,4)
 		for (uint64_t y=lvlTlbr[1]; y<=lvlTlbr[3]; y++) {
 
 			int tid = omp_get_thread_num();

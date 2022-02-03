@@ -446,7 +446,8 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		printf(" -        %lu rows\n", nrows);
 		printf(" -        %lu cols\n", ncols);
 
-		#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
+		//#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
+		#pragma omp parallel for schedule(dynamic,4) num_threads(CONVERT_THREADS)
 		for (uint64_t y=tileTlbr[1]; y<tileTlbr[3]; y++) {
 			for (uint64_t x=tileTlbr[0]; x<tileTlbr[2]; x++) {
 
