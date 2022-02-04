@@ -26,6 +26,25 @@
 //#define CONVERT_THREADS 4
 static_assert(CONVERT_THREADS <= DatasetWritable::MAX_THREADS);
 
+template <int C> static bool is_solid_color_(Image& img) {
+	uint8_t ctr[C];
+	//for (int c=0; c<C; c++) ctr[c] = img.buffer[img.h/2*img.w*C+img.w/2*C+c];
+	for (int c=0; c<C; c++) ctr[c] = img.buffer[0+c];
+
+	for (int y=0; y<img.h; y+=4)
+	for (int x=0; x<img.w; x+=4)
+	for (int c=0; c<C; c++) {
+		uint8_t val = img.buffer[y*img.w*C+x*C+c];
+		if (val != ctr[c]) return false;
+	}
+	return true;
+}
+static bool is_solid_color(Image& img) {
+	if (img.channels() == 1) return is_solid_color_<1>(img);
+	if (img.channels() == 3) return is_solid_color_<3>(img);
+	if (img.channels() == 4) return is_solid_color_<4>(img);
+	throw std::runtime_error("invalid # channels");
+}
 
 using namespace Eigen;
 template <class T, int r, int c>
@@ -273,6 +292,10 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	//assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
 	//imgPrj.create(oh,ow,cv_type);
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
+	if (is_solid_color(imgPrj)) {
+		//printf("Tile was solid color, not using.\n");
+		res = true;
+	}
 	if (res) {
 		//printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
 		return res;
