@@ -5,6 +5,7 @@
 #include <opencv2/highgui.hpp>
 
 #include <omp.h>
+#include <chrono>
 
 #include <unordered_set>
 
@@ -318,17 +319,17 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 			}
 		}
 #pragma omp barrier
-		int tid_ = omp_get_thread_num();
-		MDB_txn* r_txn = nullptr;
-		if (dset.beginTxn(&r_txn, true)) {
-			printf(" - beginTxn failed.\n"); fflush(stdout);
-			throw std::runtime_error("beginTxn failed");
-		}
 #pragma omp barrier
 
 //#pragma omp for schedule(static)
 #pragma omp for schedule(dynamic,4)
 		for (uint64_t y=lvlTlbr[1]; y<=lvlTlbr[3]; y++) {
+
+			MDB_txn* r_txn = nullptr;
+			if (dset.beginTxn(&r_txn, true)) {
+				printf(" - beginTxn failed.\n"); fflush(stdout);
+				throw std::runtime_error("beginTxn failed");
+			}
 
 			int tid = omp_get_thread_num();
 			Image& tmpImage = tmpImage_[tid];
@@ -336,18 +337,22 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 			cv::Mat& parent = parent_[tid];
 			cv::Mat& child = child_[tid];
 			EncodedImage& eimg = eimg_[tid];
+			int tilesInRow = 0;
+			auto startTime = std::chrono::high_resolution_clock::now();
 
 
 			for (uint64_t x=lvlTlbr[0]; x<=lvlTlbr[2]; x++) {
 				BlockCoordinate myCoord { lvl, y, x };
 				//printf(" - [thr %d] checking if existing tile %luz %luy %lux with txn %p\n", tid, lvl,y,x, r_txn);
 
+				/*
 				if (dset.tileExists(myCoord, r_txn)) {
 					// Skip.
 					// TODO: Actually: should merge with downsampled version.
 					dprintf(" - [thr %d] skipping existing tile %luz %luy %lux\n", tid, lvl,y,x);
 					continue;
 				}
+				*/
 
 				// Get four parents
 				int nMissingParents = 0;
@@ -369,7 +374,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 				}
 
 				if (nMissingParents == 4) {
-					printf(" - [thr %d] Strange: tile %luz %luy %lux was missing all parents? Skipping it.\n", tid, lvl,y,x);
+					//printf(" - [thr %d] Strange: tile %luz %luy %lux was missing all parents? Skipping it.\n", tid, lvl,y,x);
 				} else {
 					dprintf(" - [thr %d] making tile %lu %lu %lu, with %d parents\n", tid, lvl,y,x, 4-nMissingParents);
 
@@ -390,13 +395,22 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					}
 					wtile.coord = myCoord;
 					dset.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+					tilesInRow++;
 				}
 			}
+
+			if (tid == 0) {
+				float yyy = y - lvlTlbr[1];
+				auto endTime = std::chrono::high_resolution_clock::now();
+				double seconds = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count() * 1e-9;
+				double tps = tilesInRow / seconds;
+				printf(" - ~%.2f%% finished (row %d / %d, %d tiles, %.2f tile/sec)\n", 100.f * yyy / nrows, y-lvlTlbr[1], nrows, tilesInRow, tps); fflush(stdout);
+			}
+			dset.endTxn(&r_txn);
 		}
 #pragma omp barrier
+			int tid = omp_get_thread_num();
 
-		int tid = omp_get_thread_num();
-		dset.endTxn(&r_txn);
 
 #pragma omp barrier
 		//printf(" - post loop, tid: %d\n", tid);

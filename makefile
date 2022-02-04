@@ -83,7 +83,7 @@ build/frast.a: build/db.o build/image.o
 ######################
 
 build/frastConvertGdal: $(HEADERS) src/frastConvertGdal.cc build/frast.a
-	$(CXX) src/frastConvertGdal.cc -o $@ build/frast.a $(APP_CFLAGS) $(gdal_libs) $(defs) -DCONVERT_THREADS=$(CONVERT_THREADS)
+	$(CXX) src/frastConvertGdal.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs) $(gdal_libs) $(defs) -DCONVERT_THREADS=$(CONVERT_THREADS)
 
 build/frastAddo: $(HEADERS) src/frastAddo.cc build/frast.a
 	$(CXX) src/frastAddo.cc -o $@ build/frast.a $(APP_CFLAGS) $(cv_libs) $(defs) -DADDO_THREADS=$(ADDO_THREADS)

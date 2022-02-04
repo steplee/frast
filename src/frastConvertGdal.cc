@@ -12,7 +12,7 @@
 #include <ogr_spatialref.h>
 
 //#include <opencv2/core.hpp>
-//#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc.hpp>
 //#include <opencv2/imgcodecs.hpp>
 //#include <opencv2/highgui.hpp>
 
@@ -31,8 +31,8 @@ template <int C> static bool is_solid_color_(Image& img) {
 	//for (int c=0; c<C; c++) ctr[c] = img.buffer[img.h/2*img.w*C+img.w/2*C+c];
 	for (int c=0; c<C; c++) ctr[c] = img.buffer[0+c];
 
-	for (int y=0; y<img.h; y+=4)
-	for (int x=0; x<img.w; x+=4)
+	for (int y=0; y<img.h; y+=2)
+	for (int x=0; x<img.w; x+=2)
 	for (int c=0; c<C; c++) {
 		uint8_t val = img.buffer[y*img.w*C+x*C+c];
 		if (val != ctr[c]) return false;
@@ -68,6 +68,7 @@ struct GdalDset {
 	GDALDataset* dset = nullptr;
     OGRCoordinateTransformation* wm2prj  = nullptr;
     OGRCoordinateTransformation* prj2wm  = nullptr;
+	bool forceGray = false;
 
 	RowMatrix23d pix2prj;
 	RowMatrix23d prj2pix;
@@ -82,6 +83,7 @@ struct GdalDset {
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
 	Image imgPrj;
+	Image imgPrjGray;
 
 	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
@@ -193,8 +195,69 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
                                   eleSize * nbands, eleSize * nbands * outw, eleSize,
                                   &arg);
         return err != CE_None;
+    } else if (xoff + xsize >= 0 and xoff <= w and yoff + ysize >= 0 and yoff <= h) {
+        // case where there is partial overlap
+
+        // NOTE: TODO I haven't really verified this is correct!
+        // TODO: Haven't tasted non-unit aspect ratios
+
+        Eigen::Vector4i inner{std::max(0, xoff),
+                              std::max(0, yoff),
+                              std::min(w - 1, xoff + xsize),
+                              std::min(h - 1, yoff + ysize)};
+        float           sx      = ((float)outw) / xsize;
+        float           sy      = ((float)outh) / ysize;
+        int             inner_w = inner(2) - inner(0), inner_h = inner(3) - inner(1);
+        int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
+        cv::Mat         buf(read_h, read_w, out.channels() == 3 ? CV_8UC3 : CV_8U);
+        auto            err = dset->RasterIO(GF_Read,
+                                  inner(0),
+                                  inner(1),
+                                  inner_w,
+                                  inner_h,
+                                  buf.data,
+                                  read_w,
+                                  read_h,
+                                  gdalType,
+                                  nbands,
+                                  nullptr,
+                                  eleSize * nbands,
+                                  eleSize * nbands * read_w,
+                                  eleSize * 1,
+                                  nullptr);
+        if (err != CE_None) { return true; }
+
+		// Nevermind: This won't work if input tiffs are split exactly on edges.
+		// This will work if tiffs have some overlap, but that is rare
+		/*
+		// Make edges of sampled buffer black (nodata).
+		// This helps frastMerge avoid weighting bilinear sampled nodata/realData
+		// edges, which causes black seams!
+		if (yoff < 0)
+		buf(cv::Rect{0,0,buf.cols,5})            = cv::Scalar{0};
+		if (xoff < 0)
+		buf(cv::Rect{0,0,5,buf.rows})            = cv::Scalar{0};
+		if (xoff+xsize > w)
+		buf(cv::Rect{buf.cols-5,0,5,buf.rows}) = cv::Scalar{0};
+		if (yoff+ysize > h)
+		buf(cv::Rect{0,buf.rows-5,buf.cols,5}) = cv::Scalar{0};
+		*/
+
+        float in_pts[6]  = {0, 0, sx * inner_w, 0, 0, sy * inner_h};
+        float out_pts[6] = {sx * (inner(0) - xoff),
+                            sy * (inner(1) - yoff),
+                            sx * (inner(2) - xoff),
+                            sy * (inner(1) - yoff),
+                            sx * (inner(0) - xoff),
+                            sy * (inner(3) - yoff)};
+
+        cv::Mat in_pts_(3, 2, CV_32F, in_pts);
+        cv::Mat out_pts_(3, 2, CV_32F, out_pts);
+        cv::Mat A = cv::getAffineTransform(in_pts_, out_pts_);
+		cv::Mat out_(outh, outw, out.channels() == 3 ? CV_8UC3 : CV_8U, out.buffer);
+        cv::warpAffine(buf, out_, A, cv::Size{outw, outh});
+        return false;
     } else {
-        //out = cv::Scalar{0};
 		memset(out.buffer, 0, out.w*out.h*out.channels());
         return true;
     }
@@ -288,17 +351,23 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		imgPrj.alloc();
 	}
 
-	//cv::Mat imgPrj;
-	//assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
-	//imgPrj.create(oh,ow,cv_type);
+	Image* srcImg = &imgPrj;
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
-	if (is_solid_color(imgPrj)) {
-		//printf("Tile was solid color, not using.\n");
-		res = true;
+	if (forceGray and imgPrj.channels() != 1) {
+		if (imgPrjGray.w < sw or imgPrjGray.h < sh) {
+			imgPrjGray = std::move(Image{ sh, sw, 1 });
+			imgPrjGray.alloc();
+		}
+		imgPrj.makeGray(imgPrjGray);
+		srcImg = &imgPrjGray;
 	}
 	if (res) {
-		//printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
+		printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
 		return res;
+	}
+	if (is_solid_color(*srcImg)) {
+		printf("Tile was solid color, not using.\n");
+		return true;
 	}
 
 	// TODO: If imgPrj is less channels than the output type, do it here. Otherwise do it after warping.
@@ -338,7 +407,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	}
 #else
 	//Image dst { out.rows, out.cols, channels, out.data };
-	Image& src = imgPrj;
+	Image& src = *srcImg;
 	Image& dst = out;
 	{
 		AtomicTimerMeasurement tg(t_warp);
@@ -411,14 +480,14 @@ static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
 	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s) - 4lu;
 	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s) - 4lu;
 
-	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s + .5) + 0lu;
-	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s + .5) + 0lu;
+	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s - 1) + 0lu;
+	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s - 1) + 0lu;
 	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s     ) - 0lu;
 	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s     ) - 0lu;
 
 }
 
-static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls) {
+static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls, bool forceGray) {
 	// Open one DB, and one tiff+buffer per thread
 
 	GdalDset* dset[CONVERT_THREADS];
@@ -427,12 +496,22 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	Image tileImages[CONVERT_THREADS];
 	//cv::Mat tile[CONVERT_THREADS];
 
+	int32_t channels = 3;
+	int32_t tileSize = 256;
+
 	for (int i=0; i<CONVERT_THREADS; i++) {
 		dset[i] = new GdalDset { srcTiff };
+		dset[i]->forceGray = forceGray;
+		
+		if (i == 0) {
+			channels = dset[0]->nbands;
+			if (forceGray) channels = 1;
+		}
+
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
 		//tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
 		//tileImages[i].isOverview = false;
-		tileImages[i] = Image { 256, 256, dset[i]->nbands };
+		tileImages[i] = Image { 256, 256, channels };
 		tileImages[i].alloc();
 		//tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
@@ -442,8 +521,6 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	DatasetWritable outDset { outPath , opts };
 
 	// Configure #channels and tileSize.
-	int32_t channels = dset[0]->nbands;
-	int32_t tileSize = 256;
 	outDset.setChannels(channels);
 	outDset.setTileSize(tileSize);
 
@@ -475,10 +552,10 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 		//#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
 		#pragma omp parallel for schedule(dynamic,4) num_threads(CONVERT_THREADS)
-		for (uint64_t y=tileTlbr[1]; y<tileTlbr[3]; y++) {
+		for (uint64_t y=tileTlbr[1]; y<=tileTlbr[3]; y++) {
 			int tilesInRow = 0;
 			auto startTime = std::chrono::high_resolution_clock::now();
-			for (uint64_t x=tileTlbr[0]; x<tileTlbr[2]; x++) {
+			for (uint64_t x=tileTlbr[0]; x<=tileTlbr[2]; x++) {
 
 				int tid = omp_get_thread_num();
 				BlockCoordinate coord { (uint64_t)lvl, y, x};
@@ -512,10 +589,10 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 			}
 		}
 
+		outDset.blockUntilEmptiedQueue();
 		outDset.sendCommand(Command{Command::EndLvl, lvl});
+		outDset.blockUntilEmptiedQueue();
 
-		while (outDset.hasOpenWrite())
-			usleep(10'000);
 
 		uint64_t finalTlbr[4];
 		uint64_t nHere = outDset.determineLevelAABB(finalTlbr, lvl);
@@ -547,7 +624,7 @@ int main(int argc, char** argv) {
 	//return 0;
 
 	if (argc <= 3) {
-		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <lvls>+\n");
+		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> [options]* <lvls>+\n");
 		if (argc == 3) printf("\t(You must provide at least one level.)\n");
 		return 1;
 	}
@@ -559,8 +636,20 @@ int main(int argc, char** argv) {
 
 	AtomicTimerMeasurement _tg_total(t_total);
 
+	int noptions = 0;
+
+	bool forceGray = false;
+	for (int i=3; i<argc; i++) {
+		if (strcmp(argv[i], "-g") == 0 or strcmp(argv[i], "--gray") == 0) {
+			forceGray = true;
+			printf(" - Forcing grayscale!\n");
+			noptions++;
+		}
+	}
+
 	try {
-		for (int i=3; i<argc; i++) {
+		for (int i=3+noptions; i<argc; i++) {
+
 			lvls.push_back( std::stoi(argv[i]) );
 			if (lvls.back() < 0 or lvls.back() >= 27) {
 				printf(" - Lvls must be >0 and <28\n");
@@ -569,5 +658,6 @@ int main(int argc, char** argv) {
 		}
 	} catch (...) { printf(" - You provided a non-integer or invalid level.\n"); return 1; }
 
-	return test3(srcTiff, outPath, lvls);
+
+	return test3(srcTiff, outPath, lvls, forceGray);
 }

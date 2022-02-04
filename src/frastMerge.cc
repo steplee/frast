@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
 	for (auto path : inDsetPaths) inDsets.push_back(std::make_unique<DatasetReader>(path));
 	AtomicTimerMeasurement _tg_total(t_total);
 
-	outDset.configure(1,8);
+	outDset.configure(1,2);
 	
 	// Determine min and max lvls
 	int minLevel = 0, maxLevel = MAX_LVLS-1;
@@ -128,8 +128,13 @@ int main(int argc, char** argv) {
 		// Note: w_txn should be in inner loop, because on collisions we will access results
 		// from the last dataset that have just been added.
 
+
 		for (int dseti=0; dseti<inDsets.size(); dseti++) {
 			auto& inDset = *inDsets[dseti];
+
+			outDset.sendCommand(Command{Command::BeginLvl,lvl});
+			outDset.blockUntilEmptiedQueue();
+
 
 			int tid = 0;
 
@@ -146,9 +151,15 @@ int main(int argc, char** argv) {
 			} else {
 
 				MDB_txn* w_txn;
-				if (outDset.beginTxn(&w_txn)) throw std::runtime_error("failed to begin txn");
+				if (outDset.beginTxn(&w_txn,true)) throw std::runtime_error("failed to begin txn");
 
-				inDset.iterLevel(lvl, r_txn, [&seen, &outDset, &inDsets, dseti, tid](const BlockCoordinate& bc, MDB_val& val) {
+				Image primaImg { outDset.tileSize(), outDset.tileSize(), outDset.channels() };
+				Image otherImg { outDset.tileSize(), outDset.tileSize(), outDset.channels() };
+				primaImg.calloc();
+				otherImg.calloc();
+				EncodedImage finalEimg;
+
+				inDset.iterLevel(lvl, r_txn, [&seen, &outDset, &inDsets, &primaImg, &otherImg, dseti, tid, &w_txn](const BlockCoordinate& bc, MDB_val& val) {
 						auto it = seen.find(bc.c);
 						if (it == seen.end()) {
 							// No collision happened: just add data without decode/encode
@@ -156,6 +167,8 @@ int main(int argc, char** argv) {
 							auto &wtile = outDset.blockingGetTileBufferForThread(tid);
 							wtile.fillWith(bc, val);
 							outDset.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+							printf(" - No collision on tile %luz %luy %lux [dset %d / %d], size %zu\n",
+									bc.z(),bc.y(),bc.x(),dseti+1,inDsets.size(), val.mv_size);
 						} else {
 							// Collision happened: must decode both images, merge, encode, and add.
 							printf(" - Collision on tile %luz %luy %lux [dset %d / %d]\n",
@@ -164,7 +177,28 @@ int main(int argc, char** argv) {
 							// ================================================
 							// TODO: decode, Image::merge_keep, encode, write
 							// ================================================
+
+							if (outDset.get(primaImg, bc, &w_txn)) {
+								printf(" - Strange: we should have succeed in get().\n");
+							} else {
+								EncodedImageRef eimgRef { val.mv_size, (uint8_t*)val.mv_data };
+								decode(otherImg, eimgRef);
+
+								//primaImg.add_nodata__keep_(otherImg);
+								//primaImg.add_nodata__average_(otherImg);
+								primaImg.add_nodata__weighted_(otherImg);
+
+								auto &wtile = outDset.blockingGetTileBufferForThread(tid);
+								{
+									AtomicTimerMeasurement tg(t_encodeImage);
+									encode(wtile.eimg, primaImg);
+								}
+
+								wtile.coord = bc;
+								outDset.sendCommand(Command{Command::TileReadyOverwrite, wtile.bufferIdx});
+							}
 						}
+						outDset.blockUntilEmptiedQueue();
 				});
 
 				if (outDset.endTxn(&w_txn)) throw std::runtime_error("failed to end txn");
@@ -172,7 +206,11 @@ int main(int argc, char** argv) {
 
 			if (inDset.endTxn(&r_txn)) throw std::runtime_error("failed to end txn");
 
+			outDset.sendCommand(Command{Command::EndLvl,lvl});
+			outDset.blockUntilEmptiedQueue();
+
 		}
+
 	}
 
 	

@@ -64,7 +64,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	int flags = MDB_NOSUBDIR;
 	if (readOnly) flags |= MDB_RDONLY;
 	// See if this speeds up writes.
-	if (not readOnly) flags |= MDB_NORDAHEAD;
+	//if (not readOnly) flags |= MDB_NORDAHEAD;
 	mode_t fileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 	if (auto err = mdb_env_open(env, path.c_str(), flags, fileMode)) {
 		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err));
@@ -268,7 +268,7 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 		err = put_(val, coord, theTxn, allowOverwrite);
 		if (err) std::cout << " - mdb_put error (after map resize): " << mdb_strerror(err) << "\n";
 		*/
-	} else if (err) std::cout << " - mdb_put error: " << mdb_strerror(err) << "\n";
+	} else if (err) std::cout << " - mdb_put error: " << mdb_strerror(err) << " sz " << len << "\n";
 
 	if (givenTxn == nullptr) endTxn(&theTxn);
 	return err != 0;
@@ -547,16 +547,16 @@ void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std
 	image.copyFrom(im);
 	if (v.size() > eimg.size()) {
 		eimg.resize(v.size() * 2);
-		std::copy(v.begin(), v.end(), eimg.begin());
 	}
+	std::copy(v.begin(), v.end(), eimg.begin());
 	coord = c;
 }
 void WritableTile::fillWith(const BlockCoordinate& c, const MDB_val& val) {
 	AtomicTimerMeasurement g(t_tileBufferCopy);
 	if (val.mv_size > eimg.size()) {
 		eimg.resize(val.mv_size * 2);
-		std::copy((uint8_t*)val.mv_data, ((uint8_t*)val.mv_data)+val.mv_size, eimg.begin());
 	}
+	std::copy((uint8_t*)val.mv_data, ((uint8_t*)val.mv_data)+val.mv_size, eimg.begin());
 	coord = c;
 }
 
@@ -568,7 +568,7 @@ DatasetWritable::~DatasetWritable() {
 	dprintf (" - (~DatasetWritable join w_thread)\n");
 }
 
-#if 1
+#if 0
 void DatasetWritable::w_loop() {
 	//beginTxn(&w_txn, false);
 
@@ -684,7 +684,7 @@ void DatasetWritable::w_loop() {
 
 				// Only commit a full set. That helps the in-order-ness
 				int setSize = buffersPerWorker / 2;
-				if (theCommand.cmd == Command::TileReady) {
+				if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
 					int theTileIdx = theCommand.data.tileBufferIdx;
 					int theWorker = theTileIdx / buffersPerWorker;
 					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
@@ -696,7 +696,7 @@ void DatasetWritable::w_loop() {
 							if (theTileIdx_ < 0) theTileIdx_ = buffersPerWorker + theTileIdx_;
 							//printf("%d ",theTileIdx_);
 							WritableTile& tile = tileBuffers[theTileIdx_];
-							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
 							curTransactionWriteCount++;
 						}
 						//printf("\n");
@@ -786,12 +786,12 @@ void DatasetWritable::w_loop() {
 		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
 
 		if (theCommand.cmd != Command::NoCommand) {
-			if (theCommand.cmd == Command::TileReady) {
+			if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
 				int theTileIdx = theCommand.data.tileBufferIdx;
 				int theWorker = theTileIdx / buffersPerWorker;
 				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
 				WritableTile& tile = tileBuffers[theTileIdx];
-				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
+				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
 				curTransactionWriteCount++;
 
 				tileBufferIdxMtx[theWorker].lock();

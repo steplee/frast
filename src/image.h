@@ -160,6 +160,7 @@ struct Image {
 	// TODO: Support checking less-than or greater-than some nodata, rather than equality.
 	void add_nodata__average_(const Image& other, uint16_t nodata=0);
 	void add_nodata__keep_(const Image& other, uint16_t nodata=0);
+	void add_nodata__weighted_(const Image& other, uint32_t nodata=0);
 
 	// Destination image should be allocated.
 	void warpAffine(Image& out, const float H[6]) const;
@@ -173,6 +174,8 @@ struct Image {
 	// (I originally tried using cv::resize followed by cv::remap, but it does not
 	//  treat corners properly)
 	void remapRemap(Image& out, const float* map, int mapSizeW, int mapSizeH) const;
+
+	void makeGray(Image& out) const;
 };
 
 

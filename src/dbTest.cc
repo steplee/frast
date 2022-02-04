@@ -23,6 +23,7 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	int32_t c = dset.channels();
 	int ts = dset.tileSize();
 	Image img { ts, ts, c }; img.alloc();
+	printf(" - dset channels %d\n", c);
 
 	if (x == -1 or y == -1) {
 		uint64_t tlbr[4];
@@ -69,9 +70,33 @@ int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
 	cv::imwrite("out/rasterIoed.jpg", mat);
 	return 0;
 }
+int testGray() {
+	Image img1 { 256, 256, 3 };
+	Image img2 { 256, 256, 1 };
+	img1.calloc();
+	img2.calloc();
+	for (int i=0; i<256; i++)
+	for (int j=0; j<256; j++)
+	for (int k=0; k<3; k++) {
+		if (k == 0 and std::abs(i-j) < 2) img1.buffer[i*256*3+j*3+k] = 200;
+		if (k == 1 and std::abs(i-j) > 256-3) img1.buffer[i*256*3+j*3+k] = 200;
+	}
+
+	img1.makeGray(img2);
+
+	cv::Mat mat1 ( img1.h, img1.w, CV_8UC3, img1.buffer );
+	cv::Mat mat2 ( img1.h, img1.w, CV_8UC1, img2.buffer );
+	cv::imwrite("out/grayTest1.jpg", mat1);
+	cv::imwrite("out/grayTest2.jpg", mat2);
+
+	return 0;
+}
 }
 
 int main(int argc, char** argv) {
+	if (argc > 1 and strcmp(argv[1],"testGray") == 0) {
+		return testGray();
+	}
 	if (argc > 1 and strcmp(argv[1],"dumpTile") == 0) {
 		assert(argc == 6 or argc == 8);
 		int z = std::atoi(argv[3]);

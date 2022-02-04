@@ -57,6 +57,7 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 	uint8_t* destBuf = out.buffer;
 	auto pitch = out.w * out.channels();
 
+	//printf(" - Decode with channels %d\n", out.channels());
     int pf = out.channels() == 1 ? TJPF_GRAY : TJPF_RGB;
 	int flags = 0;
 
@@ -94,6 +95,7 @@ bool encode(EncodedImage& out, const Image& img) {
         pixelFormat = TJPF_RGB;
         jpegSubsamp = TJSAMP_411;
     }
+	//printf(" - Encode with channels %d, %d %d\n", img.channels(), pixelFormat, jpegSubsamp);
 
     int tj_stat = tjCompress2( handle, img.buffer, width, pitch, height,
         pixelFormat, &(jpegBuf), &jpegSize, jpegSubsamp, jpegQual, flags);
@@ -257,6 +259,62 @@ void Image::add_nodata__keep_(const Image& other, uint16_t nodata) {
 			buffer[i*4+1] = static_cast<uint8_t>(a_bad ? b[1] : b_bad ? a[1] : a[1]);
 			buffer[i*4+2] = static_cast<uint8_t>(a_bad ? b[2] : b_bad ? a[2] : a[2]);
 			buffer[i*4+3] = static_cast<uint8_t>(a_bad ? b[3] : b_bad ? a[3] : a[3]);
+		}
+	} else {
+		throw std::runtime_error("not supported yet.");
+	}
+}
+void Image::add_nodata__weighted_(const Image& other, uint32_t nodata_) {
+	int32_t nodata = nodata_;
+	int n = size();
+	int wh = w*h;
+	int c = channels();
+	if (c == 1) {
+		for (int i=0; i<wh; i++) {
+			uint32_t a = static_cast<uint32_t>(buffer[i]);
+			uint32_t b = static_cast<uint32_t>(other.buffer[i]);
+			uint32_t w1 = 255 - std::abs((int)a-nodata);
+			uint32_t w2 = 255 - std::abs((int)b-nodata);
+			buffer[i] = static_cast<uint8_t>((a*w1 + b*w2) / (w1+w2));
+		}
+	} else if (c == 3) {
+		for (int i=0; i<wh; i++) {
+
+			uint32_t a[3] = {
+				static_cast<uint32_t>(buffer[i*3+0]),
+				static_cast<uint32_t>(buffer[i*3+1]),
+				static_cast<uint32_t>(buffer[i*3+2]) };
+			uint32_t b[3] = {
+				static_cast<uint32_t>(other.buffer[i*3+0]),
+				static_cast<uint32_t>(other.buffer[i*3+1]),
+				static_cast<uint32_t>(other.buffer[i*3+2]) };
+			uint32_t w1 = 1 + (std::abs((int)a[0]-nodata) + std::abs((int)a[1]-nodata) + std::abs((int)a[2]-nodata)) / 3;
+			uint32_t w2 = 1 + (std::abs((int)b[0]-nodata) + std::abs((int)b[1]-nodata) + std::abs((int)b[2]-nodata)) / 3;
+
+			//w1 = w1 * w1;
+			//w2 = w2 * w2;
+			buffer[i*3+0] = static_cast<uint8_t>((a[0]*w1 + b[0]*w2) / (w1+w2));
+			buffer[i*3+1] = static_cast<uint8_t>((a[1]*w1 + b[1]*w2) / (w1+w2));
+			buffer[i*3+2] = static_cast<uint8_t>((a[2]*w1 + b[2]*w2) / (w1+w2));
+		}
+	} else if (c == 4) {
+		for (int i=0; i<wh; i++) {
+			uint32_t a[4] = {
+				static_cast<uint32_t>(buffer[i*4+0]),
+				static_cast<uint32_t>(buffer[i*4+1]),
+				static_cast<uint32_t>(buffer[i*4+2]),
+				static_cast<uint32_t>(buffer[i*4+3]), };
+			uint32_t b[4] = {
+				static_cast<uint32_t>(other.buffer[i*4+0]),
+				static_cast<uint32_t>(other.buffer[i*4+1]),
+				static_cast<uint32_t>(other.buffer[i*4+2]),
+				static_cast<uint32_t>(other.buffer[i*4+3]) };
+			uint32_t w1 = 3*255 - std::abs((int)a[0]-nodata) - std::abs((int)a[1]-nodata) - std::abs((int)a[2]-nodata) - std::abs((int)a[3]-nodata);
+			uint32_t w2 = 3*255 - std::abs((int)b[0]-nodata) - std::abs((int)b[1]-nodata) - std::abs((int)b[2]-nodata) - std::abs((int)b[3]-nodata);
+			buffer[i*3+0] = static_cast<uint8_t>((a[0]*w1 + b[0]*w2) / (w1+w2));
+			buffer[i*3+1] = static_cast<uint8_t>((a[1]*w1 + b[1]*w2) / (w1+w2));
+			buffer[i*3+2] = static_cast<uint8_t>((a[2]*w1 + b[2]*w2) / (w1+w2));
+			buffer[i*3+3] = static_cast<uint8_t>((a[3]*w1 + b[3]*w2) / (w1+w2));
 		}
 	} else {
 		throw std::runtime_error("not supported yet.");
@@ -554,4 +612,25 @@ template <int C> void my_remapRemap(Image& out, const Image& in, const float* ma
 	}
 }
 
+
+
+
+
+
+
+template <int C> static void makeGray_(Image& out, const Image& in) {
+	int w = in.w, h = in.h;
+	for (int y=0; y<h; y++)
+	for (int x=0; x<w; x++) {
+		uint16_t acc = 0;
+		for (int c=0; c<C; c++) acc += in.buffer[y*w*C+x*C+c];
+		out.buffer[y*w+x] = static_cast<uint8_t>(acc / C);
+	}
+}
+void Image::makeGray(Image& out) const {
+	if      (channels() == 1) memcpy(out.buffer, buffer, size());
+	else if (channels() == 3) makeGray_<3>(out, *this);
+	else if (channels() == 4) makeGray_<4>(out, *this);
+	else throw std::runtime_error("invalid # channels");
+}
 

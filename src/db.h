@@ -248,7 +248,7 @@ struct WritableTile {
  */
 struct Command {
 	enum Type : int32_t {
-		NoCommand, BeginLvl, EndLvl, EraseLvl, TileReady
+		NoCommand, BeginLvl, EndLvl, EraseLvl, TileReady, TileReadyOverwrite
 	} cmd = NoCommand;
 	union Data {
 		int32_t lvl;
