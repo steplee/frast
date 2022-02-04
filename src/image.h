@@ -43,7 +43,11 @@ struct Image {
 
 
 	inline ~Image() {
-		if (buffer and ownBuffer) { free(buffer); buffer = 0; }
+		if (buffer and ownBuffer) {
+			free(buffer);
+			printf(" - Free image %zu\n", size());
+			buffer = 0; 
+		}
 		buffer = 0;
 		w = h = 0;
 	}
@@ -139,6 +143,7 @@ struct Image {
 	inline bool alloc() {
 		if (not ownBuffer) throw std::runtime_error("alloc() called on a viewed image!");
 		if (buffer != nullptr) throw std::runtime_error("only alloc once!");
+		printf(" - Alloc image %zu\n", size());
 		//buffer = (uint8_t*) malloc(size());
 		capacity = size();
 		buffer = (uint8_t*) aligned_alloc(16, capacity);

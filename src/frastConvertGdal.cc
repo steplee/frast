@@ -62,6 +62,7 @@ struct GdalDset {
 	int nbands;
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
+	Image imgPrj;
 
 	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
@@ -263,8 +264,10 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 			tlbr_prj(0), tlbr_prj(1), tlbr_prj(2), tlbr_prj(3),
 			tlbr_prj(2)-tlbr_prj(0), tlbr_prj(3)-tlbr_prj(1));
 
-	Image imgPrj { sh, sw, nbands };
-	imgPrj.alloc();
+	if (imgPrj.w < sw or imgPrj.h < sh) {
+		imgPrj = std::move(Image{ sh, sw, nbands });
+		imgPrj.alloc();
+	}
 
 	//cv::Mat imgPrj;
 	//assert(cv_type == CV_8UC1 or cv_type == CV_8UC3);
