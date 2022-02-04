@@ -71,6 +71,9 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 bool encode(EncodedImage& out, const Image& img) {
     tjhandle handle = tjInitCompress();
 
+    unsigned long jpegSize = tjBufSize(img.w, img.h, img.channels() == 3 ? TJSAMP_444 : TJSAMP_GRAY);
+	uint8_t *jpegBuf = (unsigned char *) tjAlloc(jpegSize);
+
     if(handle == NULL)
     {
         const char *err = (const char *) tjGetErrorStr();
@@ -82,7 +85,7 @@ bool encode(EncodedImage& out, const Image& img) {
     int height = img.h;
     int nbands = img.channels();
     int flags = 0;
-    unsigned char* jpegBuf = NULL;
+    //unsigned char* jpegBuf = NULL;
     int pitch = width * nbands;
     int pixelFormat = TJPF_GRAY;
     int jpegSubsamp = TJSAMP_GRAY;
@@ -91,7 +94,6 @@ bool encode(EncodedImage& out, const Image& img) {
         pixelFormat = TJPF_RGB;
         jpegSubsamp = TJSAMP_411;
     }
-    unsigned long jpegSize = 0;
 
     int tj_stat = tjCompress2( handle, img.buffer, width, pitch, height,
         pixelFormat, &(jpegBuf), &jpegSize, jpegSubsamp, jpegQual, flags);
@@ -109,6 +111,7 @@ bool encode(EncodedImage& out, const Image& img) {
 	memcpy(out.data(), jpegBuf, jpegSize);
 
     int tjstat = tjDestroy(handle); // should deallocate data buffer
+	tjFree(jpegBuf);
     handle = 0;
 	return false;
 }
