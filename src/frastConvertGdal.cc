@@ -362,7 +362,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		srcImg = &imgPrjGray;
 	}
 	if (res) {
-		printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
+		//printf(" - Failed to get tile %d %d %d\n", z, y, x); fflush(stdout);
 		return res;
 	}
 	if (is_solid_color(*srcImg)) {

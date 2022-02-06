@@ -268,7 +268,11 @@ int Dataset::put(const uint8_t* in, size_t len, const BlockCoordinate& coord, MD
 		err = put_(val, coord, theTxn, allowOverwrite);
 		if (err) std::cout << " - mdb_put error (after map resize): " << mdb_strerror(err) << "\n";
 		*/
-	} else if (err) std::cout << " - mdb_put error: " << mdb_strerror(err) << " sz " << len << "\n";
+	} else if (err)
+		printf(" - mdb_put error: %s, (key %lu %lu %lu) (val %p, %zu)\n", mdb_strerror(err),
+				coord.z(), coord.y(), coord.x(), val.mv_data, val.mv_size);
+	else
+		//printf(" - mdb_put success: (key %lu %lu %lu) (val %p, %zu)\n", coord.z(), coord.y(), coord.x(), val.mv_data, val.mv_size);
 
 	if (givenTxn == nullptr) endTxn(&theTxn);
 	return err != 0;

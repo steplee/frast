@@ -17,6 +17,8 @@ extern "C" {
 #include "image.h"
 
 
+class DatasetReaderIterator;
+
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
 constexpr int READER_TILE_CACHE_SIZE = 64;
@@ -71,10 +73,17 @@ struct BlockCoordinate {
 	uint64_t c;
 	inline BlockCoordinate(uint64_t cc) : c(cc) {}
 	inline BlockCoordinate(const BlockCoordinate& bc) : c(bc.c) {}
+#if 0
 	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(z<<58 | y<<29 | x) {}
 	inline uint64_t z() const { return (c >> 58) & 0b111111; }
 	inline uint64_t y() const { return (c >> 29) & 0b11111111111111111111111111111; }
 	inline uint64_t x() const { return (c      ) & 0b11111111111111111111111111111; }
+#else
+	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(x<<34 | y<<6 | z) {}
+	inline uint64_t z() const { return (c      ) & 0b111111; }
+	inline uint64_t y() const { return (c >>  6) & 0b11111111111111111111111111111; }
+	inline uint64_t x() const { return (c >> 34) & 0b11111111111111111111111111111; }
+#endif
 	inline bool operator==(const BlockCoordinate& other) const { return c == other.c; }
 	inline operator uint64_t() const { return c; }
 	inline operator const uint64_t*() const { return &c; }
@@ -190,6 +199,7 @@ class Dataset {
 		inline const DatasetMeta& getMeta() const { return meta; }
 
 	protected:
+		friend class DatasetReaderIterator;
 		std::string path;
 		bool readOnly;
 		bool doStop = false;
