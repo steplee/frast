@@ -366,7 +366,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		return res;
 	}
 	if (is_solid_color(*srcImg)) {
-		printf("Tile was solid color, not using.\n");
+		//printf("Tile %d %d was solid color, not using.\n", y,x);
 		return true;
 	}
 
@@ -580,7 +580,8 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 			}
 
 			int tid = omp_get_thread_num();
-			if (tid == 0) {
+			//if (tid == 0) {
+			if (true) {
 				float yyy = y - tileTlbr[1];
 				auto endTime = std::chrono::high_resolution_clock::now();
 				double seconds = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count() * 1e-9;

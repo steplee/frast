@@ -35,6 +35,16 @@ AtomicTimer t_total("total"),
 			t_dbWrite("dbWrite"), t_dbRead("dbRead"), t_dbBeginTxn("dbBeginTxn"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
 void printDebugTimes() {}
 
+static int myIntCompare(const MDB_val *a, const MDB_val *b) {
+	assert(a->mv_size == 8);
+	assert(b->mv_size == 8);
+	uint64_t aa = *(const uint64_t*)a->mv_data;
+	uint64_t bb = *(const uint64_t*)b->mv_data;
+	if (aa < bb) return -1;
+	if (aa == bb) return 0;
+	return 1;
+}
+
 
 /* ===================================================
  *
@@ -63,6 +73,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 
 	int flags = MDB_NOSUBDIR;
 	if (readOnly) flags |= MDB_RDONLY;
+	if (not dopts.threadLocalStorage) flags |= MDB_NOTLS;
 	// See if this speeds up writes.
 	//if (not readOnly) flags |= MDB_NORDAHEAD;
 	mode_t fileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
@@ -123,6 +134,9 @@ void Dataset::open_all_dbs() {
 			//std::cout << " - (open_all_dbs) failed to open lvl " << i << "\n";
 			{}
 		else {
+
+			mdb_set_compare(txn, dbs[i], &myIntCompare);
+			mdb_set_dupsort(txn, dbs[i], &myIntCompare);
 			//std::cout << " - (open_all_dbs) opened lvl " << i << "\n";
 		}
 	}
@@ -130,6 +144,7 @@ void Dataset::open_all_dbs() {
 
 	mdb_txn_commit(txn);
 }
+
 
 bool Dataset::createLevelIfNeeded(int lvl) {
 	if (dbs[lvl] != INVALID_DB) return false;
@@ -144,6 +159,8 @@ bool Dataset::createLevelIfNeeded(int lvl) {
 
 	std::string name = "lvl" + std::to_string(lvl);
 	mdb_dbi_open(txn, name.c_str(), MDB_CREATE, dbs+lvl);
+	mdb_set_compare(txn, dbs[lvl], &myIntCompare);
+	mdb_set_dupsort(txn, dbs[lvl], &myIntCompare);
 	mdb_txn_commit(txn);
 	return true;
 }

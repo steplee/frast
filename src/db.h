@@ -73,16 +73,16 @@ struct BlockCoordinate {
 	uint64_t c;
 	inline BlockCoordinate(uint64_t cc) : c(cc) {}
 	inline BlockCoordinate(const BlockCoordinate& bc) : c(bc.c) {}
-#if 0
+#if 1
 	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(z<<58 | y<<29 | x) {}
 	inline uint64_t z() const { return (c >> 58) & 0b111111; }
 	inline uint64_t y() const { return (c >> 29) & 0b11111111111111111111111111111; }
 	inline uint64_t x() const { return (c      ) & 0b11111111111111111111111111111; }
 #else
-	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(x<<34 | y<<6 | z) {}
+	inline BlockCoordinate(uint64_t z, uint64_t y, uint64_t x) : c(x<<35 | y<<6 | (z&0b111111)) {}
 	inline uint64_t z() const { return (c      ) & 0b111111; }
 	inline uint64_t y() const { return (c >>  6) & 0b11111111111111111111111111111; }
-	inline uint64_t x() const { return (c >> 34) & 0b11111111111111111111111111111; }
+	inline uint64_t x() const { return (c >> 35) & 0b11111111111111111111111111111; }
 #endif
 	inline bool operator==(const BlockCoordinate& other) const { return c == other.c; }
 	inline operator uint64_t() const { return c; }
@@ -97,6 +97,7 @@ struct DatabaseOptions {
 	//int64_t mapSize = 10485760l; // lmdb default: 10MB
 	//uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
 	uint64_t mapSize = 100lu * (1lu << 30lu); // x 1GB
+	bool threadLocalStorage = true;
 };
 
 struct DatasetMeta {
