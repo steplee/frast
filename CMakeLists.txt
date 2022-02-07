@@ -110,3 +110,8 @@ install(TARGETS frastConvertGdal RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastDump RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastInfo RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastMerge RUNTIME DESTINATION /usr/local/bin)
+
+execute_process(COMMAND python3 -c "import site;print([p for p in site.getsitepackages() if p.endswith(('site-packages', 'dist-packages')) ][0])" OUTPUT_VARIABLE py_install_dir)
+string(STRIP "${py_install_dir}" py_install_dir)
+message(STATUS "python3 install dir ${py_install_dir}")
+install(TARGETS frastpy DESTINATION ${py_install_dir}/)
