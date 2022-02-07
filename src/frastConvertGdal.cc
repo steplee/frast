@@ -195,7 +195,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
                                   eleSize * nbands, eleSize * nbands * outw, eleSize,
                                   &arg);
         return err != CE_None;
-    } else if (xoff + xsize >= 0 and xoff <= w and yoff + ysize >= 0 and yoff <= h) {
+    } else if (xoff + xsize >= 1 and xoff < w and yoff + ysize >= 1 and yoff < h) {
         // case where there is partial overlap
 
         // NOTE: TODO I haven't really verified this is correct!
@@ -209,6 +209,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         float           sy      = ((float)outh) / ysize;
         int             inner_w = inner(2) - inner(0), inner_h = inner(3) - inner(1);
         int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
+        //printf(" - partial bbox: %dh %dw %c\n", read_h, read_w, out.channels()); fflush(stdout);
         cv::Mat         buf(read_h, read_w, out.channels() == 3 ? CV_8UC3 : CV_8U);
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0),

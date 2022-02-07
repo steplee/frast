@@ -26,7 +26,7 @@ struct EncodedImageRef {
  * This really needs a stride/pitch member to allow fully-functional views.
  */
 struct Image {
-	int32_t w, h;
+	int32_t w=0, h=0;
 	enum class Format { RGB, RGBA, RGBN, GRAY } format;
 	uint8_t *buffer = nullptr;
 	bool ownBuffer = true;
