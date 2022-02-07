@@ -7,9 +7,7 @@
 // These two flags offer alternatives to OpenCV's warping and image encoding.
 // I'm currently phasing opencv out, so I'll leave the old code for now.
 #define USE_MY_WARP
-#define USE_TURBOJPEG
 
-#define TURBOJPEG_QUALITY 92
 //#define TURBOJPEG_QUALITY 95
 //#define TURBOJPEG_QUALITY 100
 

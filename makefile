@@ -22,11 +22,11 @@ cv_libs :=  -L/usr/local/lib -I/usr/include/opencv4 -I/usr/local/include/opencv4
 all_libs := $(jpeg_libs)
 
 ifdef DEBUG_RASTERIO
-debugFlags := -DDEBUG_RASTERIO 
+debugFlags := -DDEBUG_RASTERIO
 all_libs += $(cv_libs)
 endif
 ifdef DEBUG_PRINT
-debugFlags += -DDEBUG_PRINT 
+debugFlags += -DDEBUG_PRINT
 endif
 
 ifdef NO_TIMING
