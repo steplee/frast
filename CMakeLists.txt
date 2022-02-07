@@ -20,8 +20,10 @@ set(TURBOJPEG_QUALITY 92 CACHE INT "jpeg quality, must be [0-100]")
 #   Setup Deps
 ##################
 
-find_package(Fmt REQUIRED)
+# TODO: I am in the middle of completely phasing out OpenCV (except for DEBUG_RASTERIO)
 find_package(OpenCV REQUIRED)
+
+find_package(Fmt REQUIRED)
 find_package(GDAL REQUIRED)
 include_directories(/usr/local/include/eigen3)
 set(COMMON_LIBS pthread lmdb fmt::fmt ${OpenCV_LIBRARIES} ${GDAL_LIBRARIES})
@@ -33,7 +35,7 @@ endif()
 find_package(pybind11 REQUIRED)
 
 ##################
-#   Setup Flags
+#   Setup Global Flags
 ##################
 
 set(CMAKE_CXX_STANDARD 17)
@@ -41,6 +43,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(cxx_opts " -march=native -O3 -fopenmp ")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")
+endif()
+if (DEBUG_SYMBOLS)
+	add_definitions(-DDEBUG_RASTERIO=ON -DDEBUG_PRINT=ON)
 endif()
 set(CMAKE_CXX_FLAGS ${cxx_opts})
 
