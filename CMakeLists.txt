@@ -41,11 +41,13 @@ find_package(pybind11 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 
 set(cxx_opts " -march=native -O3 -fopenmp ")
+set(includes "")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")
 endif()
-if (DEBUG_SYMBOLS)
+if (DEBUG)
 	add_definitions(-DDEBUG_RASTERIO=ON -DDEBUG_PRINT=ON)
+	list(APPEND includes ${OpenCV_INCLUDE_DIRS})
 endif()
 set(CMAKE_CXX_FLAGS ${cxx_opts})
 
@@ -60,6 +62,7 @@ add_library(frast
 
 set_target_properties(frast PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(frast INTERFACE ${COMMON_LIBS})
+target_include_directories(frast PUBLIC ${includes})
 if (USE_TURBOJPEG)
 	target_compile_definitions(frast PUBLIC USE_TURBOJPEG TURBOJPEG_QUALITY=${TURBOJPEG_QUALITY})
 endif()
