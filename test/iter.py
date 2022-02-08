@@ -4,8 +4,8 @@ import frastpy
 import cv2
 
 o = frastpy.DatasetReaderOptions()
-#d = frastpy.DatasetReader('/data/naip/mocoNaip/out.ft', o)
-d = frastpy.DatasetReader('out2.ft', o)
+d = frastpy.DatasetReader('/data/naip/mocoNaip/out.ft', o)
+#d = frastpy.DatasetReader('out2.ft', o)
 
 LVL = 13
 #LVL = 17

@@ -3,13 +3,14 @@ import frastpy
 import cv2
 
 o = frastpy.DatasetReaderOptions()
-d = frastpy.DatasetReader('out.ft', o)
+#d = frastpy.DatasetReader('out.ft', o)
+d = frastpy.DatasetReader('/data/naip/mocoNaip/out.ft', o)
 
 tlbr = [37400, 81080, 37400+2, 81080+2]
 tlbr = np.array(([tlbr,tlbr]))
 tlbr = tlbr[0:1] # This fails
 tlbr = tlbr[0]   # this works
-img1 = np.zeros((256*4,4*256,3), dtype=np.uint8)
+img1 = np.zeros((256*4,4*256,d.channels()), dtype=np.uint8)
 # Copy required, img3 overwrites the img1 buffer below.
 img2 = np.copy(d.fetchBlocks(img1, 17, tlbr, False), 'C')
 tlbr = [37400, 81080, 37400+3, 81080+3]

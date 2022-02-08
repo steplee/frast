@@ -3,7 +3,8 @@ import frastpy
 import cv2
 
 o = frastpy.DatasetReaderOptions()
-d = frastpy.DatasetReader('out3.ft', o)
+#d = frastpy.DatasetReader('out3.ft', o)
+d = frastpy.DatasetReader('/data/naip/mocoNaip/out.ft', o)
 
 #tlbr = [-8599290.943935, 4750316.582839, -8598122.604486, 4751209.204594 ]
 tlbr = [-8599290.943935, 4750316.582839]

@@ -40,7 +40,7 @@ find_package(pybind11 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
-set(cxx_opts " -march=native -O3 -fopenmp ")
+set(cxx_opts " -march=native -O3 -fopenmp -Werror=return-type ")
 set(includes "")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")
@@ -48,6 +48,9 @@ endif()
 if (DEBUG)
 	add_definitions(-DDEBUG_RASTERIO=ON -DDEBUG_PRINT=ON)
 	list(APPEND includes ${OpenCV_INCLUDE_DIRS})
+endif()
+if (TIMING)
+	add_definitions(-DUSE_TIMER=1)
 endif()
 set(CMAKE_CXX_FLAGS ${cxx_opts})
 
