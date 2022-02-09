@@ -26,6 +26,7 @@ find_package(OpenCV REQUIRED)
 find_package(Fmt REQUIRED)
 find_package(GDAL REQUIRED)
 include_directories(/usr/local/include/eigen3)
+include_directories(/usr/include/gdal)
 set(COMMON_LIBS pthread lmdb fmt::fmt ${OpenCV_LIBRARIES} ${GDAL_LIBRARIES})
 
 if (USE_TURBOJPEG)
@@ -60,7 +61,8 @@ set(CMAKE_CXX_FLAGS ${cxx_opts})
 ##################
 
 add_library(frast
-	src/image.cc
+	#src/image.cc
+	src/image2.cc
 	src/db.cc)
 
 set_target_properties(frast PROPERTIES POSITION_INDEPENDENT_CODE ON)
