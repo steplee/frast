@@ -61,8 +61,8 @@ set(CMAKE_CXX_FLAGS ${cxx_opts})
 ##################
 
 add_library(frast
-	#src/image.cc
-	src/image2.cc
+	src/image.cc
+	#src/image2.cc # Shockingly slow.
 	src/db.cc)
 
 set_target_properties(frast PROPERTIES POSITION_INDEPENDENT_CODE ON)

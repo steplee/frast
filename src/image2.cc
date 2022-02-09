@@ -38,6 +38,7 @@
 #ifdef USE_MY_WARP
 #include <Eigen/Core>
 #include <Eigen/LU>
+#include <Eigen/Geometry>
 #ifndef _OPENMP
 #error "if using my warp (USE_MY_WARP defined), you must pass -fopenmp"
 //#include <omp.h>
@@ -358,7 +359,7 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	auto A = A_.template cast<uint32_t>();
 	Map<Array<uint8_t, C, -1>> B(out.buffer, C, out.h*out.w);
 
-	Map<const Matrix<float, 2, 3, RowMajor>> H_(H);
+	Map<const Matrix<float, 2, 3, RowMajor>> H_(iH);
 
 	Matrix<float, 2, 1> inds0_(2, out.h*out.w);
 	for (int oy=0; oy<oh; oy++) for (int ox=0; ox<ow; ox++) inds0_.col(oy*out.w+ox) << (float)ox, (float)oy;
@@ -371,29 +372,20 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	ArrayXf my = inds0.row(1).array() - inds0.row(1).array().floor();
 	ArrayXf mx = inds0.row(0).array() - inds0.row(0).array().floor();
 
-	auto a = A(all, inds) * (64.f * (1.f-my) * (1.f-mx)).cast<uint32_t>();
-	auto b = A(all, inds + Array2i{0,1}) * (64.f * (1.f-my) * (    mx)).cast<uint32_t>();
-	auto c = A(all, inds + Array2i{1,1}) * (64.f * (    my) * (    mx)).cast<uint32_t>();
-	auto d = A(all, inds + Array2i{1,0}) * (64.f * (    my) * (1.f-mx)).cast<uint32_t>();
+	auto clampEdge = [ow,oh](auto &I) { return I.min(0).max(Array2i{ow,oh}); };
+
+	auto a = A(all, clampEdge(inds))                * (64.f * (1.f-my) * (1.f-mx)).cast<uint32_t>();
+	auto b = A(all, clampEdge(inds + Array2i{0,1})) * (64.f * (1.f-my) * (    mx)).cast<uint32_t>();
+	auto c = A(all, clampEdge(inds + Array2i{1,1})) * (64.f * (    my) * (    mx)).cast<uint32_t>();
+	auto d = A(all, clampEdge(inds + Array2i{1,0})) * (64.f * (    my) * (1.f-mx)).cast<uint32_t>();
 
 	auto e = ((a+b+c+d) / 64).template cast<uint8_t>();
 	for (int oy=0; oy<oh; oy++) for (int ox=0; ox<ow; ox++) B.col(oy*oh+ox) = e.col(oy*oh+ox);
-	//for (int oy=0; oy<oh; oy++) for (int ox=0; ox<ow; ox++) for (int oc=0; oc<C; oc++) out.buffer[oy*C*oh+ox*C+oc] = e(oc, oy*ow+ox);
-
-	/*
-
-	auto a = A(inds,                            all).array() * (64.f * (1.f-my) * (1.f-mx)).cast<uint32_t>().array();
-	auto b = A(inds + Array2i{0,1}.transpose(), all).array() * (64.f * (1.f-my) * (    mx)).cast<uint32_t>().array();
-	auto c = A(inds + Array2i{1,1}.transpose(), all).array() * (64.f * (    my) * (    mx)).cast<uint32_t>().array();
-	auto d = A(inds + Array2i{1,0}.transpose(), all).array() * (64.f * (    my) * (1.f-mx)).cast<uint32_t>().array();
-
-	//B = ((a+b+c+d) / 64).cast<uint8_t>();
-	Array<uint8_t,-1,C,RowMajor> e = ((a+b+c+d) / 64).template cast<uint8_t>();
-	for (int oy=0; oy<oh; oy++) for (int ox=0; ox<ow; ox++) B.row(oy*oh+ox) = e.row(oy*oh+ox);
-	*/
-
 }
 
+int clamp_(int x, int hi) {
+	return x < 0 ? 0 : x > hi-1 ? hi-1 : x;
+}
 
 // Note: H[8] must be 1.0
 template <int C>
@@ -401,9 +393,43 @@ void my_warpPerspective(Image& out, const Image& in, const float H[9]) {
 	alignas(16) float iH[9];
 	inv_3x3(iH,H);
 
-
 	const int oh = out.h, ow = out.w;
 	const int ih = in.h, iw = in.w;
+
+	using namespace Eigen;
+
+	Map<const Array<uint8_t, C, -1>> A_(in.buffer, C, in.h*in.w);
+	auto A = A_.template cast<uint32_t>();
+	Map<Array<uint8_t, C, -1>> B(out.buffer, C, out.h*out.w);
+
+	Map<const Matrix<float, 3, 3, RowMajor>> H_(iH);
+
+	Matrix<float, 2, -1> inds0_(2, out.h*out.w);
+	for (int oy=0; oy<oh; oy++) for (int ox=0; ox<ow; ox++) inds0_.col(oy*out.w+ox) << (float)ox, (float)oy;
+
+	Matrix<float, 2, -1> inds0 = (H_ * inds0_.colwise().homogeneous()).colwise().hnormalized();
+
+	Array<float,1,-1> my_ = inds0.row(1).array() - inds0.row(1).array().floor();
+	Array<float,1,-1> mx_ = inds0.row(0).array() - inds0.row(0).array().floor();
+
+#if 1
+	Array<int, 2,-1> inds = inds0.cast<int>();
+
+	auto clampEdge = [iw,ih](auto I) {
+		//auto I2 = I.min(Array2i{ow,oh}).max(Array2i{ow,oh});
+		Array<int,-1,1> I2(I.cols());
+		for (int i=0; i<I.cols(); i++) I2(i) = clamp_(I(0,i), iw) + clamp_(I(1,i), ih) * iw;
+		return I2;
+	};
+
+	auto a = A(all, clampEdge(inds               )).rowwise() * (64.f * (1.f-my_) * (1.f-mx_)).cast<uint32_t>();
+	auto b = A(all, clampEdge(inds.colwise() + Array2i{1,0})).rowwise() * (64.f * (1.f-my_) * (    mx_)).cast<uint32_t>();
+	auto c = A(all, clampEdge(inds.colwise() + Array2i{1,1})).rowwise() * (64.f * (    my_) * (    mx_)).cast<uint32_t>();
+	auto d = A(all, clampEdge(inds.colwise() + Array2i{0,1})).rowwise() * (64.f * (    my_) * (1.f-mx_)).cast<uint32_t>();
+
+	B = ((a+b+c+d) / 64).template cast<uint8_t>();
+#else
+
 	const int istep = iw * C;
 	const int ostep = ow * C;
 	auto IDX = [ih,iw,istep](int y, int x, int c) {
@@ -412,16 +438,14 @@ void my_warpPerspective(Image& out, const Image& in, const float H[9]) {
 		return y * istep + x * C + c;
 	};
 
-	//omp_set_num_threads(4);
-	#pragma omp parallel for schedule(static,4) num_threads(4)
+	#pragma omp parallel for schedule(static) num_threads(4)
 	for (int oy=0; oy<oh; oy++) {
 	for (int ox=0; ox<ow; ox++) {
-		float iz = iH[2*3+0] * ((float)ox) + iH[2*3+1] * ((float)oy) + 1.f;
-		float ix = (iH[0*3+0] * ((float)ox) + iH[0*3+1] * ((float)oy) + iH[0*3+2]) / iz;
-		float iy = (iH[1*3+0] * ((float)ox) + iH[1*3+1] * ((float)oy) + iH[1*3+2]) / iz;
-		float mx = ix - floorf(ix), my = iy - floorf(iy);
+		float ix = inds0(0,oy*ow+ox);
+		float iy = inds0(1,oy*ow+ox);
+		float mx = mx_(oy*ow+ox);
+		float my = my_(oy*ow+ox);
 
-#if INTEGER_MIXING
 		using Scalar = uint16_t;
 		using Vec = Scalar[C];
 		Vec p = {0};
@@ -430,18 +454,10 @@ void my_warpPerspective(Image& out, const Image& in, const float H[9]) {
 		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(64.f * (    my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(64.f * (    my) * (1.f-mx)));
 		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c] / 64);
-#else
-		using Scalar = float;
-		using Vec = Scalar[C];
-		Vec p = {0.f};
-		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+0) , (((int)ix)+0) , c)]) * ((Scalar)((1.f-my) * (1.f-mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+0) , (((int)ix)+1) , c)]) * ((Scalar)((1.f-my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)in.buffer[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
-		for (int c=0; c<C; c++) out.buffer[oy*ostep+ox*C+c] = (uint8_t) (p[c]);
+	}
+	}
 #endif
-	}
-	}
+
 }
 
 } // namespace

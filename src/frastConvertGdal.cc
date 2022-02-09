@@ -553,7 +553,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		printf(" -        %lu cols\n", ncols);
 
 		//#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
-		#pragma omp parallel for schedule(dynamic,4) num_threads(CONVERT_THREADS)
+		#pragma omp parallel for schedule(dynamic,2) num_threads(CONVERT_THREADS)
 		for (uint64_t y=tileTlbr[1]; y<=tileTlbr[3]; y++) {
 			int tilesInRow = 0;
 			auto startTime = std::chrono::high_resolution_clock::now();
