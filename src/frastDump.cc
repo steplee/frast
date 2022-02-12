@@ -20,10 +20,9 @@ int image_signature(const Image& i) {
 
 
 int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
-	int32_t c = dset.channels();
+	auto f = dset.format();
 	int ts = dset.tileSize();
-	Image img { ts, ts, c }; img.alloc();
-	printf(" - dset channels %d\n", c);
+	Image img { ts, ts, f }; img.alloc();
 
 	if (x == -1 or y == -1) {
 		uint64_t tlbr[4];
@@ -34,6 +33,7 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		h = tlbr[3] - tlbr[1];
 	}
 
+	auto c = dset.channels();
 	auto cv_type = c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
 	cv::Mat mat ( ts * h, ts * w, cv_type );
 
@@ -56,7 +56,7 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 }
 
 int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
-	Image img {512,512,3};
+	Image img {512,512,Image::Format::RGB};
 	img.alloc();
 
 	if (dset.rasterIo(img, tlbr)) {
@@ -71,8 +71,8 @@ int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
 	return 0;
 }
 int testGray() {
-	Image img1 { 256, 256, 3 };
-	Image img2 { 256, 256, 1 };
+	Image img1 { 256, 256, Image::Format::RGB };
+	Image img2 { 256, 256, Image::Format::GRAY };
 	img1.calloc();
 	img2.calloc();
 	for (int i=0; i<256; i++)

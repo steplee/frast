@@ -556,21 +556,12 @@ void Dataset::recompute_meta_and_write_slow(MDB_txn* txn) {
 void WritableTile::copyFrom(const WritableTile& tile) {
 	AtomicTimerMeasurement g(t_tileBufferCopy);
 	bufferIdx = tile.bufferIdx;
-	image.copyFrom(tile.image);
+	//image.copyFrom(tile.image);
 	if (tile.eimg.size() > eimg.size()) {
 		eimg.resize(tile.eimg.size() * 2);
 		std::copy(tile.eimg.begin(), tile.eimg.end(), eimg.begin());
 	}
 	coord = tile.coord;
-}
-void WritableTile::fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v) {
-	AtomicTimerMeasurement g(t_tileBufferCopy);
-	image.copyFrom(im);
-	if (v.size() > eimg.size()) {
-		eimg.resize(v.size() * 2);
-	}
-	std::copy(v.begin(), v.end(), eimg.begin());
-	coord = c;
 }
 void WritableTile::fillWith(const BlockCoordinate& c, const MDB_val& val) {
 	AtomicTimerMeasurement g(t_tileBufferCopy);
@@ -880,8 +871,8 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		tileBufferCommittedIdx[i] = 0;
 	}
 	for (int i=0; i<nBuffers; i++) {
-		tileBuffers[i].image = Image { tileSize(), tileSize(), channels() };
-		tileBuffers[i].image.calloc();
+		//tileBuffers[i].image = Image { tileSize(), tileSize(), channels() };
+		//tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
 		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);
 	}
@@ -1022,8 +1013,8 @@ DatasetReader::DatasetReader(const std::string& path, const DatasetReaderOptions
 		threadIds[i] = threads[i].get_id();
 	}
 
-	accessCache1 = Image {                      tileSize(),                      tileSize(), channels() };
-	accessCache  = Image { dopts.maxSampleTiles*tileSize(), dopts.maxSampleTiles*tileSize(), channels() };
+	accessCache1 = Image {                      tileSize(),                      tileSize(), format() };
+	accessCache  = Image { dopts.maxSampleTiles*tileSize(), dopts.maxSampleTiles*tileSize(), format() };
 	accessCache1.calloc();
 	accessCache .calloc();
 }

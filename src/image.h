@@ -24,10 +24,11 @@ struct EncodedImageRef {
  * You can 'view' other images, but it assumes the child lifetime does not out-last the view'ed parent.
  *
  * This really needs a stride/pitch member to allow fully-functional views.
+ *
  */
 struct Image {
 	int32_t w=0, h=0;
-	enum class Format { RGB, RGBA, RGBN, GRAY } format;
+	enum class Format : uint32_t { GRAY=1, RGB=3, RGBA=4, RGBN=5, TERRAIN_2x8 } format;
 	uint8_t *buffer = nullptr;
 	bool ownBuffer = true;
 	int32_t capacity = 0;
@@ -51,27 +52,6 @@ struct Image {
 		buffer = 0;
 		w = h = 0;
 	}
-
-	/*
-	static inline Image view(int hh, int ww, Format fmt, uint8_t* buffer_) {
-		Image out;
-		out.ownBuffer = false;
-		out.format = fmt;
-		out.h = hh;
-		out.w = ww;
-		out.buffer = buffer_;
-		return out;
-	}
-	static inline Image view(const Image& other) {
-		Image out;
-		out.w = other.w;
-		out.h = other.h;
-		out.format = other.format;
-		out.buffer = other.buffer;
-		out.ownBuffer = false;
-		return out;
-	}
-	*/
 
 	void moveFrom(Image& other) {
 		if (this == &other) return;
@@ -111,33 +91,27 @@ struct Image {
 		}
 	}
 
-	static Format c2format(int c) {
-		switch (c) {
-			case 1: { return Format::GRAY; }
-			case 3: { return Format::RGB ; }
-			case 4: { return Format::RGBA; }
+	static int32_t format2c(Image::Format f) {
+		switch (f) {
+			case Format::GRAY: return 1;
+			case Format::RGB : return 3;
+			case Format::RGBA: return 4;
+			case Format::RGBN: return 4;
+			case Format::TERRAIN_2x8: return 1;
 		}
-		throw std::runtime_error("bad channel count");
-		return Format::GRAY;
+		throw std::runtime_error("bad format");
 	}
 
 	inline Image() : w(0), h(0), buffer(nullptr), format(Format::GRAY) {}
-	inline Image(int h, int w, int c) : w(w), h(h), buffer(nullptr), format(c2format(c)) {}
 	inline Image(int h, int w, Format f) : w(w), h(h), format(f), buffer(nullptr) { }
 	// View()ing constructors
 	inline Image(int h, int w, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
-	inline Image(int h, int w, int c, uint8_t* buf) : w(w), h(h), format(c2format(c)), buffer(buf), ownBuffer(false) { capacity=size(); }
 
 	inline int32_t size() const {
 		return w * h * channels();
 	}
 	inline int32_t channels() const {
-		switch (format) {
-			case Format::GRAY: return 1;
-			case Format::RGBA: return 3;
-			case Format::RGBN: return 4;
-			default: return 3;
-		}
+		return format2c(format);
 	}
 
 	inline bool alloc() {

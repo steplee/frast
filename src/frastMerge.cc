@@ -153,8 +153,8 @@ int main(int argc, char** argv) {
 				MDB_txn* w_txn;
 				if (outDset.beginTxn(&w_txn,true)) throw std::runtime_error("failed to begin txn");
 
-				Image primaImg { outDset.tileSize(), outDset.tileSize(), outDset.channels() };
-				Image otherImg { outDset.tileSize(), outDset.tileSize(), outDset.channels() };
+				Image primaImg { outDset.tileSize(), outDset.tileSize(), outDset.format() };
+				Image otherImg { outDset.tileSize(), outDset.tileSize(), outDset.format() };
 				primaImg.calloc();
 				otherImg.calloc();
 				EncodedImage finalEimg;

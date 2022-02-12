@@ -63,12 +63,11 @@ struct GdalDset {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 	inline GdalDset() {}
-	GdalDset(const std::string& path);
+	GdalDset(const std::string& path, Image::Format& outFormat);
 	~GdalDset();
 	GDALDataset* dset = nullptr;
     OGRCoordinateTransformation* wm2prj  = nullptr;
     OGRCoordinateTransformation* prj2wm  = nullptr;
-	bool forceGray = false;
 
 	RowMatrix23d pix2prj;
 	RowMatrix23d prj2pix;
@@ -82,6 +81,8 @@ struct GdalDset {
 	int nbands;
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
+
+	Image::Format outFormat;
 	Image imgPrj;
 	Image imgPrjGray;
 
@@ -91,7 +92,7 @@ struct GdalDset {
 };
 
 static std::once_flag flag__;
-GdalDset::GdalDset(const std::string& path) {
+GdalDset::GdalDset(const std::string& path, Image::Format& f) : outFormat(f) {
 	std::call_once(flag__, &GDALAllRegister);
 	dset = (GDALDataset*) GDALOpen(path.c_str(), GA_ReadOnly);
 
@@ -119,15 +120,25 @@ GdalDset::GdalDset(const std::string& path) {
         std::cerr << " == ONLY uint8_t/int16_t/float32 dsets supported right now." << std::endl;
         exit(1);
     }
-    //if (nbands == 3 and gdalType == GDT_Byte) cv_type = CV_8UC3, eleSize = 1;
-	//else if (nbands == 1 and gdalType == GDT_Byte) cv_type = CV_8UC1, eleSize = 1;
-	//else if (nbands == 1 and gdalType == GDT_Int16) cv_type = CV_16SC1, eleSize = 2;
-	//else if (nbands == 1 and gdalType == GDT_Float32) cv_type = CV_32FC1, eleSize = 4;
-	//else assert(false);
-    if (nbands == 3 and gdalType == GDT_Byte) eleSize = 1;
-	else if (nbands == 1 and gdalType == GDT_Byte) eleSize = 1;
-	else if (nbands == 1 and gdalType == GDT_Int16) eleSize = 2;
-	else if (nbands == 1 and gdalType == GDT_Float32) eleSize = 4;
+    if (nbands == 3 and gdalType == GDT_Byte) {
+		if (outFormat != Image::Format::GRAY and outFormat != Image::Format::RGB)
+			throw std::runtime_error("geotiff is 3-channel int8, output can only be GRAY or RGB");
+		eleSize = 1;
+	}
+	else if (nbands == 1 and gdalType == GDT_Byte) {
+		if (outFormat != Image::Format::GRAY)
+			throw std::runtime_error("geotiff is 1-channel int8, output can only be GRAY");
+		eleSize = 1;
+	}
+	else if (nbands == 1 and gdalType == GDT_Int16) {
+		if (outFormat != Image::Format::TERRAIN_2x8)
+			throw std::runtime_error("geotiff is 1-channel int16, output can only be TERRAIN_2x8");
+		eleSize = 2;
+	}
+	else if (nbands == 1 and gdalType == GDT_Float32) {
+		throw std::runtime_error("geotiff is float32 input is not supported yet. I have yet to implement terrain conversion from f32 -> TERRAIN_2x8");
+		eleSize = 4;
+	}
 	else assert(false);
 
     OGRSpatialReference sr_prj, sr_3857, sr_4326;
@@ -349,15 +360,15 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 			tlbr_prj(2)-tlbr_prj(0), tlbr_prj(3)-tlbr_prj(1));
 
 	if (imgPrj.w < sw or imgPrj.h < sh) {
-		imgPrj = std::move(Image{ sh, sw, nbands });
+		imgPrj = std::move(Image{ sh, sw, outFormat });
 		imgPrj.alloc();
 	}
 
 	Image* srcImg = &imgPrj;
 	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
-	if (forceGray and imgPrj.channels() != 1) {
+	if (outFormat == Image::Format::GRAY and imgPrj.channels() != 1) {
 		if (imgPrjGray.w < sw or imgPrjGray.h < sh) {
-			imgPrjGray = std::move(Image{ sh, sw, 1 });
+			imgPrjGray = std::move(Image{ sh, sw, outFormat });
 			imgPrjGray.alloc();
 		}
 		imgPrj.makeGray(imgPrjGray);
@@ -489,7 +500,7 @@ static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
 
 }
 
-static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls, bool forceGray) {
+static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls, Image::Format& outFormat) {
 	// Open one DB, and one tiff+buffer per thread
 
 	GdalDset* dset[CONVERT_THREADS];
@@ -498,22 +509,15 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	Image tileImages[CONVERT_THREADS];
 	//cv::Mat tile[CONVERT_THREADS];
 
-	int32_t channels = 3;
 	int32_t tileSize = 256;
 
 	for (int i=0; i<CONVERT_THREADS; i++) {
-		dset[i] = new GdalDset { srcTiff };
-		dset[i]->forceGray = forceGray;
-		
-		if (i == 0) {
-			channels = dset[0]->nbands;
-			if (forceGray) channels = 1;
-		}
+		dset[i] = new GdalDset { srcTiff , outFormat };
 
 		std::cout << " - dset ptr : " << dset[i]->dset << "\n";
 		//tileImages[i] = TileImage { 256, 256, dset[i]->nbands };
 		//tileImages[i].isOverview = false;
-		tileImages[i] = Image { 256, 256, channels };
+		tileImages[i] = Image { 256, 256, outFormat };
 		tileImages[i].alloc();
 		//tile[i] = cv::Mat ( 256, 256, dset[i]->cv_type, tileImages[i].buffer );
 	}
@@ -523,7 +527,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	DatasetWritable outDset { outPath , opts };
 
 	// Configure #channels and tileSize.
-	outDset.setChannels(channels);
+	outDset.setFormat((uint32_t)outFormat);
 	outDset.setTileSize(tileSize);
 
 
@@ -627,7 +631,7 @@ int main(int argc, char** argv) {
 	//return 0;
 
 	if (argc <= 3) {
-		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> [options]* <lvls>+\n");
+		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <format> <lvls>+\n");
 		if (argc == 3) printf("\t(You must provide at least one level.)\n");
 		return 1;
 	}
@@ -639,19 +643,16 @@ int main(int argc, char** argv) {
 
 	AtomicTimerMeasurement _tg_total(t_total);
 
-	int noptions = 0;
-
-	bool forceGray = false;
-	for (int i=3; i<argc; i++) {
-		if (strcmp(argv[i], "-g") == 0 or strcmp(argv[i], "--gray") == 0) {
-			forceGray = true;
-			printf(" - Forcing grayscale!\n");
-			noptions++;
-		}
-	}
+	std::string fmt = std::string{argv[3]};
+	Image::Format outFormat;
+	if (fmt == "gray") outFormat = Image::Format::GRAY;
+	else if (fmt == "rgb") outFormat = Image::Format::RGB;
+	else if (fmt == "rgba") outFormat = Image::Format::RGBA;
+	else if (fmt == "terrain") outFormat = Image::Format::TERRAIN_2x8;
+	else throw std::runtime_error("unk format: " + fmt + ", must be GRAY/RGB/RGBA/TERRAIN_2x8");
 
 	try {
-		for (int i=3+noptions; i<argc; i++) {
+		for (int i=4; i<argc; i++) {
 
 			lvls.push_back( std::stoi(argv[i]) );
 			if (lvls.back() < 0 or lvls.back() >= 27) {
@@ -662,5 +663,5 @@ int main(int argc, char** argv) {
 	} catch (...) { printf(" - You provided a non-integer or invalid level.\n"); return 1; }
 
 
-	return test3(srcTiff, outPath, lvls, forceGray);
+	return test3(srcTiff, outPath, lvls, outFormat);
 }

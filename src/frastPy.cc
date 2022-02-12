@@ -20,6 +20,8 @@ namespace {
 		if (bi.shape[0] < outh) throw std::runtime_error("Output buffer too small, width was "  + std::to_string(bi.shape[0]) + ", needed >=" + std::to_string(outw));
 		if (bi.shape[1] < outw) throw std::runtime_error("Output buffer too small, height was " + std::to_string(bi.shape[0]) + ", needed >=" + std::to_string(outw));
 	}
+
+	inline auto get_dtype(const Image::Format& f) { return f == Image::Format::TERRAIN_2x8 ? py::dtype::of<uint16_t>() : py::dtype::of<uint8_t>(); }
 }
 
 struct DatasetReaderIterator {
@@ -52,6 +54,7 @@ struct DatasetReaderIterator {
 		cursor = nullptr;
 		if (txn) dset->endTxn(&txn);
 	}
+
 	inline py::object next() {
 		MDB_val key, val;
 		BlockCoordinate coord { 0 };
@@ -74,7 +77,7 @@ struct DatasetReaderIterator {
 		}
 
 		if (buf.w == 0) {
-			buf = Image { dset->tileSize(), dset->tileSize(), dset->channels() };
+			buf = Image { dset->tileSize(), dset->tileSize(), dset->format() };
 			outShape.push_back(dset->tileSize());
 			outShape.push_back(dset->tileSize());
 			outShape.push_back(dset->channels());
@@ -90,7 +93,8 @@ struct DatasetReaderIterator {
 			decode(buf, eimg);
 		}
 
-		auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) buf.buffer);
+		auto dtype = get_dtype(dset->format());
+		auto result = py::array(dtype, outShape, outStrides, (uint8_t*) buf.buffer);
 		return py::make_tuple(coord, result);
 	}
 };
@@ -157,7 +161,7 @@ PYBIND11_MODULE(frastpy, m) {
 		//
 		// Note: Parameter if parameter 'safe' is true, if there are *any* missing tiles, None is returned.
 		// If 'safe' is false, we may return a partially or entirely blank image.
-		.def("fetchBlocks", [](DatasetReader& dset, py::array_t<uint8_t> out, uint64_t lvl, py::array_t<uint64_t>& tlbr_, bool safe) -> py::object {
+		.def("fetchBlocks", [](DatasetReader& dset, py::buffer out, uint64_t lvl, py::array_t<uint64_t>& tlbr_, bool safe) -> py::object {
 				AtomicTimerMeasurement g(t_total);
 				if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
@@ -180,16 +184,19 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels()*outw);
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
+
+				auto dtype = get_dtype(dset.format());
+
 				// WHich one is correct? Do I need to inc_ref() manually()
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
-				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				//auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 				int nMissing = 0;
 				{
 					py::gil_scoped_release release;
 
 					//Image imgView = Image::view(outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
-					Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+					Image imgView (outh,outw, dset.format(), (uint8_t*)bufIn.ptr);
 
 					nMissing = dset.fetchBlocks(imgView, lvl, tlbr, nullptr);
 				}
@@ -223,8 +230,9 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels()*outw);
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
+				auto dtype = get_dtype(dset.format());
 				// WHich one is correct? Do I need to inc_ref() manually()
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
 				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 
@@ -259,9 +267,10 @@ PYBIND11_MODULE(frastpy, m) {
 				outStrides.push_back(dset.channels()*outw);
 				outStrides.push_back(dset.channels());
 				if (bufIn.ndim == 3) outStrides.push_back(1);
+				auto dtype = get_dtype(dset.format());
 				// WHich one is correct? Do I need to inc_ref() manually()
-				auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
-				//auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out.inc_ref());
+				//auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 				{
 					py::gil_scoped_release release;

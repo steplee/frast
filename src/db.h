@@ -112,7 +112,8 @@ struct DatasetMeta {
 	};
 	struct FixedSizeMeta {
 		LevelMeta levelMetas[MAX_LVLS];
-		uint32_t channels;
+		//uint32_t channels;
+		uint32_t format;
 		uint32_t tileSize;
 		uint64_t mapSize;
 	} fixedSizeMeta;
@@ -192,9 +193,10 @@ class Dataset {
 		// TODO: Replace with something more elegant
 		void recompute_meta_and_write_slow(MDB_txn* txn);
 
-		void setChannels(int32_t c) { meta.fixedSizeMeta.channels = c; }
+		void setFormat(int32_t c) { meta.fixedSizeMeta.format = c; }
 		void setTileSize(int32_t c) { meta.fixedSizeMeta.tileSize = c; }
-		inline int32_t channels() { return meta.fixedSizeMeta.channels; }
+		inline Image::Format format() { return (Image::Format)meta.fixedSizeMeta.format; }
+		inline int32_t channels() { return Image::format2c(format()); }
 		inline int32_t tileSize() { return meta.fixedSizeMeta.tileSize; }
 
 		inline const DatasetMeta& getMeta() const { return meta; }
@@ -237,7 +239,6 @@ class Dataset {
  *  eventually)
  */
 struct WritableTile {
-	Image image;
 	BlockCoordinate coord;
 	std::vector<uint8_t> eimg;
 	int bufferIdx;
@@ -250,7 +251,6 @@ struct WritableTile {
 	inline WritableTile(const WritableTile& other) : coord(0,0,0) { copyFrom(other); }
 
 	void copyFrom(const WritableTile& tile);
-	void fillWith(const Image& im, const BlockCoordinate& c, const std::vector<uint8_t>& v);
 	void fillWith(const BlockCoordinate& c, const MDB_val& val);
 };
 
