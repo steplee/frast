@@ -178,11 +178,11 @@ bool encode_jpeg(EncodedImage& out, const Image& img) {
 }
 #endif
 
-#include "image_merge_impl.hpp"
+#include "detail/image_merge_impl.hpp"
 
 #ifdef USE_MY_WARP
 
-#include "image_warp_impl.hpp"
+#include "detail/image_warp_impl.hpp"
 
 void Image::warpAffine(Image& out, const float H[6]) const {
 	if (out.format == Image::Format::GRAY) my_warpAffine<uint8_t,1>(out, *this, H);
@@ -252,6 +252,9 @@ template <int C> static void makeGray_(Image& out, const Image& in) {
 		}
 }
 void Image::makeGray(Image& out) const {
+	if (format == Image::Format::TERRAIN_2x8)
+		throw std::runtime_error("cannot make terrain grayscale.");
+
 	if      (channels() == 1) memcpy(out.buffer, buffer, size());
 	else if (channels() == 3) makeGray_<3>(out, *this);
 	else if (channels() == 4) makeGray_<4>(out, *this);
@@ -260,14 +263,5 @@ void Image::makeGray(Image& out) const {
 
 
 
-
-
-
-
 // Terrain codec
-bool encode_terrain_2x8(EncodedImage& eimg, const Image& img) {
-	return false;
-}
-bool decode_terrain_2x8(Image& out, const EncodedImageRef& eimg) {
-	return false;
-}
+#include "detail/terrain_codec.hpp"

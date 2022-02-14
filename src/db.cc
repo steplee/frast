@@ -1393,16 +1393,26 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 				memset(accessCache1.buffer, 0, tileSize()*tileSize()*channels());
 				nMissing++;
 			}
-			//printf(" - copy with offset %d %d\n", yi*sw*channels, xi*channels);
-			uint8_t* dst = out.buffer + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
-			if (channels() == 1)      memcpyStridedOutputFlatInput<1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
-			else if (channels() == 3) memcpyStridedOutputFlatInput<3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
-			else if (channels() == 4) memcpyStridedOutputFlatInput<4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+
+			if (out.format == Image::Format::TERRAIN_2x8) {
+				uint16_t* dst = reinterpret_cast<uint16_t*>(out.buffer) + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
+				const uint16_t* src = reinterpret_cast<const uint16_t*>(accessCache1.buffer);
+				if (channels() == 1)      memcpyStridedOutputFlatInput<uint16_t,1>(dst, src, sw, tileSize(), tileSize());
+				else if (channels() == 3) memcpyStridedOutputFlatInput<uint16_t,3>(dst, src, sw, tileSize(), tileSize());
+				else if (channels() == 4) memcpyStridedOutputFlatInput<uint16_t,4>(dst, src, sw, tileSize(), tileSize());
+			} else {
+				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
+				if (channels() == 1)      memcpyStridedOutputFlatInput<uint8_t,1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				else if (channels() == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				else if (channels() == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+			}
+
 		}
 		}
 	} else {
 		// TODO: Multi-threaded load.
 		// ...
+		assert(false);
 	}
 
 	if (ownTxn)

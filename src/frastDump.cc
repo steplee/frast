@@ -34,7 +34,7 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	}
 
 	auto c = dset.channels();
-	auto cv_type = c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
+	auto cv_type = dset.format() == Image::Format::TERRAIN_2x8 ? CV_16UC1 : c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
 	cv::Mat mat ( ts * h, ts * w, cv_type );
 
 	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
@@ -51,6 +51,34 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	}
 
 	if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+
+	// Handle terrain case
+	if (dset.format() == Image::Format::TERRAIN_2x8) {
+		cv::Mat tmp = mat.clone();
+		mat = cv::Mat(ts*h, ts*w, CV_8UC3);
+		uint16_t min_ = 65535, max_ = 0;
+		for (int y=0; y<tmp.rows; y++)
+		for (int x=0; x<tmp.cols; x++) {
+			uint16_t val = ((uint16_t*)tmp.data)[y*tmp.cols+x];
+			if (val < min_) min_ = val;
+			if (val > max_) max_ = val;
+		}
+
+		for (int y=0; y<tmp.rows; y++)
+		for (int x=0; x<tmp.cols; x++) {
+			uint16_t val_ = ((uint16_t*)tmp.data)[y*tmp.cols+x] - min_;
+			float val = 255.999f * static_cast<float>(val_) / max_;
+			((uint8_t*)mat.data)[y*tmp.cols*3+x*3+0] = val;
+			((uint8_t*)mat.data)[y*tmp.cols*3+x*3+1] = val;
+			((uint8_t*)mat.data)[y*tmp.cols*3+x*3+2] = val;
+		}
+		char a[32], b[32];
+		sprintf(a, "MinVal %.1f", ((float)min_)/8);
+		sprintf(b, "MaxVal %.1f", ((float)max_)/8);
+		cv::putText(mat, a, {20,20}, 0, 1.f, cv::Scalar{0,255,0});
+		cv::putText(mat, b, {20,50}, 0, 1.f, cv::Scalar{0,255,0});
+	}
+
 	cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
 	return 0;
 }

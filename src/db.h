@@ -58,8 +58,8 @@ extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 void printDebugTimes(); // Not used currenlty: descructors print automatically
 
 // Assumes channelStride = 1.
-template <int channels>
-inline void memcpyStridedOutputFlatInput(uint8_t* dst, uint8_t* src, size_t rowStride, size_t w, size_t h) {
+template <class T, int channels>
+inline void memcpyStridedOutputFlatInput(T* dst, const T* src, size_t rowStride, size_t w, size_t h) {
 	AtomicTimerMeasurement g(t_memcpyStrided);
 	for (int y=0; y<h; y++)
 	for (int x=0; x<w; x++)

@@ -107,8 +107,13 @@ struct Image {
 	// View()ing constructors
 	inline Image(int h, int w, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
 
+	// Size of scalar (uint8_t -> 1) (uint16_t -> 2), does not include channels.
+	inline int32_t eleSize() const {
+		return format == Image::Format::TERRAIN_2x8 ? 2 : 1;
+	}
+	// Size of entire image buffer
 	inline int32_t size() const {
-		return w * h * channels();
+		return w * h * channels() * eleSize();
 	}
 	inline int32_t channels() const {
 		return format2c(format);

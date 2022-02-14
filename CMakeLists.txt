@@ -15,6 +15,7 @@ set(ADDO_THREADS 8 CACHE INT "threads used")
 set(CONVERT_THREADS 8 CACHE INT "threads used")
 set(WRITER_NBUF 32 CACHE INT "buffers allocated per thread")
 set(TURBOJPEG_QUALITY 92 CACHE INT "jpeg quality, must be [0-100]")
+set(COMPRESS_TERRAIN 1 CACHE INT "use zlib to compress terrain")
 
 ##################
 #   Setup Deps
@@ -31,6 +32,10 @@ set(COMMON_LIBS pthread lmdb fmt::fmt ${OpenCV_LIBRARIES} ${GDAL_LIBRARIES})
 
 if (USE_TURBOJPEG)
 	list(APPEND COMMON_LIBS turbojpeg)
+endif()
+if (COMPRESS_TERRAIN)
+	add_definitions(-DCOMPRESS_TERRAIN=1)
+	list(APPEND COMMON_LIBS z)
 endif()
 
 find_package(pybind11 REQUIRED)

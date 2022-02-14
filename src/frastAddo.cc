@@ -165,10 +165,10 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 	int64_t ncols = lvlTlbr[3] - lvlTlbr[1];
 
 	auto format = dset.format();
-	assert(format == Image::Format::RGB or format == Image::Format::GRAY);
+	assert(format == Image::Format::RGB or format == Image::Format::GRAY or format == Image::Format::TERRAIN_2x8);
 	int channels = dset.channels();
 	int tileSize = dset.tileSize();
-	int cv_type = channels == 3 ? CV_8UC3 : channels == 4 ? CV_8UC4 : CV_8U;
+	auto cv_type = format == Image::Format::TERRAIN_2x8 ? CV_16UC1 : channels == 1 ? CV_8U : channels == 3 ? CV_8UC3 : CV_8UC4;
 
 	Image tmpImage_[ADDO_THREADS];
 	cv::Mat tmpMat_[ADDO_THREADS];
@@ -239,7 +239,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					BlockCoordinate pcoord { lvl+1, y*2 + j/2, x*2 + j%2 };
 					if (dset.get(tmpImage, pcoord, &r_txn)) {
 						// Tile didn't exist, just make it black.
-						memset(tmpImage.buffer, 0, channels*tileSize*tileSize);
+						memset(tmpImage.buffer, 0, tmpImage.size());
 						nMissingParents++;
 					}
 					//cv::Mat tmpMat  = cv::Mat ( tileSize, tileSize, cv_type, tmpImage.buffer );

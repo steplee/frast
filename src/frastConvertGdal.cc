@@ -59,6 +59,25 @@ using RowMatrixX2f = Eigen::Matrix<float,-1,2,Eigen::RowMajor>;
 using RowMatrix2Xf = Eigen::Matrix<float,2,-1,Eigen::RowMajor>;
 //using RowAffine3d = Eigen::Transform<Affine,3,Eigen::RowMajor>;
 
+// Convert the int16_t -> uint16_t.
+// Change nodata value from -32768 to 0. Clamp min to 0.
+// Clamp max to 8191, then multiply by 8.
+// The final mult is done to get 8 ticks/meter value-precision, so that warps have higher accuracy.
+// That means that the user should convert to float, then divide by 8 after accessing the dataset.
+static void transform_gmted(uint16_t* buf, int h, int w) {
+	for (int y=0; y<h; y++)
+	for (int x=0; x<w; x++) {
+		int16_t gmted_val = ((int16_t*)buf)[y*w+x];
+
+		if (gmted_val < 0) gmted_val = 0;
+		if (gmted_val > 8191) gmted_val = 8191;
+
+		uint16_t val = gmted_val * 8;
+
+		buf[y*w+x] = val;
+	}
+}
+
 struct GdalDset {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -82,7 +101,9 @@ struct GdalDset {
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
 
+	// outFormat = prjFormat, except if outFormat = gray and nbands = 3, in which case prjFormat is RGB
 	Image::Format outFormat;
+	Image::Format prjFormat;
 	Image imgPrj;
 	Image imgPrjGray;
 
@@ -120,9 +141,11 @@ GdalDset::GdalDset(const std::string& path, Image::Format& f) : outFormat(f) {
         std::cerr << " == ONLY uint8_t/int16_t/float32 dsets supported right now." << std::endl;
         exit(1);
     }
+	prjFormat = outFormat;
     if (nbands == 3 and gdalType == GDT_Byte) {
 		if (outFormat != Image::Format::GRAY and outFormat != Image::Format::RGB)
 			throw std::runtime_error("geotiff is 3-channel int8, output can only be GRAY or RGB");
+		prjFormat = Image::Format::RGB;
 		eleSize = 1;
 	}
 	else if (nbands == 1 and gdalType == GDT_Byte) {
@@ -205,6 +228,11 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
                                   nbands, nullptr,
                                   eleSize * nbands, eleSize * nbands * outw, eleSize,
                                   &arg);
+
+		// TODO If converting from other terrain then GMTED, must modify here
+		if (out.format == Image::Format::TERRAIN_2x8)
+			transform_gmted((uint16_t*) out.buffer, outh, outw);
+
         return err != CE_None;
     } else if (xoff + xsize >= 1 and xoff < w and yoff + ysize >= 1 and yoff < h) {
         // case where there is partial overlap
@@ -222,7 +250,8 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
         //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
         if (read_w <= 0 or read_h <= 0) return 1;
-        cv::Mat         buf(read_h, read_w, out.channels() == 3 ? CV_8UC3 : CV_8U);
+		auto cv_type = imgPrj.format == Image::Format::TERRAIN_2x8 ? CV_16UC1 : imgPrj.channels() == 3 ? CV_8UC3 : CV_8U;
+        cv::Mat         buf(read_h, read_w, cv_type);
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0),
                                   inner(1),
@@ -238,7 +267,11 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
                                   eleSize * nbands * read_w,
                                   eleSize * 1,
                                   nullptr);
-        if (err != CE_None) { return true; }
+        if (err != CE_None) return true;
+
+		// TODO If converting from other terrain then GMTED, must modify here
+		if (out.format == Image::Format::TERRAIN_2x8)
+			transform_gmted((uint16_t*) buf.data, read_h, read_w);
 
 		// Nevermind: This won't work if input tiffs are split exactly on edges.
 		// This will work if tiffs have some overlap, but that is rare
@@ -267,7 +300,9 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         cv::Mat in_pts_(3, 2, CV_32F, in_pts);
         cv::Mat out_pts_(3, 2, CV_32F, out_pts);
         cv::Mat A = cv::getAffineTransform(in_pts_, out_pts_);
-		cv::Mat out_(outh, outw, out.channels() == 3 ? CV_8UC3 : CV_8U, out.buffer);
+		if (out.format == Image::Format::GRAY and imgPrj.format == Image::Format::RGB)
+			cv::cvtColor(buf,buf,cv::COLOR_RGB2GRAY);
+		cv::Mat out_(outh, outw, cv_type, out.buffer);
         cv::warpAffine(buf, out_, A, cv::Size{outw, outh});
         return false;
     } else {
@@ -360,7 +395,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 			tlbr_prj(2)-tlbr_prj(0), tlbr_prj(3)-tlbr_prj(1));
 
 	if (imgPrj.w < sw or imgPrj.h < sh) {
-		imgPrj = std::move(Image{ sh, sw, outFormat });
+		imgPrj = std::move(Image{ sh, sw, prjFormat });
 		imgPrj.alloc();
 	}
 
