@@ -330,6 +330,23 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 	return 0;
 }
 
+int eraseLevels(DatasetWritable& dset, const std::vector<int>& existingLvls, std::vector<int>& toErase) {
+	for (int lvl : toErase) {
+		if (std::find(existingLvls.begin(), existingLvls.end(), lvl) == existingLvls.end()) {
+			printf(" - Cannot drop level %d, it did not exist.\n", lvl);
+			continue;
+		}
+
+		printf(" - Erasing lvl %d\n", lvl);
+		MDB_txn* txn;
+		if (dset.beginTxn(&txn)) throw std::runtime_error("Failed to open txn.");
+		dset.dropLvl(lvl,txn);
+		if (dset.endTxn(&txn)) throw std::runtime_error("Failed to open txn.");
+	}
+
+	return 0;
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -341,13 +358,19 @@ int main(int argc, char** argv) {
 
 	bool clean = false;
 	bool cleanFromLastLevel = false;
+	std::vector<int> toErase;
 
-	if (argc == 3) {
+	if (argc >= 3) {
 		if (strcmp(argv[2],"--clean") == 0)
 			clean = argv;
 		else if (strcmp(argv[2],"--cleanFromLastLevel") == 0)
 			cleanFromLastLevel = argv;
-		else {
+		else if (strcmp(argv[2],"--erase") == 0) {
+			if (argc == 3) throw std::runtime_error("You must provide zero or more levels to erase.");
+			for (int i=3; i<argc; i++) {
+				toErase.push_back(std::stoi(argv[i]));
+			}
+		} else {
 			printf(" - third arg must be --clean, --cleanFromLastLevel or nothing\n");
 			return 1;
 		}
@@ -368,6 +391,7 @@ int main(int argc, char** argv) {
 	}
 
 	if (clean) return safeRemoveOverviews(dset, existingLvls);
+	if (toErase.size()) return eraseLevels(dset, existingLvls, toErase);
 	if (cleanFromLastLevel) return removeOverviews(dset, existingLvls);
 
 
