@@ -117,10 +117,13 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	const T* ibuf = (const T*) in.buffer;
 	T* obuf = (T*) out.buffer;
 
-	auto IDX = [ih,iw,istep](int y, int x, int c) {
+	auto IDX = [ih,iw,istep](int y_, int x_, int c) {
+		int y=y_, x=x_;
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
 		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
-		return y * istep + x * C + c;
+		auto out = y * istep + x * C + c;
+		//printf("IDX %d %d -> %d %d\n", y_,x_,y,x);
+		return out;
 	};
 
 	//omp_set_num_threads(4);

@@ -57,17 +57,6 @@ extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage,
 			t_total;
 void printDebugTimes(); // Not used currenlty: descructors print automatically
 
-// Assumes channelStride = 1.
-template <class T, int channels>
-inline void memcpyStridedOutputFlatInput(T* dst, const T* src, size_t rowStride, size_t w, size_t h) {
-	AtomicTimerMeasurement g(t_memcpyStrided);
-	for (int y=0; y<h; y++)
-	for (int x=0; x<w; x++)
-	for (int c=0; c<channels; c++) {
-		//dst[y*rowStride*channels + x*channels + c] = src[y*w*channels+x*channels+c];
-		dst[y*rowStride*channels + x*channels + c] = *(src++);
-	}
-}
 
 struct BlockCoordinate {
 	uint64_t c;
@@ -118,6 +107,9 @@ struct DatasetMeta {
 		uint64_t mapSize;
 	} fixedSizeMeta;
 	std::vector<Region> regions;
+
+	// The union of all regions.
+	Region computeCoveredRegion() const;
 };
 
 

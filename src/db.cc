@@ -1,6 +1,7 @@
 #include "db.h"
 #include "image.h"
 #include "utils/solve.hpp"
+#include "utils/memcpy_utils.hpp"
 
 #include <cassert>
 #include <string>
@@ -1358,8 +1359,9 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 	    tlbr[2] == fetchedCacheBox[2] and
 	    tlbr[3] == fetchedCacheBox[3]) {
 		//AtomicTimerMeasurement g(t_encodeImage);
+		//printf(" - (fetchBlocks) cache hit copying (%d %d %d : %d) to (%d %d %d : %d).\n", fetchedCache.w, fetchedCache.h, fetchedCache.channels(), fetchedCache.size(),
+				// out.w, out.h, out.channels(), out.size()); fflush(stdout);
 		out = fetchedCache;
-		dprintf(" - (fetchBlocks) cache hit.\n");
 		return fetchedCacheMissing;
 	}
 
@@ -1376,8 +1378,12 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 	//assert(out.h >= tileSize()*ny);
 	int sw = nx*tileSize(); // Sampled width and height
 	int sh = ny*tileSize();
-	if (out.capacity < sw*sh*channels())
-		throw std::runtime_error("output buffer was too small for fetchBlocks (sw,sh " + std::to_string(sw) + "," + std::to_string(sh) + ")");
+	if (out.capacity < sw*sh*channels()) {
+		char buf[256];
+		sprintf(buf, "output buffer (%d %d) was to small for fetchBlocks (sampled %d %d)", out.w, out.h, sw, sh);
+		throw std::runtime_error(std::string{buf});
+		//throw std::runtime_error("output buffer was too small for fetchBlocks (sw,sh " + std::to_string(sw) + "," + std::to_string(sh) + ")");
+	}
 	out.w = sw;
 	out.h = sh;
 
@@ -1402,7 +1408,9 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint16_t,4>(dst, src, sw, tileSize(), tileSize());
 			} else {
 				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
-				if (channels() == 1)      memcpyStridedOutputFlatInput<uint8_t,1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				if (out.channels() == 4 and channels() == 1) memcpyStridedOutputFlatInputReplicateRgbPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				if (out.channels() == 4 and channels() == 3) memcpyStridedOutputFlatInputPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				else if (channels() == 1) memcpyStridedOutputFlatInput<uint8_t,1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 			}
@@ -1419,9 +1427,8 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 		if (auto err = endTxn(&txn0))
 			throw std::runtime_error(std::string{"(fetchBlocks) mdb_txn_end failed with "} + mdb_strerror(err));
 
-
 	// Populate cache.
-	dprintf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
+	printf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
 	{
 	//AtomicTimerMeasurement g(t_encodeImage);
 	fetchedCache = out;
@@ -1573,4 +1580,17 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 
 
 	return lvl;
+}
+
+
+DatasetMeta::Region DatasetMeta::computeCoveredRegion() const {
+	if (regions.size() == 0) return Region{{0,0,0,0}};
+	Region region { {9e19,9e19, -9e19,-9e19} };
+	for (auto& r : regions) {
+		if (r.tlbr[0] < region.tlbr[0]) region.tlbr[0] = r.tlbr[0];
+		if (r.tlbr[1] < region.tlbr[1]) region.tlbr[1] = r.tlbr[1];
+		if (r.tlbr[2] > region.tlbr[2]) region.tlbr[2] = r.tlbr[2];
+		if (r.tlbr[3] > region.tlbr[3]) region.tlbr[3] = r.tlbr[3];
+	}
+	return region;
 }

@@ -47,7 +47,6 @@ struct Image {
 		if (buffer and ownBuffer) {
 			free(buffer);
 			//printf(" - Free image %zu\n", size());
-			buffer = 0; 
 		}
 		buffer = 0;
 		w = h = 0;
@@ -102,8 +101,8 @@ struct Image {
 		throw std::runtime_error("bad format");
 	}
 
-	inline Image() : w(0), h(0), buffer(nullptr), format(Format::GRAY) {}
-	inline Image(int h, int w, Format f) : w(w), h(h), format(f), buffer(nullptr) { }
+	inline Image() : w(0), h(0), buffer(nullptr), format(Format::GRAY), ownBuffer(true) {}
+	inline Image(int h, int w, Format f) : w(w), h(h), format(f), buffer(nullptr), ownBuffer(true) { }
 	// View()ing constructors
 	inline Image(int h, int w, Format f, uint8_t* buf) : w(w), h(h), format(f), buffer(buf), ownBuffer(false) { capacity=size(); }
 
