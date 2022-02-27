@@ -7,7 +7,7 @@ namespace {
 
 // Generate code for each combination of scalar type and channels.
 // The correct function is dispatched in the Image member function.
-template <class T, int C> void my_warpAffine(Image& out, const Image& in, const float H[6]);
+template <class T, int Cout, int Cin> void my_warpAffine(Image& out, const Image& in, const float H[6]);
 template <class T, int C> void my_warpPerspective(Image& out, const Image& in, const float H[6]);
 template <class T, int C> void my_remapRemap(Image& out, const Image& in, const float* map, int mw, int mh);
 
@@ -104,7 +104,7 @@ template <> void my_warpAffine<uint8_t, 1>(Image& out, const Image& in, const fl
 }
 */
 
-template <class T, int C>
+template <class T, int Cout, int Cin>
 void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	float iH[6];
 	inv_3x2(iH,H);
@@ -112,8 +112,8 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 
 	const int oh = out.h, ow = out.w;
 	const int ih = in.h, iw = in.w;
-	const int istep = iw * C;
-	const int ostep = ow * C;
+	const int istep = iw * Cin;
+	const int ostep = ow * Cout;
 	const T* ibuf = (const T*) in.buffer;
 	T* obuf = (T*) out.buffer;
 
@@ -121,7 +121,7 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 		int y=y_, x=x_;
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
 		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
-		auto out = y * istep + x * C + c;
+		auto out = y * istep + x * Cin + c;
 		//printf("IDX %d %d -> %d %d\n", y_,x_,y,x);
 		return out;
 	};
@@ -136,23 +136,23 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 
 #if INTEGER_MIXING
 		using Scalar = typename RaiseOnce<T>::type;
-		using Vec = Scalar[C];
+		using Vec = Scalar[Cin];
 		constexpr float f_res = static_cast<float>(RaiseOnce<T>::res);
 		Vec p = {0};
-		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (1.f-my) * (1.f-mx)));
-		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (1.f-my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (    my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (    my) * (1.f-mx)));
-		for (int c=0; c<C; c++) obuf[oy*ostep+ox*C+c] = (T) (p[c] / RaiseOnce<T>::res);
+		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (1.f-my) * (1.f-mx)));
+		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (1.f-my) * (    mx)));
+		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (    my) * (    mx)));
+		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (    my) * (1.f-mx)));
+		for (int c=0; c<Cin; c++) obuf[oy*ostep+ox*Cout+c] = (T) (p[c] / RaiseOnce<T>::res);
 #else
 		using Scalar = float;
-		using Vec = Scalar[C];
+		using Vec = Scalar[Cin];
 		Vec p = {0.f};
-		for (int c=0; c<C; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+0) , (((int)ix)+0) , c)]) * ((Scalar)((1.f-my) * (1.f-mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+0) , (((int)ix)+1) , c)]) * ((Scalar)((1.f-my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
-		for (int c=0; c<C; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
-		for (int c=0; c<C; c++) obuf[oy*ostep+ox*C+c] = (T) (p[c]);
+		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+0) , (((int)ix)+0) , c)]) * ((Scalar)((1.f-my) * (1.f-mx)));
+		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+0) , (((int)ix)+1) , c)]) * ((Scalar)((1.f-my) * (    mx)));
+		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
+		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
+		for (int c=0; c<Cin; c++) obuf[oy*ostep+ox*Cout+c] = (T) (p[c]);
 #endif
 	}
 	}

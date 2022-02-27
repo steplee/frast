@@ -40,6 +40,29 @@ namespace {
 			}
 		printf(" - uploading test altBuf with %d.\n", altData.size());
 		uploader.uploadSync(altBuf, altData.data(), altData.size()*sizeof(altType), 0);
+	}
+
+	void upload_loaded_data(
+			ResidentBuffer& altBuf,
+			ResidentImage& tex,
+			Image& colorImage, Image& altImage,
+			Uploader& uploader) {
+		printf(" - uploading color image %lu : %lu.\n", colorImage.size(), tex.size()); fflush(stdout);
+		uploader.uploadSync(tex, colorImage.buffer, colorImage.size(), 0);
+
+
+		// printf(" - uploading alt buf %lu : %lu.\n", altImage.size(), altBuf.residentSize); fflush(stdout);
+		std::vector<float> altData(altImage.w*altImage.h);
+		for (int y=0; y<altImage.h; y++)
+		for (int x=0; x<altImage.w; x++) {
+			uint16_t a = ((uint16_t*)altImage.buffer)[y*altImage.w+x];
+			float b = a / 8.f;
+			int yy = altImage.h - 1 - y;
+			altData[yy*altImage.w+x] = b;
+		}
+		// uploader.uploadSync(altBuf, altImage.buffer, altImage.size(), 0);
+		//uploader.uploadSync(altBuf, altImage.buffer, altBuf.givenSize, 0);
+		uploader.uploadSync(altBuf, altData.data(), altBuf.givenSize, 0);
 
 	}
 }
@@ -53,7 +76,8 @@ void Ask::setFromCamera(Camera* cam) {
 ClipMapRenderer1::ClipMapRenderer1(VkApp* app_) :
 	app(app_),
 	//ClipMapConfig(int levels, int tilesPerLevel, int pixPer, int vertsPer)
-	cfg(4, 4, 256, 4) {
+	//cfg(4, 4, 256, 4) {
+	cfg(7, 4, 256, 4) {
 
 	dataLoader.init(cfg,
 			"/data/naip/mocoNaip/out.ft",
@@ -131,7 +155,8 @@ vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, FrameData& fd, Camer
 		//memcpy(dbuf, rs.mvp(), 16*4);
 		memcpy(dbuf, mvpf, 16*4);
 		uint32_t lvl_x_y[3*4];
-		((uint32_t*)lvl_x_y)[0] = cfg.levels-1;
+		((uint32_t*)lvl_x_y)[0] = mld.baseLevel;
+		//((uint32_t*)lvl_x_y)[0] = cfg.levels-1;
 		//((float*)   lvl_x_y)[1] = mld.ctr_x;
 		//((float*)   lvl_x_y)[2] = mld.ctr_y;
 		((float*)   lvl_x_y)[1] = 0;
@@ -168,15 +193,29 @@ void ClipMapRenderer1::loaderLoop() {
 		// Don't block the render thread while we do.
 		{
 			MultiLevelData& mld = mlds[(dataWriteIdx + 1) % 2];
+			/*
 			for (int j=0; j<cfg.levels; j++) {
 				ResidentImage &rimg = mld.images[j];
 				ResidentBuffer &rbuf = mld.altBufs[j];
 				upload_test_verts_and_tex(rbuf, rimg, cmUploader, cfg.pixelsPerTile, cfg.tilesPerLevel, cfg.vertsAlongEdge);
 			}
+			mld.ctr_x = ask.pos[0];
+			mld.ctr_y = ask.pos[1];
+			mld.baseLevel = 18;
+			*/
 
 			dataLoader.load(ask);
+			for (int j=0; j<cfg.levels; j++) {
+				ResidentImage &rimg = mld.images[j];
+				ResidentBuffer &rbuf = mld.altBufs[j];
+				Image &colorImg = dataLoader.loadedData.colorImages[j];
+				Image &altImage = dataLoader.loadedData.altImages[j];
+				upload_loaded_data(rbuf, rimg, colorImg, altImage, cmUploader);
+			}
 			mld.ctr_x = dataLoader.loadedData.ctr_x;
 			mld.ctr_y = dataLoader.loadedData.ctr_y;
+			mld.baseLevel = dataLoader.loadedData.baseLevel;
+
 		}
 
 		// Increment, which will also notify other thread.
@@ -249,7 +288,7 @@ void ClipMapRenderer1::init() {
 		for (int yy=0; yy<cfg.vertsAlongEdge; yy++) {
 			for (int xx=0; xx<cfg.vertsAlongEdge; xx++) {
 				float u = ((float)xx) / (cfg.vertsAlongEdge - 1);
-				float v = ((float)yy) / (cfg.vertsAlongEdge - 1);
+				float v = 1. - ((float)yy) / (cfg.vertsAlongEdge - 1);
 				//float x = 1.f * (((float)xx) / (cfg.vertsAlongEdge ) - .5f);
 				//float y = 1.f * (((float)yy) / (cfg.vertsAlongEdge ) - .5f);
 				float x = 1.f * (((float)xx) / (cfg.vertsAlongEdge-1.0f) - .5f);

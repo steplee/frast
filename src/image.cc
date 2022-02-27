@@ -185,12 +185,19 @@ bool encode_jpeg(EncodedImage& out, const Image& img) {
 #include "detail/image_warp_impl.hpp"
 
 void Image::warpAffine(Image& out, const float H[6]) const {
-	if (out.format == Image::Format::GRAY) my_warpAffine<uint8_t,1>(out, *this, H);
-	else if (out.format == Image::Format::RGB) my_warpAffine<uint8_t,3>(out, *this, H);
-	else if (out.format == Image::Format::RGBA or
-			 out.format == Image::Format::RGBN) my_warpAffine<uint8_t,4>(out, *this, H);
-	else if (out.format == Image::Format::TERRAIN_2x8) my_warpAffine<uint16_t,1>(out, *this, H);
-	else throw std::runtime_error(std::string{"Image::warpAffine() unsupported format/channels"} + std::to_string(out.channels()));
+
+	if (out.format == Image::Format::RGBA and format == Image::Format::RGB)
+		my_warpAffine<uint8_t,4,3>(out, *this, H);
+	else {
+		assert(out.format == format);
+
+		if (out.format == Image::Format::GRAY) my_warpAffine<uint8_t,1,1>(out, *this, H);
+		else if (out.format == Image::Format::RGB) my_warpAffine<uint8_t,3,3>(out, *this, H);
+		else if (out.format == Image::Format::RGBA or
+				out.format == Image::Format::RGBN) my_warpAffine<uint8_t,4,4>(out, *this, H);
+		else if (out.format == Image::Format::TERRAIN_2x8) my_warpAffine<uint16_t,1,1>(out, *this, H);
+		else throw std::runtime_error(std::string{"Image::warpAffine() unsupported format/channels"} + std::to_string(out.channels()));
+	}
 }
 
 void Image::warpPerspective(Image& out, float H[9]) const {

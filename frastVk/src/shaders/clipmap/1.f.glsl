@@ -12,7 +12,15 @@ layout (location = 0) out vec4 outFragColor;
 void main()
 {
 	//return red
-	outFragColor = v_color * texture(tex[v_lvl], v_uv);
+
+
+	vec4 color = v_color;
+
+	//color.rgb = color.rgb * (1. - pow(clamp(2. * max(abs(.5 - v_uv.x) , abs(.5 - v_uv.y)), 0., 1.), 4.0));
+	if (abs(.5 - v_uv.x) > .48) color.b += 1.;
+	if (abs(.5 - v_uv.y) > .48) color.b += 1.;
+
+	outFragColor = color * texture(tex[v_lvl], v_uv);
 
 	//outFragColor = v_color;
 }

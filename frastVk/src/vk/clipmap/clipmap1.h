@@ -93,6 +93,7 @@ struct LoadedMultiLevelData {
 	std::vector<Image> colorImages;
 	std::vector<Image> altImages;
 	double ctr_x, ctr_y;
+	int baseLevel;
 };
 
 class DatasetReader;
@@ -123,6 +124,7 @@ class ClipMapRenderer1 {
 			vk::raii::DescriptorSet descSet { nullptr };
 
 			double ctr_x, ctr_y;
+			uint32_t baseLevel;
 		};
 
 		struct __attribute__((packed, aligned(4))) MldPushConstants {
