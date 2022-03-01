@@ -117,6 +117,7 @@ vk::CommandBuffer ClipMapRenderer1::stepAndRender(RenderState& rs, FrameData& fd
 vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, FrameData& fd, Camera* cam) {
 	MultiLevelData &mld = mlds[dataReadIdx];
 
+
 	{
 		void* dbuf = (void*) camAndMetaBuffer.mem.mapMemory(0, 16*4+4*3, {});
 
@@ -210,7 +211,9 @@ void ClipMapRenderer1::loaderLoop() {
 				ResidentBuffer &rbuf = mld.altBufs[j];
 				Image &colorImg = dataLoader.loadedData.colorImages[j];
 				Image &altImage = dataLoader.loadedData.altImages[j];
-				upload_loaded_data(rbuf, rimg, colorImg, altImage, cmUploader);
+				if (dataLoader.loadedData.valids[j])
+					upload_loaded_data(rbuf, rimg, colorImg, altImage, cmUploader);
+				mld.valids[j] = dataLoader.loadedData.valids[j];
 			}
 			mld.ctr_x = dataLoader.loadedData.ctr_x;
 			mld.ctr_y = dataLoader.loadedData.ctr_y;
@@ -362,11 +365,11 @@ void ClipMapRenderer1::init() {
 	for (int ii=0; ii<2; ii++) {
 		MultiLevelData& mld = mlds[ii];
 
-
 		// (1)
 		for (int j=0; j<cfg.levels; j++) {
 			mld.images.push_back(ResidentImage{});
 			mld.altBufs.push_back(ResidentBuffer{});
+			mld.valids.push_back(false);
 
 			ResidentImage &rimg = mld.images.back();
 			ResidentBuffer &rbuf = mld.altBufs.back();

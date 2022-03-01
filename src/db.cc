@@ -375,12 +375,13 @@ void Dataset::getExistingLevels(std::vector<int>& out) const {
 bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
 	uint64_t lvl = bc.z();
 	if (dbs[lvl] == INVALID_DB) return false;
+	if (lvl < 0 or lvl > MAX_LVLS-1) return false;
 	MDB_val key, val;
 	key.mv_data = (void*) &(bc.c);
 	key.mv_size = sizeof(BlockCoordinate);
 	if (auto err = mdb_get(txn, dbs[lvl], &key, &val)) {
 		if (err == MDB_NOTFOUND) return false;
-		else throw std::runtime_error(std::string{"(tileExists) mdb err "} + mdb_strerror(err));
+		else throw std::runtime_error(std::string{"(tileExists " + std::to_string(lvl) + ") mdb err "} + mdb_strerror(err));
 	}
 	return true;
 }
@@ -1085,6 +1086,9 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 	dprintf(" - Edge Len: %f with ow oh %d %d\n", edgeLen, ow, oh);
 	uint64_t tileTlbr[4];
 	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, edgeLen, bboxWm, r_txn_);
+	if (lvl == BAD_LEVEL_CHOSEN) {
+		return true;
+	}
 	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 	/*
@@ -1226,6 +1230,11 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	uint64_t tileTlbr[4];
 	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, bboxWm, r_txn_);
+	if (lvl == BAD_LEVEL_CHOSEN) {
+		auto err = endTxn(&r_txn_, true);
+		return true;
+	}
+
 	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 
@@ -1571,9 +1580,10 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 			//printf(" - (findBestLvlAndTlbr_dataDependent) missing tile on lvl %d, going down one to %d\n", lvl+1,lvl);
 		}
 
-		if (lvl <= 0) {
+		if (lvl <= 0 or lvl >= 99) {
 			printf(" - (findBestLvlAndTlbr) picked lvl %d, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);
-			throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
+			//throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
+			return BAD_LEVEL_CHOSEN;
 		}
 	}
 

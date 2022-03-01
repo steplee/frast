@@ -23,6 +23,7 @@ constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
 constexpr int READER_TILE_CACHE_SIZE = 64;
 constexpr int WRITER_CACHE_CAPACITY = 16 /* times nthreads */;
+constexpr uint32_t BAD_LEVEL_CHOSEN = 55;
 
 // Note: WebMercator the size of the map is actually 2x this.
 constexpr double WebMercatorMapScale = 20037508.342789248;

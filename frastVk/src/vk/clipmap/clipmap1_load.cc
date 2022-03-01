@@ -36,6 +36,8 @@ void Loader::init(ClipMapConfig cfg_, std::string colorDsetPath, std::string ter
 		for (int x=0; x<img.w; x++)
 		for (int c=0; c<img.channels(); c++)
 			img.buffer[y*img.w*img.channels()+x*img.channels()+c] = 255;
+
+		out.valids.push_back(true);
 	}
 }
 
@@ -123,18 +125,16 @@ void Loader::load(const Ask& ask) {
 			<< out.altImages[lvl_idx].w << " "
 			<< out.altImages[lvl_idx].h << "\n";
 
-		//bool rasterIo(Image& out, const double bbox[4]);
-		colorDsets[0]->rasterIo(out.colorImages[lvl_idx], lvlTlbr);
+		bool valid = true;
+		if (colorDsets[0]->rasterIo(out.colorImages[lvl_idx], lvlTlbr)) {
+			valid = false;
+		}
 
-		terrainDsets[0]->rasterIo(out.altImages[lvl_idx], lvlTlbr);
-		/*
-		Image& altImage = out.altImages[lvl_idx];
-		int C = altImage.eleSize()*altImage.channels();
-		for (int y=0; y<altImage.h; y++)
-		for (int x=0; x<altImage.w; x++)
-		for (int c=0; c<C; c++)
-			altImage.buffer[y*altImage.w*C+x*C+c] = 0;
-		*/
+		if (terrainDsets[0]->rasterIo(out.altImages[lvl_idx], lvlTlbr)) {
+			valid = false;
+		}
+
+		out.valids[lvl_idx] = valid;
 
 		lvl_idx--;
 	}

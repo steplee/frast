@@ -94,6 +94,7 @@ struct LoadedMultiLevelData {
 	std::vector<Image> altImages;
 	double ctr_x, ctr_y;
 	int baseLevel;
+	std::vector<bool> valids;
 };
 
 class DatasetReader;
@@ -125,6 +126,7 @@ class ClipMapRenderer1 {
 
 			double ctr_x, ctr_y;
 			uint32_t baseLevel;
+			std::vector<bool> valids;
 		};
 
 		struct __attribute__((packed, aligned(4))) MldPushConstants {
