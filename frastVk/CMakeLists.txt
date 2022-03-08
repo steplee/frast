@@ -35,8 +35,11 @@ add_library(frastVk
 	src/vk/buffer_utils.cc
 	src/vk/render_state.cc
 
-	src/vk/clipmap/clipmap1.cc
-	src/vk/clipmap/clipmap1_load.cc
+	src/vk/clipmap1/clipmap1.cc
+	src/vk/clipmap1/clipmap1_load.cc
+
+	src/vk/tiled_renderer/tiled_renderer.cc
+
 )
 target_link_libraries(frastVk
 	PUBLIC

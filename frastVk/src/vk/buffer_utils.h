@@ -35,6 +35,7 @@ struct ResidentBuffer {
 	vk::raii::DeviceMemory mem { nullptr };
 
 
+
 	// Buffer details
 	uint64_t givenSize = 0;
 	uint64_t residentSize = 0;
@@ -86,11 +87,25 @@ struct Uploader {
 	void uploadSync(ResidentImage& image, void *data, uint64_t len, uint64_t off);
 };
 
+struct MeshDescription {
+	uint8_t posDims = 3;
+	uint64_t rows=0, cols=0, ninds=0;
+	bool haveUvs = false;
+	bool haveNormals = false;
+	vk::IndexType indType;
+
+	VertexInputDescription getVertexDescription();
+};
+
 // Must call fill(), then createAndUpload().
 // fill() will copy planar vertex data to packed vertex data.
 // Destructor or calling freeCpu() will delete cpu copied data.
-struct ResidentMesh {
+struct ResidentMesh : public MeshDescription {
 	using IndType = uint32_t;
+
+	inline ResidentMesh() {
+		indType = vk::IndexType::eUint32;
+	}
 
 	//Eigen::Matrix<float,-1,-1,Eigen::RowMajor> verts;
 	//Eigen::Matrix<IndType,-1,1> inds;
@@ -103,10 +118,6 @@ struct ResidentMesh {
 
 	MeshPushContants pushConstants;
 
-	uint8_t posDims = 3;
-	uint64_t rows=0, cols=0, ninds=0;
-	bool haveUvs = false;
-	bool haveNormals = false;
 	inline uint64_t size() const {
 		return rows*cols*4;
 	}
@@ -124,7 +135,6 @@ struct ResidentMesh {
 			const std::vector<IndType>& inds);
 	void freeCpu();
 
-	VertexInputDescription getVertexDescription();
 };
 
 

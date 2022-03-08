@@ -5,7 +5,8 @@
 #include <fstream>
 #include <chrono>
 
-#include "clipmap/clipmap1.h"
+#include "clipmap1/clipmap1.h"
+#include "tiled_renderer/tiled_renderer.h"
 
 
 namespace {
@@ -130,6 +131,7 @@ bool BaseVkApp::make_gpu_device() {
 
 	}};
 	const std::vector<char*> exts = {
+		VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME,
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 		,VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME 
 		//,VK_KHR_16BIT_STORAGE_EXTENSION_NAME
@@ -143,7 +145,7 @@ bool BaseVkApp::make_gpu_device() {
 	extraFeatures3.storageBuffer16BitAccess = true;
 	extraFeatures3.uniformAndStorageBuffer16BitAccess = true;
 	VkPhysicalDeviceFeatures2 extraFeatures4 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-	extraFeatures4.features.shaderInt16 = true;;
+	extraFeatures4.features.shaderInt16 = true;
 	extraFeatures3.pNext = &extraFeatures4;
 
 	VkPhysicalDeviceUniformBufferStandardLayoutFeatures bufLayoutFeature = {
@@ -151,11 +153,16 @@ bool BaseVkApp::make_gpu_device() {
 	};
 	bufLayoutFeature.uniformBufferStandardLayout = true;
 	extraFeatures4.pNext = &bufLayoutFeature;
+	VkPhysicalDeviceIndexTypeUint8FeaturesEXT extraFeatures5 = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT,
+		nullptr,
+		true
+	};
+	extraFeatures4.pNext = &extraFeatures5;
 
 	if (require_16bit_shader_types) {
 		createInfoNext = &extraFeatures3;
 	} else
-		createInfoNext = &bufLayoutFeature;
 		createInfoNext = &bufLayoutFeature;
 
 
@@ -548,8 +555,9 @@ void PipelineBuilder::init(
 
 		info.polygonMode = polygonMode;
 		info.lineWidth = 1.0f;
-		info.cullMode = vk::CullModeFlagBits::eNone; //no backface cull
-		info.frontFace = vk::FrontFace::eClockwise;
+		//info.cullMode = vk::CullModeFlagBits::eNone; //no backface cull
+		info.cullMode = vk::CullModeFlagBits::eBack;
+		info.frontFace = vk::FrontFace::eCounterClockwise;
 		info.depthBiasEnable = VK_FALSE; //no depth bias
 		info.depthBiasConstantFactor = 0.0f;
 		info.depthBiasClamp = 0.0f;
@@ -765,7 +773,8 @@ VkApp::VkApp() :
 		(double)(-8590834.045999 / 20037508.342789248), (float)(4757669.951554 / 20037508.342789248),
 		//0,0,
 		//(double)(2.0 * 2.38418579e-7) };
-		(double)(2.0 * 1./(1<<(18-1))) };
+		//(double)(2.0 * 1./(1<<(18-1))) };
+		(double)(2.0 * 1./(1<<(10-1))) };
 	alignas(16) double R0[] {
 		1,0,0,
 		0,-1,0,
@@ -777,6 +786,8 @@ VkApp::VkApp() :
 
 	clipmap = std::make_shared<ClipMapRenderer1>(this);
 	clipmap->init();
+	tiledRenderer = std::make_shared<TiledRenderer>(this);
+	tiledRenderer->init();
 }
 
 
@@ -1001,7 +1012,7 @@ void VkApp::render() {
 
 	// Update Camera Buffer
 	if (1) {
-		renderState.frameBegin();
+		renderState.frameBegin(&fd);
 		void* dbuf = (void*) camBuffer.mem.mapMemory(0, 16*4, {});
 		memcpy(dbuf, renderState.mvp(), 16*4);
 		camBuffer.mem.unmapMemory();
@@ -1020,7 +1031,8 @@ void VkApp::render() {
 
 #else
 	std::vector<vk::CommandBuffer> cmds = {
-		clipmap->stepAndRender(renderState, fd, camera.get())
+		//clipmap->stepAndRender(renderState, camera.get())
+		tiledRenderer->stepAndRender(renderState)
 		//,*cmd
 	};
 

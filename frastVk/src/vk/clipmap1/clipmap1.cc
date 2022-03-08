@@ -93,7 +93,7 @@ ClipMapRenderer1::~ClipMapRenderer1() {
 	cmUploadQueue = nullptr;
 }
 
-vk::CommandBuffer ClipMapRenderer1::stepAndRender(RenderState& rs, FrameData& fd, Camera* cam) {
+vk::CommandBuffer ClipMapRenderer1::stepAndRender(RenderState& rs, Camera* cam) {
 
 	// If time, request new data in bg thread
 	if (true) {
@@ -111,10 +111,10 @@ vk::CommandBuffer ClipMapRenderer1::stepAndRender(RenderState& rs, FrameData& fd
 		}
 	}
 
-	return render(rs, fd, cam);
+	return render(rs, cam);
 }
 
-vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, FrameData& fd, Camera* cam) {
+vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, Camera* cam) {
 	MultiLevelData &mld = mlds[dataReadIdx];
 
 
@@ -135,7 +135,7 @@ vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, FrameData& fd, Camer
 			cam->viewInv()[2*4+3] };
 		alignas(16) double new_pos[3] = { old_pos[0] - mld.ctr_x, old_pos[1] - mld.ctr_y, old_pos[2] };
 		cam->setPosition(new_pos);
-		rs.frameBegin();
+		rs.frameBegin(rs.frameData);
 		/*
 		alignas(16) float shift_loaded_ctr[16] = {
 			1, 0, 0, mld.ctr_x,
@@ -171,7 +171,7 @@ vk::CommandBuffer ClipMapRenderer1::render(RenderState& rs, FrameData& fd, Camer
 	}
 
 	{
-		vk::raii::CommandBuffer& cmd = mld.cmdBufs[fd.scIndx];
+		vk::raii::CommandBuffer& cmd = mld.cmdBufs[rs.frameData->scIndx];
 		return *cmd;
 	}
 

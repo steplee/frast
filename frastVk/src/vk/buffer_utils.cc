@@ -123,7 +123,7 @@ void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::BufferUsageFla
  * =================================================== */
 
 
-VertexInputDescription ResidentMesh::getVertexDescription() {
+VertexInputDescription MeshDescription::getVertexDescription() {
 	VertexInputDescription description;
 
 	vk::VertexInputBindingDescription mainBinding = {};

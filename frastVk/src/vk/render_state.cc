@@ -7,7 +7,7 @@
 #include <Eigen/Core>
 using namespace Eigen;
 
-void MatrixStack::push(double* t) {
+void MatrixStack::push(const double* t) {
 	if (d == 0) {
 		memcpy(m, t, sizeof(double)*16);
 		Map<      Matrix<double,4,4,RowMajor>> C ( m+(d)*16 );
@@ -70,7 +70,8 @@ void Camera::compute_projection() {
 	double v = 1.f / std::tan(.5* spec_.vfov);
 	//double n = .02f, f =  200.f;
 	//double n = .02f, f =  200.f;
-	double n = .01 * 2.38418579e-7, f =  .4f;
+	//double n = .01 * 2.38418579e-7, f =  .4f;
+	double n = 10. * 2.38418579e-7, f =  .4f;
 	proj <<
 		//2*n / 2*u, 0, 0, 0,
 		//0, 2*n / 2*v, 0, 0,
@@ -193,7 +194,8 @@ MovingCamera::MovingCamera() {
 	recompute_view();
 }
 
-void RenderState::frameBegin() {
+void RenderState::frameBegin(FrameData* d) {
+	frameData = d;
 	mstack.reset();
 	mstack.push(camera->proj());
 	mstack.push(camera->view());

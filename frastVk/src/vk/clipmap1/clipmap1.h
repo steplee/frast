@@ -153,8 +153,8 @@ class ClipMapRenderer1 {
 		ClipMapRenderer1(VkApp* app_);
 		~ClipMapRenderer1();
 
-		vk::CommandBuffer stepAndRender(RenderState& rs, FrameData& fd, Camera* cam);
-		vk::CommandBuffer render(RenderState& rs, FrameData& fd, Camera* cam);
+		vk::CommandBuffer stepAndRender(RenderState& rs, Camera* cam);
+		vk::CommandBuffer render(RenderState& rs, Camera* cam);
 
 		void init();
 

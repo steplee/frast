@@ -2,6 +2,8 @@
 
 #include "window.hpp"
 
+class FrameData;
+
 struct CameraSpec {
 	double w, h;
 	double hfov, vfov;
@@ -24,9 +26,9 @@ struct Camera : public UsesIO {
 		Camera(const CameraSpec& spec);
 		inline virtual ~Camera() {}
 
-		inline double *view() { return view_; }
-		inline double *proj() { return proj_; }
-		inline double *viewInv() { return viewInv_; }
+		inline const double *view() const { return view_; }
+		inline const double *proj() const { return proj_; }
+		inline const double *viewInv() const { return viewInv_; }
 		inline const CameraSpec spec() const { return spec_; }
 
 		inline void setSpec(const CameraSpec& spec) {
@@ -78,11 +80,11 @@ struct MovingCamera : public Camera {
 };
 
 struct MatrixStack {
-	static constexpr int MAX_DEPTH = 5;
-	alignas(16) double m[16*5];
+	static constexpr int MAX_DEPTH = 7;
+	alignas(16) double m[16*MAX_DEPTH];
 	int d = 0;
 
-	void push(double* t);
+	void push(const double* t);
 	void pop();
 	inline double* peek() { assert(d>0); return m+((d-1)*16); }
 	inline const double* peek() const { assert(d>0); return m+((d-1)*16); }
@@ -98,20 +100,27 @@ class RenderState {
 		
 		MatrixStack mstack;
 		std::shared_ptr<Camera> camera;
+		FrameData* frameData = nullptr;
 
 		// Push proj & view matrix.
-		void frameBegin();
+		void frameBegin(FrameData* frameData);
 
-		inline double *view() { return camera->view(); }
-		inline double *proj() { return camera->proj(); }
-		inline double* mvp() { return mstack.peek(); }
-		inline void mvpd(double* d) {
-			double *m = mstack.peek();
-			for (int i=0; i<16; i++) m[i] = d[i];
+		inline const double *view() const { return camera->view(); }
+		inline const double *proj() const { return camera->proj(); }
+		inline const double* mvp() const { return mstack.peek(); }
+		inline void mvpd(double* d) const {
+			const double *m = mstack.peek();
+			for (int i=0; i<16; i++) d[i] = m[i];
 		}
-		inline void mvpf(float* f) {
-			double *m = mstack.peek();
+		inline void mvpf(float* f) const {
+			const double *m = mstack.peek();
 			for (int i=0; i<16; i++) f[i] = (float)m[i];
+		}
+		inline void eyed(double* out) const {
+			const double* vinv = camera->viewInv();
+			out[0] = vinv[0*4+3];
+			out[1] = vinv[1*4+3];
+			out[2] = vinv[2*4+3];
 		}
 
 	protected:

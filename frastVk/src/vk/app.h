@@ -12,6 +12,7 @@
 
 struct ResidentMesh;
 struct ClipMapRenderer1;
+struct TiledRenderer;
 
 struct SimpleRenderPass {
 	vk::raii::RenderPass pass { nullptr };
@@ -180,6 +181,7 @@ class VkApp : public BaseVkApp {
 		RenderState renderState;
 
 		std::shared_ptr<ClipMapRenderer1> clipmap;
+		std::shared_ptr<TiledRenderer> tiledRenderer;
 
 };
 

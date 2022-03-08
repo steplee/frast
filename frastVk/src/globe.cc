@@ -1,14 +1,13 @@
 
 #include "vk/app.h"
-#include "vk/clipmap/clipmap1.h"
+#include "vk/clipmap1/clipmap1.h"
 
 
 int main() {
 
 	VkApp app;
-	ClipMapRenderer1 cm(&app);
-
-	cm.init();
+	//ClipMapRenderer1 cm(&app);
+	//cm.init();
 
 	while (not app.isDone()) {
 		bool proc = app.pollWindowEvents();
