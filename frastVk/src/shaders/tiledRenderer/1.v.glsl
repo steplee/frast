@@ -3,6 +3,7 @@ precision highp float;
 #extension GL_EXT_shader_16bit_storage: enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int16: enable
 #extension GL_EXT_scalar_block_layout: enable
+//#extension VK_KHR_uniform_buffer_standard_layout: enable
 
 layout (location = 0) in vec3 aPositionXYI;
 layout (location = 1) in vec2 aUv;
@@ -14,7 +15,7 @@ layout (location=2) out flat uint v_tileId;
 
 // Note: UBOs cannot be std430 layout, but with the GL_EXT_scalar_block_layout extension,
 //       this should be packed correctly.
-layout(set=0, binding=0) uniform CameraData {
+layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
 	uint tileIds[128];
 } cameraData;
@@ -37,13 +38,15 @@ void main()
 {
 	//int tileIndex = pushConstants.tileIdx;
 	uint tileIndex = cameraData.tileIds[gl_InstanceIndex];
+	//uint tileIndex = cameraData.tileIds[2];
 	int vertIndex = int(aPositionXYI.z);
 
 	float altRaw = (altBuf[tileIndex].alt[vertIndex]);
 	altRaw = 0.;
 
-	float z_scale = 2.38418579e-7 / 8.0;
-	float z = altRaw * (z_scale);
+	//float z_scale = 2.38418579e-7 / 8.0;
+	//float z = altRaw * (z_scale);
+	float z = 0.0;
 
 	uint tx = altBuf[tileIndex].x,
 		 ty = altBuf[tileIndex].y,
@@ -62,6 +65,9 @@ void main()
 	gl_Position = transpose(cameraData.viewProj) * vec4(pos, 1.0f);
 
 	v_color = vec4(1.0);
+	//v_color.r = aPositionXYI.x;
+	//v_color.g = aPositionXYI.y;
+	//v_color.g = lvlOffset.y;
 
 	v_uv = aUv;
 	v_tileId = tileIndex;

@@ -9,10 +9,12 @@
 #include "../app.h"
 #include "utils/eigen.h"
 
+constexpr static uint32_t NO_INDEX = 999999;
 class Tile;
 
 struct TiledRendererCfg {
-	static constexpr uint32_t maxTiles = 128;
+	//static constexpr uint32_t maxTiles = 128;
+	static constexpr uint32_t maxTiles = 256;
 	uint32_t vertsAlongEdge = 8;
 	uint32_t tileSize = 256;
 	uint32_t channels; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
@@ -51,7 +53,7 @@ struct PooledTileData {
 };
 
 
-struct AltBuffer {
+struct __attribute__((packed)) AltBuffer {
 	uint32_t x,y,z, pad;
 	float alt[64];
 };
@@ -73,8 +75,12 @@ struct TileDataLoader {
 		~TileDataLoader();
 		inline TileDataLoader(BaseVkApp* app, PooledTileData& p) : app(app), pooledTileData(p), cfg(p.cfg) {}
 		bool tileExists(const BlockCoordinate& bc);
+
 		bool loadRootTile(Tile* tile);
-		bool loadTile(Tile* tile);
+		bool pushAsk(const Ask& ask);
+
+		// Check if any child is not available. Return true if any are not. Can be used from any thread.
+		bool childrenAreMissing(const BlockCoordinate& bc);
 
 		void init(const std::string& colorDsetPath, const std::string& elevDsetPath);
 
@@ -91,6 +97,8 @@ struct TileDataLoader {
 
 
 	private:
+		bool loadTile(Tile* tile);
+
 		DatasetReader* colorDset = nullptr;
 		DatasetReader* elevDset  = nullptr;
 
@@ -142,19 +150,26 @@ struct TiledRenderer {
 		TileDataLoader dataLoader;
 };
 
-struct __attribute__((aligned)) TRGlobalData {
+struct __attribute__((packed)) TRGlobalData {
 	float mvp[16];
 	uint32_t drawTileIds[TiledRendererCfg::maxTiles];
 };
 
 
 
-struct CameraFrustumData {
+struct TileUpdateContext {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	TileDataLoader& dataLoader;
+
+
+	// Camera/Screen info
 	RowMatrix4f mvp;
 	Vector3f eye;
 	Vector2f wh;
 	float two_tan_half_fov_y;
+
+	float sseThresholdClose, sseThresholdOpen;
 };
 
 struct TileRenderContext {
@@ -168,8 +183,10 @@ struct TileRenderContext {
 struct Tile {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	
-	inline Tile() : idx(0), bc(0) {}
-	inline Tile(int id) : idx(id), bc(0) {}
+	inline Tile() : idx(NO_INDEX), bc(0) {}
+	inline Tile(BlockCoordinate& bc) : idx(NO_INDEX), bc(0) {
+		reset(bc);
+	}
 	~Tile();
 
 	BlockCoordinate bc;
@@ -181,18 +198,26 @@ struct Tile {
 	Tile* children[4] = {nullptr};
 
 	// The altitude is filled in by sampling the parents'.
+	// Contains min/max box (expanded to 8 points of a cube in update())
 	Eigen::Matrix<float, 2,3, Eigen::RowMajor> corners;
+	float lastSSE = -1;
 	
 
 	bool loaded = false;
-	bool wants_to_close = false;
-	bool wants_to_open = false;
-	bool opening = false;
+	enum class MissingStatus {
+		UNKNOWN, NOT_MISSING, MISSING
+	} childrenMissing = MissingStatus::UNKNOWN;
+	//bool wants_to_close = false;
+	//bool wants_to_open = false;
+	//bool opening = false;
 
-	float computeSSE(const CameraFrustumData& cam);
+	// Set bc, initialize corners
+	void reset(const BlockCoordinate& bc);
+
+	float computeSSE(const TileUpdateContext& cam);
 	inline bool hasChildren() const { return children[0] != nullptr; }
 
-	void update(const CameraFrustumData& cam);
+	void update(const TileUpdateContext& cam, Tile* tile);
 	void render(TileRenderContext& trc);
 
 	// Unload the tile if loaded, then return to pool.
@@ -201,6 +226,7 @@ struct Tile {
 	enum class State {
 		NONE,
 		LOADING,
+		LOADING_INNER,
 		LEAF,
 		INNER,
 		OPENING,

@@ -153,17 +153,29 @@ bool BaseVkApp::make_gpu_device() {
 	};
 	bufLayoutFeature.uniformBufferStandardLayout = true;
 	extraFeatures4.pNext = &bufLayoutFeature;
+
 	VkPhysicalDeviceIndexTypeUint8FeaturesEXT extraFeatures5 = {
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT,
 		nullptr,
 		true
 	};
-	extraFeatures4.pNext = &extraFeatures5;
+	bufLayoutFeature.pNext = &extraFeatures5;
+	//extraFeatures4.pNext = &extraFeatures5;
 
+	VkPhysicalDeviceUniformBufferStandardLayoutFeatures extraFeatures6 = {
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES_KHR,
+		nullptr,
+		true
+	};
+	extraFeatures5.pNext = &extraFeatures6;
+
+	/*
 	if (require_16bit_shader_types) {
 		createInfoNext = &extraFeatures3;
 	} else
 		createInfoNext = &bufLayoutFeature;
+	*/
+	createInfoNext = &extraFeatures3;
 
 
     VkDeviceCreateInfo dinfo {
@@ -720,6 +732,7 @@ FrameData& BaseVkApp::acquireFrame() {
 
 	if (renders > 1)
 		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
+	if (renders % 60 == 0)
 	printf(" - acquireFrame() (sc indx %u) (frame %d) (t %f, fps %f, dt %f)\n", ii, fd.n, fd.time, fpsMeter, fd.dt);
 
 	return fd;
@@ -784,8 +797,8 @@ VkApp::VkApp() :
 	ioUsers.push_back(camera);
 	renderState.camera = camera;
 
-	clipmap = std::make_shared<ClipMapRenderer1>(this);
-	clipmap->init();
+	//clipmap = std::make_shared<ClipMapRenderer1>(this);
+	//clipmap->init();
 	tiledRenderer = std::make_shared<TiledRenderer>(this);
 	tiledRenderer->init();
 }

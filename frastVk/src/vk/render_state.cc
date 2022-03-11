@@ -16,7 +16,7 @@ void MatrixStack::push(const double* t) {
 		//std::cout << C << std::endl;
 	} else {
 		assert(d < (MAX_DEPTH-1)); // too deep
-		printf(" - push matrix to depth %d\n", d); fflush(stdout);
+		//printf(" - push matrix to depth %d\n", d); fflush(stdout);
 		/*
 		for (int i=0; i<4; i++)
 		for (int j=0; j<4; j++) {
@@ -121,7 +121,7 @@ void MovingCamera::handleMouseMotion(int x, int y, uint8_t mod) {
 	}
 	lastX = x;
 	lastY = y;
-	printf(" - handle mouse motion %d %d\n", x,y);
+	//printf(" - handle mouse motion %d %d\n", x,y);
 }
 void MovingCamera::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 	if (isDown) {
@@ -144,12 +144,14 @@ void MovingCamera::step(double dt) {
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 	Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
 
+	if (0) {
 	std::cout << " [MovingCamera::step()]\n";
 	std::cout << "      - vel " << vel.transpose() << "\n";
 	std::cout << "      - acc " << acc.transpose() << "\n";
 	std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << "\n";
 	std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << "\n";
 	std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
+	}
 
 	//constexpr float SPEED = 5.f;
 	double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));

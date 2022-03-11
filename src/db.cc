@@ -1287,7 +1287,7 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	float inset_tl_y = -(sh - in_corners[3]) * scale_y;
 
 
-	printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
+	//printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
 	assert(scale_x > 0.f);
 	assert(scale_y > 0.f);
 	assert(inset_tl_x <= 0.f); assert(inset_tl_y <= 0.f);
@@ -1319,9 +1319,9 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	int push_w = accessCache.w, push_h = accessCache.h;
 	accessCache.w = sw;
 	accessCache.h = sh;
-	printf(" - Warping %d %d %d -> %d %d %d\n",
-			accessCache.w, accessCache.h, accessCache.channels(),
-			out.w, out.h, out.channels());
+	// printf(" - Warping %d %d %d -> %d %d %d\n",
+			// accessCache.w, accessCache.h, accessCache.channels(),
+			// out.w, out.h, out.channels());
 	{
 		AtomicTimerMeasurement g(t_warp);
 		accessCache.warpAffine(out, A);
@@ -1437,7 +1437,7 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 			throw std::runtime_error(std::string{"(fetchBlocks) mdb_txn_end failed with "} + mdb_strerror(err));
 
 	// Populate cache.
-	printf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
+	//printf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
 	{
 	//AtomicTimerMeasurement g(t_encodeImage);
 	fetchedCache = out;

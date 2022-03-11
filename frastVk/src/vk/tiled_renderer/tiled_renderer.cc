@@ -1,18 +1,37 @@
 #include "tiled_renderer.h"
 
+#include <iostream>
 #include <fmt/printf.h>
 #include <fmt/color.h>
 
 
-constexpr static uint32_t NO_INDEX = 999999;
+
+#if 0
+#define dprint(...) fmt::print(__VA_ARGS__)
+#else
+#define dprint(...) 
+#endif
 
 
 namespace {
-	bool box_contains(const Vector2f& a, const Vector2f& b) {
-		return (a(0) > -1 or b(0) > -1)
-			and (a(1) > -1 or b(1) > -1)
-			and (a(0) < 1 or b(0) < 1)
-			and (a(1) < 1 or b(1) < 1);
+	bool projection_xsects_ndc_box(const Vector2f& a, const Vector2f& b) {
+		//Vector2f tl { std::min(a(0), b(0)), std::min(a(1), b(1)) };
+		//Vector2f br { std::max(a(0), b(0)), std::max(a(1), b(1)) };
+		//return Eigen::AlignedBox2f { tl, br }.intersects(
+		return Eigen::AlignedBox2f { a, b }.intersects(
+					Eigen::AlignedBox2f { Vector2f{-1,-1}, Vector2f{1,1} });
+	}
+
+	using std::to_string;
+	std::string to_string(const Tile::State& s) {
+		if (s == Tile::State::LOADING) return "LOADING";
+		if (s == Tile::State::LOADING_INNER) return "LOADING_INNER";
+		if (s == Tile::State::LEAF) return "LEAF";
+		if (s == Tile::State::INNER) return "INNER";
+		if (s == Tile::State::OPENING) return "OPENING";
+		if (s == Tile::State::CLOSING) return "CLOSING";
+		if (s == Tile::State::NONE) return "none";
+		return "???";
 	}
 }
 
@@ -35,6 +54,7 @@ bool PooledTileData::depositOne(uint32_t in[1]) {
 	available.push_back(in[0]);
 	if (available.size() >= cfg.maxTiles)
 		return true;
+	return false;
 }
 bool PooledTileData::depositFour(uint32_t in[4]) {
 	for (int i=0; i<4; i++)
@@ -81,21 +101,24 @@ void TileDataLoader::internalLoop(
 			colorBuf.buffer[y*cfg.tileSize*4+x*4+3] = 255;
 
 	while (not shouldStop) {
-		std::vector<Ask> asks;
+		std::vector<Ask> curAsks;
 		{
 			std::lock_guard<std::mutex> lck(mtx);
-			std::swap(asks, this->asks);
+			//std::swap(curAsks, this->asks);
+			curAsks = std::move(this->asks);
 		}
-		fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", asks.size());
-		for (; asks.size(); asks.pop_back()) {
-			Ask& ask = asks.back();
+		fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
+
+		for (; curAsks.size(); curAsks.pop_back()) {
+			Ask& ask = curAsks.back();
 			Result res;
 			res.tiles[0] = res.tiles[1] = res.tiles[2] = res.tiles[3] = nullptr;
+			assert(ask.ntiles == 1 or ask.ntiles == 4);
 			// Load either one or four.
 			if (ask.ntiles == 1) {
 				BlockCoordinate bc = ask.tiles[0]->bc;
-				fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading one ({} {} {})\n", bc.z(), bc.y(), bc.x());
-
+				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading one ({} {} {})\n", bc.z(), bc.y(), bc.x());
+				
 				if (loadTile(ask.tiles[0])) {
 					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] FAILED loading one ({} {} {})\n", bc.z(), bc.y(), bc.x());
 					continue;
@@ -107,10 +130,23 @@ void TileDataLoader::internalLoop(
 			}
 			else {
 				assert(ask.parent && "a quad Ask must have a parent");
-				BlockCoordinate bc = ask.parent->bc;
-				fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading quad (parent {} {} {})\n", bc.z(), bc.y(), bc.x());
+				BlockCoordinate parent_bc = ask.parent->bc;
+				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading quad (parent {} {} {})\n", parent_bc.z(), parent_bc.y(), parent_bc.x());
+				bool failed = false;
 				for (int i=0; i<4; i++) {
+					if (loadTile(ask.tiles[i])) {
+						const BlockCoordinate bc = ask.tiles[i]->bc;
+						fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] FAILED loading quad (ci {}/{}) ({} {} {})\n", i,4, bc.z(), bc.y(), bc.x());
+						failed = true;
+						break;
+					} else
+						res.tiles[i] = ask.tiles[i];
 				}
+
+				if (not failed) {
+					res.ntiles = 4;
+					res.parent = ask.parent;
+				} else continue;
 			}
 
 
@@ -120,7 +156,7 @@ void TileDataLoader::internalLoop(
 				loadedResults.push_back(res);
 			}
 		}
-		sleep(1);
+		usleep(33'000);
 	}
 
 	if (colorDset) delete colorDset;
@@ -137,6 +173,25 @@ TileDataLoader::~TileDataLoader() {
 bool TileDataLoader::tileExists(const BlockCoordinate& bc) {
 	return colorDset->tileExists(bc, nullptr);
 }
+
+bool TileDataLoader::pushAsk(const Ask& ask) {
+	uint32_t id[4];
+	assert(ask.ntiles == 1 or ask.ntiles == 4);
+	while (true) {
+		//std::lock_guard<std::mutex> lck(mtx);
+		if (ask.ntiles == 1 and pooledTileData.withdrawOne(id))
+			fmt::print(" - [#loadTile()] failed to withdrawOne (stack empty?)\n");
+		else if (ask.ntiles == 4 and pooledTileData.withdrawFour(id))
+			fmt::print(" - [#loadTile()] failed to withdrawFour (stack empty?)\n");
+		else break;
+		usleep(10'000);
+	}
+	asks.push_back(ask);
+
+	for (int i=0; i<ask.ntiles; i++) ask.tiles[i]->idx = id[i];
+
+	return false;
+}
 bool TileDataLoader::loadRootTile(Tile* tile) {
 	for (int i=0; i<24; i++) {
 		if (colorDset->hasLevel(i)) {
@@ -151,11 +206,10 @@ bool TileDataLoader::loadRootTile(Tile* tile) {
 				//return true;
 			}
 
-			tile->bc = BlockCoordinate { (uint64_t)i, lvlTlbr[1], lvlTlbr[0] };
-			//if (loadTile(tile)) throw std::runtime_error("failed to load root tile!");
+			tile->reset(BlockCoordinate { (uint64_t)i, lvlTlbr[1], lvlTlbr[0] });
 			std::lock_guard<std::mutex> lck(mtx);
 			tile->state = Tile::State::LOADING;
-			asks.push_back(Ask{
+			pushAsk(Ask{
 				1,
 				{tile,0,0,0},
 				nullptr
@@ -168,22 +222,33 @@ bool TileDataLoader::loadRootTile(Tile* tile) {
 }
 
 bool TileDataLoader::loadTile(Tile* tile) {
-	uint32_t id[1];
-	if (pooledTileData.withdrawOne(id)) {
-		fmt::print(" - [#loadTile()] failed to withdrawOne (stack empty?)\n");
-		return true;
-	}
-	tile->idx = id[0];
+	//uint32_t id[1];
+	//tile->idx = id[0];
 
 	if (loadColor(tile)) {
-		return true;
+
+		uint64_t tlbr[4] = { tile->bc.x(), tile->bc.y(), tile->bc.x()+1lu, tile->bc.y()+1lu };
+		if (colorBuf.channels() == 1) {
+			memset(colorBuf.buffer, 0, colorBuf.size());
+		} else {
+			// set zero, but don't touch alpha
+			for (int i=0; i<colorBuf.h; i++)
+			for (int j=0; j<colorBuf.w; j++) {
+				colorBuf.buffer[j*colorBuf.w*4+0] = 0;
+				colorBuf.buffer[j*colorBuf.w*4+1] = 0;
+				colorBuf.buffer[j*colorBuf.w*4+2] = 0;
+			}
+		}
+		auto& tex = pooledTileData.texs[tile->idx];
+		myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
+		//return true;
 	}
 
 	if (loadElevAndMeta(tile)) {
 		return true;
 	}
 
-	fmt::print(" - [#loadTile()] successfully loaded tile {} {} {} to idx {}\n",
+	dprint(" - [#loadTile()] successfully loaded tile {} {} {} to idx {}\n",
 			tile->bc.z(), tile->bc.y(), tile->bc.x(), tile->idx);
 	return false;
 }
@@ -210,7 +275,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 	//int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	uint64_t tlbr[4] = { tile->bc.x(), tile->bc.y(), tile->bc.x()+1lu, tile->bc.y()+1lu };
 	int n_missing = colorDset->fetchBlocks(colorBuf, tile->bc.z(), tlbr, nullptr);
-	fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {}\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3]);
+	dprint(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
 	if (n_missing > 0) return true;
 	// app->uploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
 	myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
@@ -221,16 +286,33 @@ bool TileDataLoader::loadColor(Tile* tile) {
 bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 	auto& abuf = pooledTileData.altBufs[tile->idx];
 
+	memset(altBuffer.alt, 0, sizeof(float)*64);
 	altBuffer.x = tile->bc.x();
 	altBuffer.y = tile->bc.y();
 	altBuffer.z = tile->bc.z();
-	memset(altBuffer.alt, 0, sizeof(float)*64);
 
 	// app->uploader.uploadSync(abuf, &altBuffer, sizeof(AltBuffer), 0);
 	myUploader.uploadSync(abuf, &altBuffer, sizeof(AltBuffer), 0);
+	dprint(" - [#loadElev()] set tidx {} to zyx {} {} {}\n",
+			tile->idx,
+			(uint32_t)(tile->bc.z()),
+			(uint32_t)(tile->bc.y()),
+			(uint32_t)(tile->bc.x()));
 
 	return false;
 }
+
+bool TileDataLoader::childrenAreMissing(const BlockCoordinate& bc) {
+	for (int i=0; i<4; i++) {
+		BlockCoordinate child_bc {
+			bc.z() + 1,
+			bc.y() * 2 + (i / 2),
+			bc.x() * 2 + (i == 1 or i == 2)
+		};
+	}
+	return false;
+}
+
 
 
 /* ===================================================
@@ -257,57 +339,164 @@ bool Tile::unload(PooledTileData& ptd) {
 	return false;
 }
 
-void Tile::update(const CameraFrustumData& cam) {
+void Tile::reset(const BlockCoordinate& bc) {
+	this->bc = bc;
+	auto z = bc.z(), y = bc.y(), x = bc.x();
+	//Eigen::Matrix<float, 2,3, Eigen::RowMajor> corners;
+	double scale = 2.0 / (1 << z);
+	corners.row(0) <<
+		((x  ) * scale) - 1.0,
+		((y  ) * scale) - 1.0,
+		0;
+	corners.row(1) <<
+		((x+1) * scale) - 1.0,
+		((y+1) * scale) - 1.0,
+		0;
+
+}
+
+void Tile::update(const TileUpdateContext& tuc, Tile* parent) {
 	/*
-	 *
 	 * When:
 	 *    - INNER
 	 *                if children are leaves, they will compute sse.
-	 *                If they all have less than some sse, we can close them (send an Ask, goto CLOSING)
+	 *                if they all have less than some sse, we can close them (send an Ask, goto LOADING+INNER, children goto CLOSING)
 	 *    - LEAF
 	 *                compute sse, if large enough, ask to open (allocate children, send an Ask, goto OPENING)
 	 *    - OPENING, LOADING, or CLOSING
 	 *                do nothing.
 	 *
 	 *
+	 *  No special case to prevent closing root: a parent asks for children to close, so its not possible for the root to close.
+	 *
 	 */
-	fmt::print(" - #update tile {}\n", bc.c);
+	//fmt::print(" - #update tile {}\n", bc.c);
 	if (state == State::INNER) {
 		assert(children[0] != nullptr);
-		for (int i=0; i<4; i++) children[i]->update(cam);
+		for (int i=0; i<4; i++) children[i]->update(tuc, this);
 		if (children[0]->state == State::LEAF) {
 			// TODO check sse of all children, maybe close
+			bool i_want_to_close = true;
+			for (int i=0; i<4; i++) if (children[i]->state != State::LEAF or children[i]->lastSSE > tuc.sseThresholdClose) i_want_to_close = false;
+			if (i_want_to_close) {
+				dprint(fmt::fg(fmt::color::light_yellow), " - #four children okay to close, enqueue read parent {} {} {}\n", bc.z(), bc.y(), bc.x());
+				for (int i=0; i<4; i++) children[i]->state = State::CLOSING;
+				state = State::LOADING_INNER;
+				std::lock_guard<std::mutex> lck(tuc.dataLoader.mtx);
+				tuc.dataLoader.pushAsk(TileDataLoader::Ask{
+						1,
+						{this,nullptr,nullptr,nullptr},
+						parent});
+				//tuc.dataLoader.loadTile(this);
+			}
 		}
-		return;
 	}
 
-	if (state == State::LEAF) {
-		//float sse = computeSSE(
+	else if (state == State::LEAF) {
+		lastSSE = computeSSE(tuc);
+
+		if (lastSSE > tuc.sseThresholdOpen) {
+
+			if (childrenMissing == MissingStatus::UNKNOWN) {
+				//if (tuc.dataLoader.childrenAreMissing(bc))
+				if (bc.z() >= 14 or tuc.dataLoader.childrenAreMissing(bc))
+					childrenMissing = MissingStatus::MISSING;
+				else
+					childrenMissing = MissingStatus::NOT_MISSING;
+			}
+
+			// If we can load children, start opening this tile, otherwise do nothing
+			if (childrenMissing == MissingStatus::NOT_MISSING) {
+				dprint(fmt::fg(fmt::color::light_yellow), " - #tile ({} {} {}) requesting children (sse {})\n", bc.z(), bc.y(), bc.x(), lastSSE);
+				state = State::OPENING;
+				if (children[0] == nullptr)
+					for (int i=0; i<4; i++) {
+						BlockCoordinate child_bc {
+							bc.z() + 1,
+							bc.y() * 2 + (i / 2),
+							bc.x() * 2 + (i == 1 or i == 2)
+						};
+						children[i] = new Tile(child_bc);
+					}
+				std::lock_guard<std::mutex> lck(tuc.dataLoader.mtx);
+				tuc.dataLoader.pushAsk(TileDataLoader::Ask{
+						4,
+						{children[0],children[1],children[2],children[3]},
+						this});
+				//tuc.dataLoader.loadTile(this);
+			} else
+				dprint(fmt::fg(fmt::color::light_yellow), " - #tile ({} {} {}) not opening since children missing (sse {})\n", bc.z(), bc.y(), bc.x(), lastSSE);
+		} else
+			dprint(fmt::fg(fmt::color::light_yellow), " - #tile ({} {} {}) no change for leaf (sse {})\n", bc.z(), bc.y(), bc.x(), lastSSE);
 	}
 }
 
 void Tile::render(TileRenderContext& trc) {
-	fmt::print(" - render tile {}\n", bc.c);
+	dprint(" - render tile ({} {} {}) (s {}) (idx {})\n", bc.z(),bc.y(),bc.x(), to_string(state), idx);
 
-	if (loaded) {
-		assert(state == State::LEAF);
-		assert(idx != NO_INDEX);
-		trc.drawTileIds.push_back(idx);
+	if (state == State::INNER or state == State::LOADING_INNER) {
+		for (int i=0; i<4; i++) {
+			assert(children[i]);
+			children[i]->render(trc);
+		}
+	} else if (state == State::LEAF or state == State::OPENING or state == State::CLOSING) {
+		assert(loaded);
+		if (loaded) {
+			//assert(state == State::LEAF);
+			assert(state == State::LEAF or state == State::OPENING or state == State::CLOSING);
+			assert(idx != NO_INDEX);
+			trc.drawTileIds.push_back(idx);
+		}
 	}
-	//cmd.drawIndexed(trc.numInds, 1, 0, 0, 0);
 }
 
-float Tile::computeSSE(const CameraFrustumData& cam) {
-	Eigen::Matrix<float,2,4,Eigen::RowMajor> corners1;
-	corners1.topLeftCorner<2,3>() = corners;
-	corners1.topRightCorner<2,1>().setConstant(1.f);
-	Eigen::Matrix<float,2,3,Eigen::RowMajor> corners2 = (corners1 * cam.mvp.transpose()).rowwise().hnormalized();
-	if (not box_contains(corners2.block<1,2>(0,0).transpose(), corners2.block<1,2>(1,0).transpose()))
+float Tile::computeSSE(const TileUpdateContext& tuc) {
+	Eigen::Matrix<float,8,4,Eigen::RowMajor> corners1;
+
+	//corners1.topLeftCorner<2,3>() = corners;
+	for (int i=0; i<8; i++) {
+		int xi = (i  ) % 2;
+		int yi = (i/2) % 2;
+		int zi = (i/4) % 2;
+		corners1.block<1,3>(i,0) << corners(xi,0), corners(yi,1), corners(zi,2);
+	}
+
+	corners1.rightCols<1>().setConstant(1.f);
+	Eigen::Matrix<float,8,3,Eigen::RowMajor> corners2 = (corners1 * tuc.mvp.transpose()).rowwise().hnormalized();
+	//if (not projection_xsects_ndc_box(corners2.block<1,2>(0,0).transpose(), corners2.block<1,2>(1,0).transpose()))
+
+	Vector2f tl{std::numeric_limits<float>::max(),std::numeric_limits<float>::max()},
+			 br{-std::numeric_limits<float>::max(),-std::numeric_limits<float>::max()};
+	int n_invalid = 0;
+	for (int i=0; i<8; i++) {
+		if (corners2(i,2) > 0 and corners2(i,2) < 1) {
+			tl(0) = std::min(tl(0), corners2(i,0));
+			tl(1) = std::min(tl(1), corners2(i,1));
+			br(0) = std::max(br(0), corners2(i,0));
+			br(1) = std::max(br(1), corners2(i,1));
+		} else n_invalid++;
+	}
+	// std::cout << " - Corners:\n" << corners2 << "\n";
+	// std::cout << " - tl: " << tl.transpose() << "\n";
+	// std::cout << " - br: " << br.transpose() << "\n";
+	/*
+	// Two phase algorithm: set invalid rows to a value that does not affect result.
+	Vector2f tl_ = corners2.leftCols<2>().colwise().minCoeff();
+	Vector2f br_ = corners2.leftCols<2>().colwise().maxCoeff();
+	for (int i=0; i<8; i++) if (corners2(i,2) < 0 or corners2(i,2) > 1) corners2.block<1,2>(i,0) = br_;
+	//std::cout << " - FixedCorners1:\n" << corners2 << "\n";
+	Vector2f tl = corners2.leftCols<2>().colwise().minCoeff();
+	for (int i=0; i<8; i++) if (corners2(i,2) < 0 or corners2(i,2) > 1) corners2.block<1,2>(i,0) = tl_;
+	//std::cout << " - FixedCorners2:\n" << corners2 << "\n";
+	Vector2f br = corners2.leftCols<2>().colwise().maxCoeff();
+	*/
+
+	if (n_invalid == 8 or not projection_xsects_ndc_box(tl,br))
 		return 0;
 	
-	float tileGeoError = 255;
-	float dist = (cam.eye.transpose() - corners.colwise().mean()).norm();
-	return tileGeoError * cam.wh(1) / (dist * cam.two_tan_half_fov_y);
+	float tileGeoError = 2.f / (255.0f * (1 << bc.z()));
+	float dist = (tuc.eye.transpose() - corners.colwise().mean()).norm();
+	return tileGeoError * tuc.wh(1) / (dist * tuc.two_tan_half_fov_y);
 }
 
 
@@ -347,7 +536,7 @@ void TiledRenderer::init() {
 			verts_.push_back(y);
 			verts_.push_back(c++);
 			verts_.push_back(x);
-			verts_.push_back(y);
+			verts_.push_back(1.0f - y);
 		}
 		int S = cfg.vertsAlongEdge;
 		for (int yy=0; yy<cfg.vertsAlongEdge-1; yy++)
@@ -482,8 +671,7 @@ void TiledRenderer::init() {
 		//camAndMetaBuffer.upload(viewProj, 16*4);
 
 		vk::DescriptorSetLayoutBinding bindings[1] = { {
-			0, vk::DescriptorType::eUniformBuffer,
-			1, vk::ShaderStageFlagBits::eVertex } };
+			0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex } };
 
 		vk::DescriptorSetLayoutCreateInfo layInfo { {}, 1, bindings };
 		globalDescSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
@@ -493,7 +681,7 @@ void TiledRenderer::init() {
 
 		// Its allocated, now make it point on the gpu side.
 		vk::DescriptorBufferInfo binfo {
-			*globalBuffer.buffer, 0, sizeof(TRGlobalData)
+			*globalBuffer.buffer, 0, VK_WHOLE_SIZE
 		};
 		vk::WriteDescriptorSet writeDesc[1] = { {
 			*globalDescSet,
@@ -547,50 +735,74 @@ void TiledRenderer::init() {
 	// Done on the current thread, so we synch load it
 	{
 		//root = &pooledTileData.tiles[0];
-		root = new Tile(0);
+		root = new Tile();
 		dataLoader.loadRootTile(root);
 	}
 
 }
 
 void TiledRenderer::update(const RenderState& rs) {
-	CameraFrustumData camd;
-	camd.mvp = Eigen::Map<const RowMatrix4d> { rs.mvp() }.cast<float>();
+	TileUpdateContext tuc { dataLoader };
+	tuc.mvp = Eigen::Map<const RowMatrix4d> { rs.mvp() }.cast<float>();
 	Vector3d eyed;
 	rs.eyed(eyed.data());
-	camd.eye = eyed.cast<float>();
-	camd.wh = Vector2f { rs.camera->spec().w, rs.camera->spec().h };
-	camd.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov * .5f);
+	tuc.eye = eyed.cast<float>();
+	tuc.wh = Vector2f { rs.camera->spec().w, rs.camera->spec().h };
+	tuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov * .5f);
+	tuc.sseThresholdOpen = 1.7;
+	tuc.sseThresholdClose = .8;
+	if (0) fmt::print(" - TileUpdateContext:"
+			"\n\t{:.4f} {:.4f} {:.4f} {:.4f}"
+			"\n\t{:.4f} {:.4f} {:.4f} {:.4f}"
+			"\n\t{:.4f} {:.4f} {:.4f} {:.4f}"
+			"\n\t{:.4f} {:.4f} {:.4f} {:.4f},"
+			"\n  eye {:.4f} {:.4f} {:.4f}, fy {:.4f}, wh {} {}\n",
+			tuc.mvp(0,0), tuc.mvp(0,1), tuc.mvp(0,2), tuc.mvp(0,3),
+			tuc.mvp(1,0), tuc.mvp(1,1), tuc.mvp(1,2), tuc.mvp(1,3),
+			tuc.mvp(2,0), tuc.mvp(2,1), tuc.mvp(2,2), tuc.mvp(2,3),
+			tuc.mvp(3,0), tuc.mvp(3,1), tuc.mvp(3,2), tuc.mvp(3,3),
+			tuc.eye(0), tuc.eye(1), tuc.eye(2), tuc.two_tan_half_fov_y, tuc.wh(0), tuc.wh(1));
+
 
 	// Handle any new loaded data
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
-		fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results\n", dataLoader.loadedResults.size());
+		if (dataLoader.loadedResults.size())
+			fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results\n", dataLoader.loadedResults.size());
 		for (; dataLoader.loadedResults.size(); dataLoader.loadedResults.pop_back()) {
 			auto &res = dataLoader.loadedResults.back();
 			Tile* parent = res.parent;
+			dprint(fmt::fg(fmt::color::yellow), " - [#update] res (n {})\n", res.ntiles);
 			if (res.ntiles == 1) {
 				// We loaded either the root, or a parent that will close four children
 				if (parent == nullptr) {
 					// Root.
-					assert(root->state == Tile::State::LOADING);
+					assert(root->state == Tile::State::LOADING or root->state == Tile::State::LOADING_INNER);
 					root->state = Tile::State::LEAF;
 					root->loaded = true;
 				} else {
 					// Closing a quad.
-					parent->state = Tile::State::LEAF;
-					parent->loaded = true;
+					Tile* theParent = res.tiles[0];
+					assert(theParent->state == Tile::State::LOADING_INNER);
+					theParent->state = Tile::State::LEAF;
+					theParent->loaded = true;
+					dprint(fmt::fg(fmt::color::yellow), " - [#update] tile ({} {} {}) loaded, closing children\n", theParent->bc.z(),theParent->bc.y(),theParent->bc.x());
 					for (int i=0; i<4; i++) {
-						assert(parent->children[i]->state == Tile::State::LEAF);
-						assert(parent->children[i]->loaded);
-						parent->children[i]->unload(pooledTileData);
-						delete parent->children[i];
+						dprint(fmt::fg(fmt::color::yellow), " - [#update]     child state {}\n", to_string(theParent->children[i]->state));
+						assert(theParent->children[i]->state == Tile::State::CLOSING);
+						assert(theParent->children[i]->loaded);
+						theParent->children[i]->unload(pooledTileData);
+						delete theParent->children[i];
+						theParent->children[i] = nullptr;
 					}
 				}
 
 			} else if (res.ntiles == 4) {
 				// We have four children for an opening parent.
-				assert(parent->opening);
+				assert(parent);
+				assert(parent->state == Tile::State::OPENING);
+				assert(parent->loaded);
+				dprint(fmt::fg(fmt::color::yellow), " - [#update] tile ({} {} {}) had children loaded, now inner.\n", parent->bc.z(),parent->bc.y(),parent->bc.x());
 				parent->unload(pooledTileData);
 				parent->state = Tile::State::INNER;
 				for (int i=0; i<4; i++) {
@@ -603,7 +815,7 @@ void TiledRenderer::update(const RenderState& rs) {
 		}
 	}
 
-	root->update(camd);
+	root->update(tuc, nullptr);
 }
 
 vk::CommandBuffer TiledRenderer::stepAndRender(const RenderState& rs) {
@@ -662,13 +874,19 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	TRGlobalData trgd;
 	uint64_t size = 16*4 + trc.drawTileIds.size() * sizeof(uint32_t); // Don't map/copy entire list of tile ids
 	rs.mvpf(trgd.mvp);
-	memcpy(trgd.drawTileIds, trc.drawTileIds.data(), trc.drawTileIds.size()*sizeof(uint32_t));
-	void* dbuf = (void*) globalBuffer.mem.mapMemory(0, 16*4, {});
+	//fmt::print(" - [#render] copying {} bytes to global buffer.\n", size);
+	for (int i=0; i<trc.drawTileIds.size(); i++) trgd.drawTileIds[i] = trc.drawTileIds[i];
+	void* dbuf = (void*) globalBuffer.mem.mapMemory(0, size, {});
 	memcpy(dbuf, &trgd, size);
 	globalBuffer.mem.unmapMemory();
 
 	// Now make draw call, with as many instances as tiles to draw
-	fmt::print(" - [#TR::render] rendering {} tiles (x{} inds)\n", trc.drawTileIds.size(), trc.numInds);
+	std::string tiless;
+	if (trc.drawTileIds.size() < 12)
+		for (int i=0; i<trc.drawTileIds.size(); i++) tiless += std::to_string(trc.drawTileIds[i]) + (i<trc.drawTileIds.size()-1?" ":"");
+	else tiless = "...";
+	fmt::print(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
+	//trc.drawTileIds = {trc.drawTileIds.back()};
 	cmd.drawIndexed(trc.numInds, trc.drawTileIds.size(), 0,0,0);
 
 	cmd.endRenderPass();
