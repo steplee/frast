@@ -97,6 +97,8 @@ struct TileDataLoader {
 
 
 	private:
+		MDB_txn* color_txn = nullptr;
+		MDB_txn* elev_txn = nullptr;
 		bool loadTile(Tile* tile);
 
 		DatasetReader* colorDset = nullptr;
@@ -104,6 +106,7 @@ struct TileDataLoader {
 
 		Image::Format colorFormat;
 		Image colorBuf;
+		Image elevBuf;
 		AltBuffer altBuffer;
 
 

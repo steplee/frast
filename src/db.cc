@@ -61,6 +61,8 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	: path(path),
 	  readOnly(m == OpenMode::READ_ONLY)
 {
+	allowInflate = dopts.allowInflate;
+
 	for (int i=0; i<MAX_LVLS; i++) dbs[i] = INVALID_DB;
 
 	if (auto err = mdb_env_create(&env)) {
@@ -189,6 +191,14 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 	bool ret = get_(eimg_, coord, theTxn);
 
 	if (ret) {
+
+		// Try to inflate before failing.
+		if (allowInflate and !getInflate_(out, coord, theTxn)) {
+			// inflate success
+			if (givenTxn == nullptr) endTxn(&theTxn);
+			return false;
+		}
+
 		if (givenTxn == nullptr) endTxn(&theTxn);
 		return ret != 0;
 	}
@@ -220,6 +230,89 @@ int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, boo
 	//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << " to lvl " << coord.z() << "\n";
 	auto err = mdb_put(txn, dbs[coord.z()], &key, &val, allowOverwrite ? 0 : MDB_NOOVERWRITE);
 	return err;
+}
+
+bool Dataset::getInflate_(Image& out, const BlockCoordinate& coord, MDB_txn* txn) {
+	uint64_t z = coord.z();
+	uint64_t y = coord.y();
+	uint64_t x = coord.x();
+
+	bool found_ancestor = false;
+	MDB_val key { 8, (void*)(&coord.c) };
+	MDB_val eimg_;
+	BlockCoordinate bc(0);
+
+	while (z > 0) {
+		z--;
+		y >>= 1;
+		x >>= 1;
+		bc = BlockCoordinate { z , y , x };
+
+		if (dbs[z]) {
+			if (not get_(eimg_, bc, txn)) {
+				found_ancestor = true;
+				break;
+			}
+		}
+	}
+
+	if (not found_ancestor) {
+		printf(" - getInflate (%lu %lu %lu) no ancestor found.\n",
+				coord.z(), coord.y(), coord.x());
+		return true;
+	}
+
+	// TODO: Move this to a class member to avoid allocs
+	Image tmp { out.h, out.w, out.format };
+	tmp.alloc();
+
+	// Decode.
+	{
+		EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
+		AtomicTimerMeasurement g(t_decodeImage);
+		bool ret = decode(tmp, eimg);
+		if (ret) return true;
+	}
+
+	// Sample the correct part of the image.
+	{
+		uint32_t lvlOffset = coord.z() - z;
+		uint32_t div = 1 << lvlOffset;
+		uint64_t y_off = div - 1 - (coord.y() % div);
+		uint64_t x_off = (coord.x() % div);
+		float y_off_pix = static_cast<float>(y_off * tileSize()) / div;
+		float x_off_pix = static_cast<float>(x_off * tileSize()) / div;
+
+		/*
+		float grid[8] = {
+			static_cast<float>((x_off+0) * tileSize()) / div,
+			static_cast<float>((y_off+0) * tileSize()) / div,
+
+			static_cast<float>((x_off+1) * tileSize()) / div,
+			static_cast<float>((y_off+0) * tileSize()) / div,
+
+			static_cast<float>((x_off+1) * tileSize()) / div,
+			static_cast<float>((y_off+1) * tileSize()) / div,
+
+			static_cast<float>((x_off+0) * tileSize()) / div,
+			static_cast<float>((y_off+1) * tileSize()) / div,
+		};
+		printf(" - getInflate (%lu %lu %lu) -> (%lu %lu %lu) grid [%f %f -> %f %f] (%u %u)\n",
+				coord.z(), coord.y(), coord.x(), z,y,x, grid[0], grid[1], grid[6], grid[7], lvlOffset, div);
+		tmp.remapRemap(out, grid, 2, 2);
+		*/
+
+		float H[9] = {
+			//1.f / div, 0, (float)x_off / div,
+			//0, 1.f / div, (float)y_off / div,
+			(float)div, 0, -(float)x_off_pix * div,
+			0, (float)div, -(float)y_off_pix * div,
+			0, 0, 1.f
+		};
+		tmp.warpAffine(out, H);
+	}
+
+	return false;
 }
 
 int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
@@ -374,8 +467,8 @@ void Dataset::getExistingLevels(std::vector<int>& out) const {
 
 bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
 	uint64_t lvl = bc.z();
-	if (dbs[lvl] == INVALID_DB) return false;
 	if (lvl < 0 or lvl > MAX_LVLS-1) return false;
+	if (dbs[lvl] == INVALID_DB) return false;
 	MDB_val key, val;
 	key.mv_data = (void*) &(bc.c);
 	key.mv_size = sizeof(BlockCoordinate);

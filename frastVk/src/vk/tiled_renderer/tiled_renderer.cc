@@ -9,7 +9,7 @@
 #if 0
 #define dprint(...) fmt::print(__VA_ARGS__)
 #else
-#define dprint(...) 
+#define dprint(...)
 #endif
 
 
@@ -82,8 +82,13 @@ void TileDataLoader::internalLoop(
 
 	// Load datasets
 	DatasetReaderOptions dopts1, dopts2;
+	//dopts1.allowInflate = true;
+	//dopts2.allowInflate = true;
 	colorDset = new DatasetReader(colorDsetPath, dopts1);
 	elevDset  = new DatasetReader(elevDsetPath,  dopts2);
+
+	colorDset->beginTxn(&color_txn, true);
+	elevDset->beginTxn(&elev_txn, true);
 
 	assert(cfg.tileSize == colorDset->tileSize());
 
@@ -93,12 +98,16 @@ void TileDataLoader::internalLoop(
 
 	colorFormat = Image::Format::RGBA;
 	if (cfg.channels == 1) colorFormat = Image::Format::GRAY;
-	colorBuf = Image { (int)cfg.tileSize, (int)cfg.tileSize, colorFormat };
+	assert(cfg.tileSize == colorDset->tileSize());
+	colorBuf = Image { (int)colorDset->tileSize(), (int)colorDset->tileSize(), colorFormat };
+	elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
 	colorBuf.alloc();
+	elevBuf.alloc();
 	if (colorFormat == Image::Format::RGBA)
 		for (int y=0; y<cfg.tileSize; y++)
 		for (int x=0; x<cfg.tileSize; x++)
 			colorBuf.buffer[y*cfg.tileSize*4+x*4+3] = 255;
+	memset(elevBuf.buffer, 0, elevBuf.size());
 
 	while (not shouldStop) {
 		std::vector<Ask> curAsks;
@@ -107,7 +116,8 @@ void TileDataLoader::internalLoop(
 			//std::swap(curAsks, this->asks);
 			curAsks = std::move(this->asks);
 		}
-		fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
+		if (curAsks.size())
+			fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
 
 		for (; curAsks.size(); curAsks.pop_back()) {
 			Ask& ask = curAsks.back();
@@ -118,7 +128,7 @@ void TileDataLoader::internalLoop(
 			if (ask.ntiles == 1) {
 				BlockCoordinate bc = ask.tiles[0]->bc;
 				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading one ({} {} {})\n", bc.z(), bc.y(), bc.x());
-				
+
 				if (loadTile(ask.tiles[0])) {
 					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] FAILED loading one ({} {} {})\n", bc.z(), bc.y(), bc.x());
 					continue;
@@ -159,6 +169,8 @@ void TileDataLoader::internalLoop(
 		usleep(33'000);
 	}
 
+	if (color_txn) colorDset->endTxn(&color_txn);
+	if (elev_txn) elevDset->endTxn(&elev_txn);
 	if (colorDset) delete colorDset;
 	if (elevDset) delete elevDset;
 	colorDset = nullptr;
@@ -171,7 +183,9 @@ TileDataLoader::~TileDataLoader() {
 	if (internalThread.joinable()) internalThread.join();
 }
 bool TileDataLoader::tileExists(const BlockCoordinate& bc) {
-	return colorDset->tileExists(bc, nullptr);
+	//#warning "fix me"
+	//return true;
+	return colorDset->tileExists(bc, color_txn);
 }
 
 bool TileDataLoader::pushAsk(const Ask& ask) {
@@ -253,6 +267,12 @@ bool TileDataLoader::loadTile(Tile* tile) {
 	return false;
 }
 
+static uint32_t log2_(uint32_t x) {
+	uint32_t y = 0;
+	while (x>>=1) y++;
+	return y;
+}
+
 bool TileDataLoader::loadColor(Tile* tile) {
 	auto& tex = pooledTileData.texs[tile->idx];
 
@@ -274,11 +294,24 @@ bool TileDataLoader::loadColor(Tile* tile) {
 
 	//int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	uint64_t tlbr[4] = { tile->bc.x(), tile->bc.y(), tile->bc.x()+1lu, tile->bc.y()+1lu };
-	int n_missing = colorDset->fetchBlocks(colorBuf, tile->bc.z(), tlbr, nullptr);
+	int n_missing = colorDset->fetchBlocks(colorBuf, tile->bc.z(), tlbr, color_txn);
 	dprint(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
 	if (n_missing > 0) return true;
 	// app->uploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
 	myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
+
+	// When loading the tile for first time, fill in whether it can be opened or not.
+	//assert(tile->childrenMissing == Tile::MissingStatus::UNKNOWN);
+	if (tile->childrenMissing == Tile::MissingStatus::UNKNOWN) {
+		if (childrenAreMissing(tile->bc)) {
+			fmt::print(" - tile {} {} {} is missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
+			tile->childrenMissing = Tile::MissingStatus::MISSING;
+		}
+		else {
+			fmt::print(" - tile {} {} {} is NOT missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
+			tile->childrenMissing = Tile::MissingStatus::NOT_MISSING;
+		}
+	}
 
 	return false;
 }
@@ -286,7 +319,35 @@ bool TileDataLoader::loadColor(Tile* tile) {
 bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 	auto& abuf = pooledTileData.altBufs[tile->idx];
 
-	memset(altBuffer.alt, 0, sizeof(float)*64);
+	uint16_t res_ratio = cfg.tileSize / cfg.vertsAlongEdge; // 16 for now
+	uint32_t lvlOffset = log2_(res_ratio);
+	uint64_t z = tile->bc.z() - lvlOffset;
+	uint64_t y = tile->bc.y() >> lvlOffset;
+	uint64_t x = tile->bc.x() >> lvlOffset;
+	uint64_t tlbr[4] = { x,y, x+1lu,y+1lu };
+	int n_missing = elevDset->fetchBlocks(elevBuf, z, tlbr, elev_txn);
+
+	if (n_missing) {
+		memset(altBuffer.alt, 0, sizeof(float)*64);
+	} else {
+		//uint32_t y_off = (tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge;
+		uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge) all WRONG, I think modulus something else
+		uint32_t x_off = (tile->bc.x() / lvlOffset) % cfg.vertsAlongEdge;
+		uint16_t* data = (uint16_t*) elevBuf.buffer;
+		for (uint32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
+		for (uint32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
+				altBuffer.alt[(yy*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
+				//altBuffer.alt[((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
+				//fmt::print(" - alt[{}, {}] {} -> {}\n", y_off, x_off, data[(yy+y_off)*elevBuf.w+xx+x_off], (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale);
+		}
+
+		dprint(" - [#loadElev()] for ({} {} {}) use elev tile ({} {} {} + {} {})\n",
+				(uint32_t)(tile->bc.z()),
+				(uint32_t)(tile->bc.y()),
+				(uint32_t)(tile->bc.x()),
+				z,y,x, y_off, x_off);
+	}
+
 	altBuffer.x = tile->bc.x();
 	altBuffer.y = tile->bc.y();
 	altBuffer.z = tile->bc.z();
@@ -302,6 +363,7 @@ bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 	return false;
 }
 
+// Return true if ALL children missing
 bool TileDataLoader::childrenAreMissing(const BlockCoordinate& bc) {
 	for (int i=0; i<4; i++) {
 		BlockCoordinate child_bc {
@@ -309,8 +371,10 @@ bool TileDataLoader::childrenAreMissing(const BlockCoordinate& bc) {
 			bc.y() * 2 + (i / 2),
 			bc.x() * 2 + (i == 1 or i == 2)
 		};
+		bool exists = tileExists(child_bc);
+		if (exists) return false;
 	}
-	return false;
+	return true;
 }
 
 
@@ -396,14 +460,6 @@ void Tile::update(const TileUpdateContext& tuc, Tile* parent) {
 		lastSSE = computeSSE(tuc);
 
 		if (lastSSE > tuc.sseThresholdOpen) {
-
-			if (childrenMissing == MissingStatus::UNKNOWN) {
-				//if (tuc.dataLoader.childrenAreMissing(bc))
-				if (bc.z() >= 14 or tuc.dataLoader.childrenAreMissing(bc))
-					childrenMissing = MissingStatus::MISSING;
-				else
-					childrenMissing = MissingStatus::NOT_MISSING;
-			}
 
 			// If we can load children, start opening this tile, otherwise do nothing
 			if (childrenMissing == MissingStatus::NOT_MISSING) {
@@ -493,7 +549,7 @@ float Tile::computeSSE(const TileUpdateContext& tuc) {
 
 	if (n_invalid == 8 or not projection_xsects_ndc_box(tl,br))
 		return 0;
-	
+
 	float tileGeoError = 2.f / (255.0f * (1 << bc.z()));
 	float dist = (tuc.eye.transpose() - corners.colwise().mean()).norm();
 	return tileGeoError * tuc.wh(1) / (dist * tuc.two_tan_half_fov_y);
@@ -628,7 +684,8 @@ void TiledRenderer::init() {
 						vk::ImageLayout::eShaderReadOnlyOptimal
 				});
 			}
-		
+
+
 			vk::WriteDescriptorSet writeDesc[2] = {
 				{
 					*pooledTileData.descSet,
@@ -885,7 +942,7 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	if (trc.drawTileIds.size() < 12)
 		for (int i=0; i<trc.drawTileIds.size(); i++) tiless += std::to_string(trc.drawTileIds[i]) + (i<trc.drawTileIds.size()-1?" ":"");
 	else tiless = "...";
-	fmt::print(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
+	dprint(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
 	//trc.drawTileIds = {trc.drawTileIds.back()};
 	cmd.drawIndexed(trc.numInds, trc.drawTileIds.size(), 0,0,0);
 

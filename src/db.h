@@ -88,6 +88,7 @@ struct DatabaseOptions {
 	//uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
 	uint64_t mapSize = 100lu * (1lu << 30lu); // x 1GB
 	bool threadLocalStorage = true;
+	bool allowInflate = false;
 };
 
 struct DatasetMeta {
@@ -133,6 +134,7 @@ class Dataset {
 		~Dataset();
 
 		bool get(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
+		bool getInflate_(Image& out, const BlockCoordinate& coord, MDB_txn* txn);
 		bool get(std::vector<uint8_t>& out, const BlockCoordinate& coord, MDB_txn** txn); // By re-using output buffer, allocations will stop happening eventually
 		int get_(MDB_val& out, const BlockCoordinate& coord, MDB_txn* txn);
 		int put(Image& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
@@ -198,6 +200,7 @@ class Dataset {
 		friend class DatasetReaderIterator;
 		std::string path;
 		bool readOnly;
+		bool allowInflate = false;
 		bool doStop = false;
 
 		MDB_env *env = nullptr;
@@ -362,11 +365,9 @@ class DatasetReader : public Dataset {
 		// Image should already be allocated.
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
-
+		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0);
 		// Access a quad in the projection coordinate system (e.g. WM)
 		bool rasterIoQuad(Image& out, const double quad[8]);
-
-		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0);
 
 		// Shared by all threads
 		bool getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn);

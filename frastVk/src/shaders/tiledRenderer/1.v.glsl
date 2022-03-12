@@ -42,11 +42,12 @@ void main()
 	int vertIndex = int(aPositionXYI.z);
 
 	float altRaw = (altBuf[tileIndex].alt[vertIndex]);
-	altRaw = 0.;
+	//altRaw = 0.;
+	float z = altRaw;
 
 	//float z_scale = 2.38418579e-7 / 8.0;
 	//float z = altRaw * (z_scale);
-	float z = 0.0;
+	//float z = 0.0;
 
 	uint tx = altBuf[tileIndex].x,
 		 ty = altBuf[tileIndex].y,
