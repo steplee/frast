@@ -331,8 +331,10 @@ bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 		memset(altBuffer.alt, 0, sizeof(float)*64);
 	} else {
 		//uint32_t y_off = (tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge;
-		uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge) all WRONG, I think modulus something else
-		uint32_t x_off = (tile->bc.x() / lvlOffset) % cfg.vertsAlongEdge;
+		// uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge) all WRONG, I think modulus something else
+		// uint32_t x_off = (tile->bc.x() / lvlOffset) % cfg.vertsAlongEdge;
+		uint32_t y_off = (tile->bc.y() / res_ratio); FIX ME
+		uint32_t x_off = (tile->bc.x() / res_ratio);
 		uint16_t* data = (uint16_t*) elevBuf.buffer;
 		for (uint32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
 		for (uint32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
