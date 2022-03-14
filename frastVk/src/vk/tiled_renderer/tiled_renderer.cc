@@ -83,7 +83,7 @@ void TileDataLoader::internalLoop(
 	// Load datasets
 	DatasetReaderOptions dopts1, dopts2;
 	//dopts1.allowInflate = true;
-	//dopts2.allowInflate = true;
+	dopts2.allowInflate = true;
 	colorDset = new DatasetReader(colorDsetPath, dopts1);
 	elevDset  = new DatasetReader(elevDsetPath,  dopts2);
 
@@ -319,7 +319,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 	auto& abuf = pooledTileData.altBufs[tile->idx];
 
-	uint16_t res_ratio = cfg.tileSize / cfg.vertsAlongEdge; // 16 for now
+	uint16_t res_ratio = cfg.tileSize / cfg.vertsAlongEdge; // 32 for now
 	uint32_t lvlOffset = log2_(res_ratio);
 	uint64_t z = tile->bc.z() - lvlOffset;
 	uint64_t y = tile->bc.y() >> lvlOffset;
@@ -328,19 +328,26 @@ bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 	int n_missing = elevDset->fetchBlocks(elevBuf, z, tlbr, elev_txn);
 
 	if (n_missing) {
-		memset(altBuffer.alt, 0, sizeof(float)*64);
+		memset(altBuffer.alt, 0, sizeof(altBuffer.alt));
+		fmt::print(" - [#loadElev()] for ({} {} {}) use elev tile ({} {} {}) WAS MISSING?\n",
+				(uint32_t)(tile->bc.z()),
+				(uint32_t)(tile->bc.y()),
+				(uint32_t)(tile->bc.x()),
+				z,y,x);
 	} else {
 		//uint32_t y_off = (tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge;
-		// uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge) all WRONG, I think modulus something else
+		// uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge);
 		// uint32_t x_off = (tile->bc.x() / lvlOffset) % cfg.vertsAlongEdge;
-		uint32_t y_off = (tile->bc.y() / res_ratio); FIX ME
-		uint32_t x_off = (tile->bc.x() / res_ratio);
+		// uint32_t y_off = (tile->bc.y() % res_ratio) * cfg.tileSize / res_ratio;
+		uint32_t y_off = (res_ratio - 1 - (tile->bc.y() % res_ratio)) * cfg.tileSize / res_ratio;
+		uint32_t x_off = (tile->bc.x() % res_ratio) * cfg.tileSize / res_ratio;
 		uint16_t* data = (uint16_t*) elevBuf.buffer;
 		for (uint32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
 		for (uint32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
-				altBuffer.alt[(yy*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
+				// altBuffer.alt[(yy*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
+				altBuffer.alt[((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
 				//altBuffer.alt[((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
-				//fmt::print(" - alt[{}, {}] {} -> {}\n", y_off, x_off, data[(yy+y_off)*elevBuf.w+xx+x_off], (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale);
+				// fmt::print(" - alt[{}, {}] {} -> {}\n", y_off, x_off, data[(yy+y_off)*elevBuf.w+xx+x_off], (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale);
 		}
 
 		dprint(" - [#loadElev()] for ({} {} {}) use elev tile ({} {} {} + {} {})\n",
