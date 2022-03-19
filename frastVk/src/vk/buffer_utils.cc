@@ -78,7 +78,7 @@ void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, c
 
 	auto req = buffer.getMemoryRequirements();
 	residentSize = req.size;
-	printf(" - allocating buffer to memory type idx %u, givenSize %lu, residentSize %lu\n", idx, givenSize, residentSize);
+	//printf(" - allocating buffer to memory type idx %u, givenSize %lu, residentSize %lu\n", idx, givenSize, residentSize);
 
 	vk::MemoryAllocateInfo allocInfo { residentSize, idx };
 	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
@@ -283,6 +283,7 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 	vk::SamplerCreateInfo samplerInfo {};
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
+	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
 	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
 
 	if (data != nullptr)
@@ -309,13 +310,13 @@ void ResidentImage::create_(Uploader& uploader) {
 	image = std::move(d.createImage(imageInfo));
 
 	uint64_t size_ = image.getMemoryRequirements().size;
-	printf(" - image computed size %lu, vulkan given size %lu\n", size_);
+	//printf(" - image computed size %lu, vulkan given size %lu\n", size_);
 
 	// Memory
 	uint32_t idx = 0;
 	uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
 	idx = findMemoryTypeIndex(pd, memPropFlags);
-	printf(" - creating image buffers to memory type idx %u\n", idx);
+	//printf(" - creating image buffers to memory type idx %u\n", idx);
 	vk::MemoryAllocateInfo allocInfo { std::max(minSize,size()), idx };
 	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
 
@@ -382,7 +383,7 @@ void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, u
 	cmd.begin(beginInfo);
 	cmd.copyBuffer(*tmpBuffer.buffer, *dstBuffer.buffer, {1,regions});
 	cmd.end();
-	printf(" - [uploadSync q%p] copying %lu bytes.\n", (void*)(VkQueue)(q), regions[0].size);
+	//printf(" - [uploadSync q%p] copying %lu bytes.\n", (void*)(VkQueue)(q), regions[0].size);
 
 	//vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllCommands;
 	//vk::SubmitInfo submitInfo { nullptr, {1,&waitMask}, nullptr, nullptr, };
