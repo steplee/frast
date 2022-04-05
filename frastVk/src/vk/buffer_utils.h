@@ -7,7 +7,6 @@
 
 class BaseVkApp;
 
-uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags);
 uint64_t scalarSizeOfFormat(const vk::Format& f);
 
 //__attribute__((packed)) struct VertexPUN {

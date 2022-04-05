@@ -80,7 +80,7 @@ struct MovingCamera : public Camera {
 };
 
 struct MatrixStack {
-	static constexpr int MAX_DEPTH = 7;
+	static constexpr int MAX_DEPTH = 10;
 	alignas(16) double m[16*MAX_DEPTH];
 	int d = 0;
 

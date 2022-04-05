@@ -39,8 +39,9 @@ add_library(frastVk
 	src/vk/clipmap1/clipmap1_load.cc
 
 	src/vk/tiled_renderer/tiled_renderer.cc
-
 )
+
+
 target_link_libraries(frastVk
 	PUBLIC
 	frast
@@ -74,3 +75,7 @@ add_executable(runGlobe src/globe.cc)
 target_link_libraries(runGlobe frastVk)
 target_precompile_headers(runGlobe REUSE_FROM frastVk)
 
+
+add_executable(runRt src/rt/parse.cc src/rt/protos/rocktree.pb.cc)
+target_link_libraries(runRt frastVk protobuf)
+target_precompile_headers(runRt REUSE_FROM frastVk)

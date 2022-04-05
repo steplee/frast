@@ -10,6 +10,5 @@ layout (location = 0) out vec4 outFragColor;
 
 void main()
 {
-	//return red
 	outFragColor = v_color * texture(tex, v_uv);
 }

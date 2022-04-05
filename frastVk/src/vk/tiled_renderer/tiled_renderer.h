@@ -12,6 +12,11 @@
 constexpr static uint32_t NO_INDEX = 999999;
 class Tile;
 
+struct TiledRendererPushConstants {
+	bool grayscale = false;
+	bool pad[3];
+};
+
 struct TiledRendererCfg {
 	//static constexpr uint32_t maxTiles = 128;
 	static constexpr uint32_t maxTiles = 256;
@@ -91,6 +96,7 @@ struct TileDataLoader {
 		std::mutex mtx;
 		PooledTileData& pooledTileData;
 		BaseVkApp* app;
+		Image::Format colorFormat;
 
 		vk::raii::Queue myUploadQueue  = { nullptr };
 		Uploader myUploader;
@@ -104,7 +110,6 @@ struct TileDataLoader {
 		DatasetReader* colorDset = nullptr;
 		DatasetReader* elevDset  = nullptr;
 
-		Image::Format colorFormat;
 		Image colorBuf;
 		Image elevBuf;
 		AltBuffer altBuffer;

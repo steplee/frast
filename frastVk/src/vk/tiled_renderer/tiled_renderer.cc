@@ -97,7 +97,7 @@ void TileDataLoader::internalLoop(
 	myUploader = std::move(Uploader(app, *myUploadQueue));
 
 	colorFormat = Image::Format::RGBA;
-	if (cfg.channels == 1) colorFormat = Image::Format::GRAY;
+	if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) colorFormat = Image::Format::GRAY;
 	assert(cfg.tileSize == colorDset->tileSize());
 	colorBuf = Image { (int)colorDset->tileSize(), (int)colorDset->tileSize(), colorFormat };
 	elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
@@ -298,7 +298,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 	dprint(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
 	if (n_missing > 0) return true;
 	// app->uploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
-	myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
+	myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*colorBuf.channels(), 0);
 
 	// When loading the tile for first time, fill in whether it can be opened or not.
 	//assert(tile->childrenMissing == Tile::MissingStatus::UNKNOWN);
@@ -308,7 +308,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 			tile->childrenMissing = Tile::MissingStatus::MISSING;
 		}
 		else {
-			fmt::print(" - tile {} {} {} is NOT missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
+			// fmt::print(" - tile {} {} {} is NOT missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
 			tile->childrenMissing = Tile::MissingStatus::NOT_MISSING;
 		}
 	}
@@ -585,7 +585,9 @@ TiledRenderer::TiledRenderer(BaseVkApp* app) :
 void TiledRenderer::init() {
 
 	//dataLoader.init("", "");
-	dataLoader.init("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
+	dataLoader.init("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
+	// dataLoader.init("/data/naip/md/md16.ft", "/data/elevation/gmted/gmted.ft");
+	// dataLoader.init("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
 
 	// Create shared tile data
 	{
@@ -635,7 +637,10 @@ void TiledRenderer::init() {
 		uint8_t *emptyImage = (uint8_t*)malloc(cfg.tileSize*cfg.tileSize*4);
 		memset(emptyImage, 100, cfg.tileSize*cfg.tileSize*4);
 		for (int i=0; i<cfg.maxTiles; i++) {
-			pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8G8B8A8Unorm, emptyImage);
+			if (dataLoader.colorFormat == Image::Format::GRAY)
+				pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8Unorm, emptyImage);
+			else
+				pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8G8B8A8Unorm, emptyImage);
 			//pooledTileData.altBufs[i].setAsUniformBuffer(sizeof(float)*N + 3*sizeof(uint32_t), false);
 			pooledTileData.altBufs[i].setAsStorageBuffer(sizeof(AltBuffer), false);
 			pooledTileData.altBufs[i].create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
@@ -755,6 +760,7 @@ void TiledRenderer::init() {
 				vk::DescriptorType::eUniformBuffer,
 				nullptr, &binfo, nullptr } };
 		app->deviceGpu.updateDescriptorSets({1, writeDesc}, nullptr);
+
 	}
 
 
@@ -783,6 +789,12 @@ void TiledRenderer::init() {
 		// Add Push Constants & Set Layouts.
 		sharedTileData.pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 		sharedTileData.pipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
+
+
+		sharedTileData.pipelineStuff.pushConstants.push_back(vk::PushConstantRange{
+				vk::ShaderStageFlagBits::eFragment,
+				0,
+				sizeof(TiledRendererPushConstants) });
 
 		sharedTileData.pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
 	}
@@ -945,6 +957,11 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	void* dbuf = (void*) globalBuffer.mem.mapMemory(0, size, {});
 	memcpy(dbuf, &trgd, size);
 	globalBuffer.mem.unmapMemory();
+
+	// TODO: Having two shaders probably more efficient
+	TiledRendererPushConstants pushc;
+	pushc.grayscale = true;
+	cmd.pushConstants(*sharedTileData.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const TiledRendererPushConstants>{1, &pushc});
 
 	// Now make draw call, with as many instances as tiles to draw
 	std::string tiless;

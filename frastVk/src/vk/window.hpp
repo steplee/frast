@@ -229,8 +229,8 @@ inline void Window::setupWindow() {
 		XCB_EVENT_MASK_ENTER_WINDOW   | XCB_EVENT_MASK_LEAVE_WINDOW   |
 		XCB_EVENT_MASK_KEY_PRESS      | XCB_EVENT_MASK_KEY_RELEASE;
 
-	windowWidth = 1280;
-	windowHeight = 960;
+	// windowWidth = 1280;
+	// windowHeight = 960;
 
 	xcb_create_window (xcbConn,                             /* Connection          */
 			XCB_COPY_FROM_PARENT,          /* depth (same as root)*/

@@ -5,8 +5,6 @@
 #include <fstream>
 #include <chrono>
 
-#include "clipmap1/clipmap1.h"
-#include "tiled_renderer/tiled_renderer.h"
 
 
 namespace {
@@ -19,6 +17,27 @@ float getSeconds(bool first=false) {
 	auto tp = std::chrono::high_resolution_clock::now();
 	return static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(tp - __tp0).count()) * .000001f;
 }
+}
+
+uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags) {
+	vk::PhysicalDeviceMemoryProperties props { pdev.getMemoryProperties() };
+
+	for (int i=0; i<props.memoryTypeCount; i++) {
+		if (props.memoryTypes[i].propertyFlags & flags) return i;
+	}
+	throw std::runtime_error("failed to find memory type index.");
+	return 99999999;
+}
+
+uint32_t AbstractSwapchain::acquireNextImage(vk::raii::Device& device, vk::Semaphore acquireSema, vk::Fence readyFence) {
+	if (!headlessImages.size()) {
+		uint32_t idx = sc.acquireNextImage(0, acquireSema, readyFence).second;
+		return idx;
+	} else {
+		device.signalSemaphore(vk::SemaphoreSignalInfo{acquireSema});
+		device.resetFences({readyFence});
+		return curIdx++;
+	}
 }
 
 /* ===================================================
@@ -197,6 +216,56 @@ bool BaseVkApp::make_gpu_device() {
 	return false;
 }
 
+bool BaseVkApp::make_headless_swapchain() {
+	scSurfaceFormat.format = vk::Format::eR8G8B8A8Unorm;
+
+	scNumImages = 2;
+
+	vk::ImageCreateInfo imageInfo = { };
+    imageInfo.imageType = vk::ImageType::e2D;
+    imageInfo.format = scSurfaceFormat.format;
+    imageInfo.extent = vk::Extent3D { (uint32_t)windowWidth, (uint32_t)windowHeight, 1 };
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = vk::SampleCountFlagBits::e1;
+    imageInfo.tiling = vk::ImageTiling::eOptimal;
+    imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst
+		| vk::ImageUsageFlagBits::eTransferSrc
+		// | vk::ImageUsageFlagBits::eSampled
+		| vk::ImageUsageFlagBits::eColorAttachment
+		// | vk::ImageUsageFlagBits::eDepthStencilAttachment
+		| vk::ImageUsageFlagBits::eStorage;
+
+	for (uint32_t i=0; i<scNumImages; i++) {
+
+		sc.headlessImages.push_back(std::move(deviceGpu.createImage(imageInfo)));
+
+		uint64_t size_ = sc.headlessImages.back().getMemoryRequirements().size;
+		uint64_t minSize = std::max(size_, ((size_+0x1000-1)/0x1000)*0x1000);
+		auto memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+		auto idx = findMemoryTypeIndex(*pdeviceGpu, memPropFlags);
+		vk::MemoryAllocateInfo allocInfo { std::max(minSize,size_), idx };
+		sc.headlessMemory.push_back(std::move(vk::raii::DeviceMemory(deviceGpu, allocInfo)));
+		std::cout << "  headless image with size " << size_  << " v " << 4*windowWidth*windowHeight << "\n";
+
+		sc.headlessImages.back().bindMemory(*sc.headlessMemory.back(), 0);
+
+		vk::ImageViewCreateInfo viewInfo {
+			{},
+			*sc.headlessImages[i],
+			vk::ImageViewType::e2D,
+			vk::Format(scSurfaceFormat.format),
+			{},
+			vk::ImageSubresourceRange {
+				vk::ImageAspectFlagBits::eColor,
+				0, 1, 0, 1 }
+		};
+		scImageViews.push_back(std::move(deviceGpu.createImageView(viewInfo)));
+	}
+
+	return false;
+}
+
 bool BaseVkApp::make_surface() {
 	vk::XcbSurfaceCreateInfoKHR s_ci = {
 		{},
@@ -293,8 +362,7 @@ bool BaseVkApp::make_swapchain() {
 	};
 	scNumImages = 3;
 
-	VkSwapchainKHR sc_;
-	sc = std::move(deviceGpu.createSwapchainKHR(sc_ci_));
+	sc.sc = std::move(deviceGpu.createSwapchainKHR(sc_ci_));
 
 	for (int i=0; i<scNumImages; i++) {
 		vk::ImageViewCreateInfo viewInfo {
@@ -490,26 +558,35 @@ bool BaseVkApp::make_basic_render_stuff() {
 }
 
 BaseVkApp::BaseVkApp() {
+	windowWidth = 640;
+	windowHeight = 480;
+}
+
+void BaseVkApp::init() {
 	std::cout << " - initial      : " << *deviceGpu << " " << *surface << "\n";
 
 	make_instance();
 
-	windowWidth = 640;
-	windowHeight = 480;
-	setupWindow();
 
-	make_gpu_device();
+	if (headless) {
+		make_gpu_device();
+		make_headless_swapchain();
+		uploader = std::move(Uploader(this, *queueGfx));
+	} else {
+		setupWindow();
 
-	uploader = std::move(Uploader(this, *queueGfx));
+		make_gpu_device();
+		uploader = std::move(Uploader(this, *queueGfx));
 
-	make_surface();
+		make_surface();
+		make_swapchain();
+	}
 
-	make_swapchain();
+
+
 	make_frames();
 
 	make_basic_render_stuff();
-
-
 }
 
 /* ===================================================
@@ -716,10 +793,22 @@ FrameData& BaseVkApp::acquireFrame() {
 
 	deviceGpu.waitForFences({*frameDatas[ii].frameDoneFence}, true, 999999999);
 	deviceGpu.resetFences({*frameDatas[ii].frameDoneFence});
-	uint32_t new_scIndx = sc.acquireNextImage(0, *fd.scAcquireSema, *fd.frameReadyFence).second;
-	deviceGpu.waitForFences({*fd.frameReadyFence}, true, 999999999);
-	deviceGpu.resetFences({*fd.frameReadyFence});
-	// uint32_t new_scIndx = sc.acquireNextImage(0, *fd.scAcquireSema).second;
+
+	// if (headless) {
+	// } else {
+	// }
+	// uint32_t new_scIndx = sc.acquireNextImage(0, *fd.scAcquireSema, *fd.frameReadyFence).second;
+
+	// TODO Stopped here, pickup tomorrow
+	uint32_t new_scIndx;
+	if (headless) {
+		// new_scIndx = sc.acquireNextImage(deviceGpu, *fd.scAcquireSema );
+	} else {
+		new_scIndx = sc.acquireNextImage(deviceGpu, *fd.scAcquireSema, *fd.frameReadyFence);
+		deviceGpu.waitForFences({*fd.frameReadyFence}, true, 999999999);
+		deviceGpu.resetFences({*fd.frameReadyFence});
+	}
+
 
 	renders++;
 	if (renders == 1) {
@@ -755,6 +844,10 @@ VkApp::~VkApp() {
 VkApp::VkApp() :
 	BaseVkApp()
 {
+}
+
+void VkApp::init() {
+	BaseVkApp::init();
 
 	createSimplePipeline(simplePipelineStuff, *simpleRenderPass.pass);
 
@@ -776,32 +869,8 @@ VkApp::VkApp() :
 	simpleMesh.createAndUpload(deviceGpu,*pdeviceGpu,queueFamilyGfxIdxs);
 	createTexturedPipeline(texturedPipelineStuff, simpleMesh, *simpleRenderPass.pass);
 
-	//set position of camera offset by loaded mld ctr
-
-	CameraSpec spec { (float)windowWidth, (float)windowHeight, 45 * 3.141 / 180. };
-	camera = std::make_shared<MovingCamera>(spec);
-	//alignas(16) float pos0[] { 0, 0, .9999f };
-	//alignas(16) float pos0[] { 0, 0, (float)(2.0 * 2.38418579e-7) };
-	alignas(16) double pos0[] { 
-		(double)(-8590834.045999 / 20037508.342789248), (float)(4757669.951554 / 20037508.342789248),
-		//0,0,
-		//(double)(2.0 * 2.38418579e-7) };
-		//(double)(2.0 * 1./(1<<(18-1))) };
-		(double)(2.0 * 1./(1<<(10-1))) };
-	alignas(16) double R0[] {
-		1,0,0,
-		0,-1,0,
-		0,0,-1 };
-	camera->setPosition(pos0);
-	camera->setRotMatrix(R0);
-	ioUsers.push_back(camera);
-	renderState.camera = camera;
-
-	//clipmap = std::make_shared<ClipMapRenderer1>(this);
-	//clipmap->init();
-	tiledRenderer = std::make_shared<TiledRenderer>(this);
-	tiledRenderer->init();
 }
+
 
 
 
@@ -999,6 +1068,7 @@ void VkApp::render() {
 			cmd_.begin(beginInfo);
 			cmd_.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 
+			/*
 			if (0) {
 				cmd_.bindPipeline(vk::PipelineBindPoint::eGraphics, *simplePipelineStuff.pipeline);
 				cmd_.draw(3, 1, 0, 0);
@@ -1018,6 +1088,7 @@ void VkApp::render() {
 			}
 			cmd_.endRenderPass();
 			cmd_.end();
+			*/
 		}
 	}
 
@@ -1031,18 +1102,8 @@ void VkApp::render() {
 		camBuffer.mem.unmapMemory();
 	}
 
-#if 0
-	vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
-	vk::SubmitInfo submitInfo {
-		1, &(*fd.scAcquireSema), // wait sema
-		&waitMask,
-		//1, &(*commandBuffers[fd.scIndx]),
-		1, &(*cmd),
-		1, &*fd.renderCompleteSema // signal sema
-	};
-	queueGfx.submit(submitInfo, *fd.frameDoneFence);
 
-#else
+	/*
 	std::vector<vk::CommandBuffer> cmds = {
 		//clipmap->stepAndRender(renderState, camera.get())
 		tiledRenderer->stepAndRender(renderState)
@@ -1058,25 +1119,18 @@ void VkApp::render() {
 		1, &*fd.renderCompleteSema // signal sema
 	};
 	queueGfx.submit(submitInfo, *fd.frameDoneFence);
-#endif
-
-	vk::PresentInfoKHR presentInfo {
-		1, &*fd.renderCompleteSema, // wait sema
-		1, &(*sc),
-		&fd.scIndx, nullptr
-	};
-	queueGfx.presentKHR(presentInfo);
-	//isDone_ = true;
-
-	//deviceGpu.waitIdle();
-
-	/*
-	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
-	vkCmdDraw(cmd, 3, 1, 0, 0);
-	vkCmdEndRenderPass(cmd);
 	*/
+	doRender(renderState);
+
+	if (headless) {
+	} else {
+		vk::PresentInfoKHR presentInfo {
+			1, &*fd.renderCompleteSema, // wait sema
+				1, &(*sc.sc),
+				&fd.scIndx, nullptr
+		};
+		queueGfx.presentKHR(presentInfo);
+	}
 }
 
 bool VkApp::isDone() {

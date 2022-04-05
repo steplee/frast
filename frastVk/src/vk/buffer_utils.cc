@@ -2,15 +2,6 @@
 #include "app.h"
 
 
-uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags) {
-	vk::PhysicalDeviceMemoryProperties props { pdev.getMemoryProperties() };
-
-	for (int i=0; i<props.memoryTypeCount; i++) {
-		if (props.memoryTypes[i].propertyFlags & flags) return i;
-	}
-	throw std::runtime_error("failed to find memory type index.");
-	return 99999999;
-}
 
 uint64_t scalarSizeOfFormat(const vk::Format& f) {
 	switch (f) {

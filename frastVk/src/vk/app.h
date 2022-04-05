@@ -11,8 +11,8 @@
 #include "render_state.h"
 
 struct ResidentMesh;
-struct ClipMapRenderer1;
-struct TiledRenderer;
+
+uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags);
 
 struct SimpleRenderPass {
 	vk::raii::RenderPass pass { nullptr };
@@ -78,6 +78,38 @@ struct FrameData {
 	int n = 0;
 };
 
+// A wrapper around vk::raii::SwapchainKHR or a simple custom implementation
+// for the headless case.
+struct AbstractSwapchain {
+
+	vk::raii::SwapchainKHR sc { nullptr };
+
+	std::vector<vk::raii::Image> headlessImages;
+	std::vector<vk::raii::DeviceMemory> headlessMemory;
+
+
+	inline std::vector<vk::Image> getImages() {
+		if (!headlessImages.size()) {
+			std::vector<vk::Image> x;
+			for (auto &i : sc.getImages()) x.push_back(vk::Image{i});
+			return x;
+		}
+		else {
+			std::vector<vk::Image> x;
+			for (auto &i : headlessImages) x.push_back(*i);
+			return x;
+		}
+	}
+	inline vk::Image getImage(int i) {
+		if (!headlessImages.size()) return vk::Image{sc.getImages()[i]};
+		else return *headlessImages[i];
+	}
+
+	uint32_t acquireNextImage(vk::raii::Device& device, vk::Semaphore sema, vk::Fence fence);
+	private:
+	int curIdx = 0;
+};
+
 /*
  *
  * A base class for a vulkan graphics app.
@@ -86,6 +118,9 @@ struct FrameData {
 struct BaseVkApp : public Window {
 
 	BaseVkApp();
+	virtual void init();
+
+	bool headless = false;
 
 	vk::raii::Context ctx;
 	vk::raii::Instance instance { nullptr };
@@ -102,12 +137,15 @@ struct BaseVkApp : public Window {
 	std::vector<uint32_t> queueFamilyGfxIdxs;
 
 	vk::raii::SurfaceKHR surface { nullptr };
-	vk::raii::SwapchainKHR sc { nullptr };
+	// vk::raii::SwapchainKHR sc { nullptr };
+	AbstractSwapchain sc;
+
 	vk::SurfaceFormatKHR scSurfaceFormat;
 	std::vector<vk::raii::ImageView> scImageViews;
 	int scNumImages = 0;
 	inline vk::Image getSwapChainImage(int i) {
-		return vk::Image(sc.getImages()[i]);
+		return sc.getImage(i);
+		// return vk::Image(sc.getImages()[i]);
 	}
 	inline const vk::ImageView& getSwapChainImageView(int i) {
 		return *scImageViews[i];
@@ -124,8 +162,11 @@ struct BaseVkApp : public Window {
 		bool require_16bit_shader_types = true;
 		bool make_instance();
 		bool make_gpu_device();
+
 		bool make_surface();
 		bool make_swapchain();
+		bool make_headless_swapchain();
+
 		bool make_frames();
 		bool make_basic_render_stuff();
 
@@ -147,8 +188,11 @@ class VkApp : public BaseVkApp {
 
 		VkApp();
 		~VkApp();
+		virtual void init() override;
 
-		void render();
+		// VkApp provides standard starter function that further calls doRender()
+		virtual void render();
+		virtual void doRender(RenderState& rs) =0;
 
 		bool isDone();
 
@@ -180,8 +224,6 @@ class VkApp : public BaseVkApp {
 		std::shared_ptr<Camera> camera = nullptr;
 		RenderState renderState;
 
-		std::shared_ptr<ClipMapRenderer1> clipmap;
-		std::shared_ptr<TiledRenderer> tiledRenderer;
 
 };
 
