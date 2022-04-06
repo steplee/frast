@@ -535,7 +535,7 @@ static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
 
 }
 
-static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls, Image::Format& outFormat) {
+static int test3(const std::string& srcTiff, const std::string& outPath, std::vector<int>& lvls, Image::Format& outFormat, double overrideTlbr[4]) {
 	// Open one DB, and one tiff+buffer per thread
 
 	GdalDset* dset[CONVERT_THREADS];
@@ -582,14 +582,21 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 		uint64_t tileTlbr[4];
 		findWmTlbrOfDataset(tileTlbr, dset[0], lvl);
+		if (overrideTlbr[0] != 0 and overrideTlbr[2] != 0) {
+			if (overrideTlbr[0] > overrideTlbr[2]) std::swap(overrideTlbr[0], overrideTlbr[2]);
+			if (overrideTlbr[1] > overrideTlbr[3]) std::swap(overrideTlbr[1], overrideTlbr[3]);
+			tileTlbr[0] = (uint64_t) (((.5 * overrideTlbr[0] / WebMercatorMapScale) + .5) * (1lu << lvl));
+			tileTlbr[1] = (uint64_t) (((.5 * overrideTlbr[1] / WebMercatorMapScale) + .5) * (1lu << lvl));
+			tileTlbr[2] = (uint64_t) (((.5 * overrideTlbr[2] / WebMercatorMapScale) + .5) * (1lu << lvl) + 1);
+			tileTlbr[3] = (uint64_t) (((.5 * overrideTlbr[3] / WebMercatorMapScale) + .5) * (1lu << lvl) + 1);
+		}
 
 		int nrows = (tileTlbr[3]-tileTlbr[1]);
 		int ncols = (tileTlbr[2]-tileTlbr[0]);
 		int totalTiles = nrows*ncols;
 		printf(" - Lvl %d:\n",lvl);
 		printf(" -        %lu %lu -> %lu %lu\n", tileTlbr[0], tileTlbr[1], tileTlbr[2], tileTlbr[3]);
-		printf(" -        %lu rows\n", nrows);
-		printf(" -        %lu cols\n", ncols);
+		printf(" -        %lu rows, %lu cols\n", nrows, ncols);
 
 		//#pragma omp parallel for schedule(static,4) num_threads(CONVERT_THREADS)
 		#pragma omp parallel for schedule(dynamic,2) num_threads(CONVERT_THREADS)
@@ -639,7 +646,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		uint64_t finalTlbr[4];
 		uint64_t nHere = outDset.determineLevelAABB(finalTlbr, lvl);
 		uint64_t nExpected = (finalTlbr[2]-finalTlbr[0]) * (finalTlbr[3]-finalTlbr[1]);
-		uint64_t nExpectedInput = (tileTlbr[2]-tileTlbr[0]) * (tileTlbr[3]-tileTlbr[1]);
+		uint64_t nExpectedInput = (1+tileTlbr[2]-tileTlbr[0]) * (1+tileTlbr[3]-tileTlbr[1]);
 		printf(" - Final Tlbr on Lvl %d:\n", lvl);
 		printf(" -        %lu %lu -> %lu %lu\n", finalTlbr[0], finalTlbr[1], finalTlbr[2], finalTlbr[3]);
 		printf(" -        %lu tiles (%lu missing interior, %lu missing from input aoi)\n", nHere, nExpected-nHere, nExpectedInput-nHere);
@@ -666,10 +673,14 @@ int main(int argc, char** argv) {
 	//return 0;
 
 	if (argc <= 3) {
-		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <format> <lvls>+\n");
+		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <format> <lvls>+ --subaoi <tlbr_wm>\n");
 		if (argc == 3) printf("\t(You must provide at least one level.)\n");
 		return 1;
 	}
+
+	// If zeros, ignored. If user enters subaoi, then only this aoi is used (not full tiff).
+	// Should be specified in WebMercator (not unit)
+	double overrideTlbr[4] = {0,0,0,0};
 
 	std::string srcTiff, outPath;
 	srcTiff = std::string(argv[1]);
@@ -686,17 +697,26 @@ int main(int argc, char** argv) {
 	else if (fmt == "terrain") outFormat = Image::Format::TERRAIN_2x8;
 	else throw std::runtime_error("unk format: " + fmt + ", must be GRAY/RGB/RGBA/TERRAIN_2x8");
 
-	try {
+	// try {
 		for (int i=4; i<argc; i++) {
 
-			lvls.push_back( std::stoi(argv[i]) );
-			if (lvls.back() < 0 or lvls.back() >= 27) {
-				printf(" - Lvls must be >0 and <28\n");
-				return 1;
+			if (strcmp(argv[i],"--subaoi") == 0) {
+				i++;
+				overrideTlbr[0] = std::stof(argv[i++]);
+				overrideTlbr[1] = std::stof(argv[i++]);
+				overrideTlbr[2] = std::stof(argv[i++]);
+				overrideTlbr[3] = std::stof(argv[i++]);
+				break;
+			} else {
+
+				lvls.push_back( std::stoi(argv[i]) );
+				if (lvls.back() < 0 or lvls.back() >= 27) {
+					printf(" - Lvls must be >0 and <28\n");
+					return 1;
+				}
 			}
 		}
-	} catch (...) { printf(" - You provided a non-integer or invalid level.\n"); return 1; }
+	// } catch (...) { printf(" - You provided a non-integer or invalid level.\n"); return 1; }
 
-
-	return test3(srcTiff, outPath, lvls, outFormat);
+	return test3(srcTiff, outPath, lvls, outFormat, overrideTlbr);
 }

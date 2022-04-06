@@ -39,6 +39,9 @@ add_library(frastVk
 	src/vk/clipmap1/clipmap1_load.cc
 
 	src/vk/tiled_renderer/tiled_renderer.cc
+
+	src/rt/rt.cc
+	src/rt/protos/rocktree.pb.cc
 )
 
 
@@ -53,6 +56,8 @@ target_link_libraries(frastVk
 	dl
 	${XCB_LIBRARIES}
 	pthread
+	stdc++fs
+	protobuf
 	)
 
 # In a simple test, this results in over a 5x compile speedup.
@@ -76,6 +81,10 @@ target_link_libraries(runGlobe frastVk)
 target_precompile_headers(runGlobe REUSE_FROM frastVk)
 
 
-add_executable(runRt src/rt/parse.cc src/rt/protos/rocktree.pb.cc)
-target_link_libraries(runRt frastVk protobuf)
+add_executable(testParseRt src/rt/parse.cc src/rt/protos/rocktree.pb.cc)
+target_link_libraries(testParseRt frastVk)
+target_precompile_headers(testParseRt REUSE_FROM frastVk)
+
+add_executable(runRt src/rt/run.cc src/rt/protos/rocktree.pb.cc)
+target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)

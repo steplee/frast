@@ -35,7 +35,9 @@ struct GlobeApp : public VkApp {
 
 		//clipmap = std::make_shared<ClipMapRenderer1>(this);
 		//clipmap->init();
-		tiledRenderer = std::make_shared<TiledRenderer>(this);
+
+		TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
+		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
 	}
 

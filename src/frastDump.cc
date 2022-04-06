@@ -121,6 +121,71 @@ int testGray() {
 }
 }
 
+int do_subaoi(DatasetWritable& dsetOut, DatasetReader& dsetIn, double tlbr[4]) {
+	if (tlbr[0] > tlbr[2]) std::swap(tlbr[0], tlbr[2]);
+	if (tlbr[1] > tlbr[3]) std::swap(tlbr[1], tlbr[3]);
+
+
+	for (int64_t lvl=24; lvl>=0; lvl--) {
+
+			if (not dsetIn.hasLevel(lvl))
+				continue;
+
+			dsetOut.sendCommand(Command{Command::BeginLvl, (int32_t)lvl});
+			dsetOut.blockUntilEmptiedQueue();
+
+			MDB_txn* r_txn;
+			if (dsetIn.beginTxn(&r_txn, true)) throw std::runtime_error("failed to begin txn");
+			// MDB_txn* w_txn;
+			// if (dsetOut.beginTxn(&w_txn)) throw std::runtime_error("failed to begin txn");
+
+			Image primaImg { dsetIn.tileSize(), dsetIn.tileSize(), dsetIn.format() };
+			primaImg.calloc();
+			EncodedImage finalEimg;
+
+
+			int tid = 0;
+
+			uint64_t lvlTlbr[4] = {
+				(uint64_t) (((.5 * tlbr[0] / WebMercatorMapScale) + .5) * (1lu << lvl)),
+				(uint64_t) (((.5 * tlbr[1] / WebMercatorMapScale) + .5) * (1lu << lvl)),
+				(uint64_t) (((.5 * tlbr[2] / WebMercatorMapScale) + .5) * (1lu << lvl) + 1),
+				(uint64_t) (((.5 * tlbr[3] / WebMercatorMapScale) + .5) * (1lu << lvl) + 1)
+			};
+			printf(" - Lvl %ld, tlbr %lu %lu %lu %lu\n", lvl, lvlTlbr[0],lvlTlbr[1],lvlTlbr[2],lvlTlbr[3]);
+
+			uint64_t lastRow = 0;
+			int n_added = 0, n_seen = 0;
+			dsetIn.iterLevel(lvl, r_txn, [&lvlTlbr, &lastRow,&dsetOut, &dsetIn, &primaImg, tid, &n_added, &n_seen](const BlockCoordinate& bc, MDB_val& val) {
+					uint64_t x = bc.x(), y = bc.y();
+					n_seen++;
+
+					// Test if tile box is inside given box
+					// if (x >= lvlTlbr[0] and x <= lvlTlbr[2] and y >= lvlTlbr[1] and y <= lvlTlbr[3]) {
+					// Do symmetric bbox intersect test.
+					if (x   <= lvlTlbr[2] and y   <= lvlTlbr[3] and
+						x+1 >= lvlTlbr[2] and y+1 >= lvlTlbr[3]) {
+						n_added++;
+						auto &wtile = dsetOut.blockingGetTileBufferForThread(tid);
+						wtile.fillWith(bc, val);
+						dsetOut.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+						// dsetOut.blockUntilEmptiedQueue();
+					}
+
+					if (lastRow != y and y % 4 == 0)
+						printf(" - row %lu, added %d / %d\n", y, n_added, n_seen);
+					lastRow = y;
+			});
+
+			// if (dsetOut.endTxn(&w_txn)) throw std::runtime_error("failed to end txn");
+			if (dsetIn.endTxn(&r_txn)) throw std::runtime_error("failed to end txn");
+	}
+
+
+
+	return 0;
+}
+
 int main(int argc, char** argv) {
 	if (argc > 1 and strcmp(argv[1],"testGray") == 0) {
 		return testGray();
@@ -145,6 +210,24 @@ int main(int argc, char** argv) {
 			std::atof(argv[6]) };
 		DatasetReader dset(std::string{argv[2]});
 		return rasterIo_it(dset, tlbr);
+	}
+
+	if (argc > 1 and strcmp(argv[1],"subaoi") == 0) {
+		if (argc != 8) {
+			printf(" - Usage:\n\t./frastDump subaoi in.ft out.ft <tlbr>\n");
+			return 1;
+		}
+
+		double tlbr[4] = {
+			std::atof(argv[4]),
+			std::atof(argv[5]),
+			std::atof(argv[6]),
+			std::atof(argv[7]) };
+		DatasetReader dsetIn(std::string{argv[2]});
+		DatabaseOptions dopts;
+		DatasetWritable dsetOut(std::string{argv[3]}, dopts);
+		dsetOut.configure(1,32);
+		return do_subaoi(dsetOut, dsetIn, tlbr);
 	}
 
 

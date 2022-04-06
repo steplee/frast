@@ -166,7 +166,7 @@ void TileDataLoader::internalLoop(
 				loadedResults.push_back(res);
 			}
 		}
-		usleep(33'000);
+		usleep(100'000);
 	}
 
 	if (color_txn) colorDset->endTxn(&color_txn);
@@ -575,9 +575,9 @@ float Tile::computeSSE(const TileUpdateContext& tuc) {
  *
  * =================================================== */
 
-TiledRenderer::TiledRenderer(BaseVkApp* app) :
+TiledRenderer::TiledRenderer(TiledRendererCfg& cfg_, BaseVkApp* app) :
 	app(app),
-	cfg(),
+	cfg(cfg_),
 	pooledTileData(cfg),
 	dataLoader(app, pooledTileData)
 {}
@@ -585,7 +585,8 @@ TiledRenderer::TiledRenderer(BaseVkApp* app) :
 void TiledRenderer::init() {
 
 	//dataLoader.init("", "");
-	dataLoader.init("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
+	// dataLoader.init("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
+	dataLoader.init(cfg.colorPath, cfg.dtedPath);
 	// dataLoader.init("/data/naip/md/md16.ft", "/data/elevation/gmted/gmted.ft");
 	// dataLoader.init("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
 
@@ -776,7 +777,7 @@ void TiledRenderer::init() {
 		MeshDescription md;
 		md.posDims = 3;
 		md.rows = cfg.vertsAlongEdge*cfg.vertsAlongEdge;
-		md.cols = 3 + 2;
+		// md.cols = 3 + 2;
 		md.haveUvs = true;
 		md.haveNormals = false;
 		md.indType = vk::IndexType::eUint8EXT;

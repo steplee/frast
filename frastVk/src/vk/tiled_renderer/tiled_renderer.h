@@ -18,11 +18,15 @@ struct TiledRendererPushConstants {
 };
 
 struct TiledRendererCfg {
+	std::string colorPath, dtedPath;
+	inline TiledRendererCfg(const std::string &colorPath,
+		const std::string &dtedPath) : colorPath(colorPath), dtedPath(dtedPath) {}
+
 	//static constexpr uint32_t maxTiles = 128;
 	static constexpr uint32_t maxTiles = 256;
 	uint32_t vertsAlongEdge = 8;
 	uint32_t tileSize = 256;
-	uint32_t channels; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
+	uint32_t channels = 3; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
 };
 
 struct SharedTileData {
@@ -130,7 +134,7 @@ struct __attribute__((packed, aligned(8))) TRPushConstants {
 */
 
 struct TiledRenderer {
-		TiledRenderer(BaseVkApp* app);
+		TiledRenderer(TiledRendererCfg& cfg, BaseVkApp* app);
 
 		void update(const RenderState& rs);
 		vk::CommandBuffer render(const RenderState& rs);

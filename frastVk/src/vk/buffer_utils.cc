@@ -117,11 +117,6 @@ void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::BufferUsageFla
 VertexInputDescription MeshDescription::getVertexDescription() {
 	VertexInputDescription description;
 
-	vk::VertexInputBindingDescription mainBinding = {};
-	mainBinding.binding = 0;
-	mainBinding.stride = cols * 4;
-	mainBinding.inputRate = vk::VertexInputRate::eVertex;
-	description.bindings.push_back(mainBinding);
 
 	// Position will be stored at Location 0
 	uint64_t offset = 0;
@@ -131,7 +126,7 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 	if (posDims != 2 and posDims != 3) throw std::runtime_error("posDims must be 2 or 3, but was " + std::to_string(posDims));
 	positionAttribute.format = posDims == 2 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
 	positionAttribute.offset = offset;
-	offset += posDims * 4;
+	offset += posDims * typeToSize(posType);
 	description.attributes.push_back(positionAttribute);
 
 
@@ -142,7 +137,7 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		uvAttribute.location = 1;
 		uvAttribute.format = vk::Format::eR32G32Sfloat;
 		uvAttribute.offset = offset;
-		offset += 2 * 4;
+		offset += 2 * typeToSize(uvType);
 		description.attributes.push_back(uvAttribute);
 	}
 
@@ -153,9 +148,17 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		normalAttribute.location = 2;
 		normalAttribute.format = vk::Format::eR32G32B32Sfloat;
 		normalAttribute.offset = offset;
-		offset += 3 * 4;
+		offset += 3 * typeToSize(normalType);
 		description.attributes.push_back(normalAttribute);
 	}
+
+	rowSize = offset;
+
+	vk::VertexInputBindingDescription mainBinding = {};
+	mainBinding.binding = 0;
+	mainBinding.stride = offset;
+	mainBinding.inputRate = vk::VertexInputRate::eVertex;
+	description.bindings.push_back(mainBinding);
 
 	return description;
 }
@@ -183,7 +186,6 @@ void ResidentMesh::fill(
 	assert(pos.size()/posDims == uvs.size()/2 or uvs.size() == 0);
 	assert(pos.size()/posDims == normals.size()/3 or normals.size() == 0);
 	rows = pos.size()/posDims;
-	cols = posDims + (uvs.size() ? 2 : 0) + (normals.size() ? 3 : 0);
 
 	freeCpu();
 	if (normals.size()) haveNormals = true;
