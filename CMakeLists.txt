@@ -47,6 +47,7 @@ find_package(pybind11 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 
 set(cxx_opts " -march=native -O3 -fopenmp -Werror=return-type ")
+#set(cxx_opts "  -O3 -fopenmp -Werror=return-type ")
 set(includes "")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")
