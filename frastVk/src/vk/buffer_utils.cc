@@ -1,6 +1,8 @@
 #include "buffer_utils.h"
 #include "app.h"
 
+#include <fmt/core.h>
+
 
 
 uint64_t scalarSizeOfFormat(const vk::Format& f) {
@@ -123,9 +125,33 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 	vk::VertexInputAttributeDescription positionAttribute = {};
 	positionAttribute.binding = 0;
 	positionAttribute.location = 0;
-	if (posDims != 2 and posDims != 3) throw std::runtime_error("posDims must be 2 or 3, but was " + std::to_string(posDims));
-	positionAttribute.format = posDims == 2 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
+	if (posDims != 4 and posDims != 2 and posDims != 3) throw std::runtime_error("posDims must be 2, 3, or 4, but was " + std::to_string(posDims));
+
+
+	if (posDims == 4) {
+		if (posType == MeshDescription::ScalarType::Float) positionAttribute.format = vk::Format::eR32G32B32A32Sfloat;
+		if (posType == MeshDescription::ScalarType::UInt8) positionAttribute.format = vk::Format::eR8G8B8A8Unorm;
+		if (posType == MeshDescription::ScalarType::UInt16) positionAttribute.format = vk::Format::eR16G16B16A16Unorm;
+		if (posType == MeshDescription::ScalarType::UInt32) positionAttribute.format = vk::Format::eR32G32B32A32Uint;
+		if (posType == MeshDescription::ScalarType::UInt8_scaled) positionAttribute.format = vk::Format::eR8G8B8A8Uscaled;
+		if (posType == MeshDescription::ScalarType::UInt16_scaled) positionAttribute.format = vk::Format::eR16G16B16A16Uscaled;
+	} else {
+		if (posType == MeshDescription::ScalarType::Float)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
+		if (posType == MeshDescription::ScalarType::UInt8)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8Unorm;
+		if (posType == MeshDescription::ScalarType::UInt16)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR16G16B16Unorm : vk::Format::eR16G16Unorm;
+		if (posType == MeshDescription::ScalarType::UInt32)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR32G32B32Uint : vk::Format::eR32G32Uint;
+
+		if (posType == MeshDescription::ScalarType::UInt8_scaled)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR8G8B8Uscaled : vk::Format::eR8G8Uscaled;
+		if (posType == MeshDescription::ScalarType::UInt16_scaled)
+			positionAttribute.format = posDims == 2 ? vk::Format::eR16G16B16Uscaled : vk::Format::eR16G16Uscaled;
+	}
 	positionAttribute.offset = offset;
+	fmt::print(" - [vertex desc] pos offset {}\n", offset);
 	offset += posDims * typeToSize(posType);
 	description.attributes.push_back(positionAttribute);
 
@@ -135,8 +161,22 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		vk::VertexInputAttributeDescription uvAttribute = {};
 		uvAttribute.binding = 0;
 		uvAttribute.location = 1;
-		uvAttribute.format = vk::Format::eR32G32Sfloat;
+
+		if (uvType == MeshDescription::ScalarType::Float)
+			uvAttribute.format = vk::Format::eR32G32Sfloat;
+		if (uvType == MeshDescription::ScalarType::UInt8)
+			uvAttribute.format = vk::Format::eR8G8Unorm;
+		if (uvType == MeshDescription::ScalarType::UInt16)
+			uvAttribute.format = vk::Format::eR16G16Unorm;
+		if (uvType == MeshDescription::ScalarType::UInt32)
+			uvAttribute.format = vk::Format::eR32G32Uint;
+		if (uvType == MeshDescription::ScalarType::UInt8_scaled)
+			uvAttribute.format = vk::Format::eR8G8Uscaled;
+		if (uvType == MeshDescription::ScalarType::UInt16_scaled)
+			uvAttribute.format = vk::Format::eR16G16Uscaled;
+
 		uvAttribute.offset = offset;
+		fmt::print(" - [vertex desc] uv offset {}\n", offset);
 		offset += 2 * typeToSize(uvType);
 		description.attributes.push_back(uvAttribute);
 	}
@@ -146,13 +186,36 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		vk::VertexInputAttributeDescription normalAttribute = {};
 		normalAttribute.binding = 0;
 		normalAttribute.location = 2;
-		normalAttribute.format = vk::Format::eR32G32B32Sfloat;
+
+		if (normalType == MeshDescription::ScalarType::Float)
+			normalAttribute.format = vk::Format::eR32G32B32Sfloat;
+		if (normalType == MeshDescription::ScalarType::UInt8)
+			normalAttribute.format = vk::Format::eR8G8B8Unorm;
+		if (normalType == MeshDescription::ScalarType::UInt16)
+			normalAttribute.format = vk::Format::eR16G16B16Unorm;
+		if (normalType == MeshDescription::ScalarType::UInt32)
+			normalAttribute.format = vk::Format::eR32G32B32Uint;
+		if (normalType == MeshDescription::ScalarType::UInt8_scaled)
+			normalAttribute.format = vk::Format::eR8G8B8Uscaled;
+		if (normalType == MeshDescription::ScalarType::UInt16_scaled)
+			normalAttribute.format = vk::Format::eR16G16B16Uscaled;
+
 		normalAttribute.offset = offset;
+		fmt::print(" - [vertex desc] normal offset {}\n", offset);
 		offset += 3 * typeToSize(normalType);
 		description.attributes.push_back(normalAttribute);
 	}
 
-	rowSize = offset;
+	// auto oldRowSize = rowSize;
+	// rowSize = offset;
+	// offset = 12;
+	// fmt::print(" - MeshDescription: row size {}/{}\n", rowSize,oldRowSize);
+	int extraPadding = 0;
+	while (offset % 4 != 0) {
+		extraPadding++;
+		offset++;
+	}
+	if (extraPadding) fmt::print(" - [MeshDescription::getVertexDescription] Warning: added {} pad bytes to align to 4.\n", extraPadding);
 
 	vk::VertexInputBindingDescription mainBinding = {};
 	mainBinding.binding = 0;
@@ -186,6 +249,8 @@ void ResidentMesh::fill(
 	assert(pos.size()/posDims == uvs.size()/2 or uvs.size() == 0);
 	assert(pos.size()/posDims == normals.size()/3 or normals.size() == 0);
 	rows = pos.size()/posDims;
+
+	rowSize = 4 * (posDims + (uvs.size()?2:0) + (uvs.size()?3:0));
 
 	freeCpu();
 	if (normals.size()) haveNormals = true;

@@ -88,14 +88,17 @@ struct Uploader {
 
 struct MeshDescription {
 	enum class ScalarType {
-		Float, Double, UInt8, UInt16, UInt32
+		Float, Double, UInt8, UInt16, UInt32,
+		UInt8_scaled, UInt16_scaled
 	};
 	static inline uint typeToSize(const ScalarType& s) {
 		switch (s) {
 			case ScalarType::Float: return 4;
 			case ScalarType::Double: return 8;
 			case ScalarType::UInt32: return 4;
+			case ScalarType::UInt8_scaled:
 			case ScalarType::UInt8: return 1;
+			case ScalarType::UInt16_scaled:
 			case ScalarType::UInt16: return 2;
 		};
 		throw std::runtime_error("unk type");
@@ -136,7 +139,7 @@ struct ResidentMesh : public MeshDescription {
 	MeshPushContants pushConstants;
 
 	inline uint64_t size() const {
-		return rows*rowSize*4;
+		return rows*rowSize;
 	}
 	inline uint64_t sizeInds() const {
 		return ninds * sizeof(IndType);

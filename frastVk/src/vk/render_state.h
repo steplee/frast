@@ -7,6 +7,8 @@ class FrameData;
 struct CameraSpec {
 	double w, h;
 	double hfov, vfov;
+	// These may be set by the camera dynamically.
+	double near=1e-7, far=2.3;
 
 	CameraSpec();
 	CameraSpec(double w, double h, double vfov);
@@ -51,10 +53,10 @@ struct Camera : public UsesIO {
 		alignas(16) double proj_[16];
 };
 
-struct MovingCamera : public Camera {
-		MovingCamera(const CameraSpec& spec);
-		MovingCamera();
-		inline virtual ~MovingCamera() {}
+struct FlatEarthMovingCamera : public Camera {
+		FlatEarthMovingCamera(const CameraSpec& spec);
+		FlatEarthMovingCamera();
+		inline virtual ~FlatEarthMovingCamera() {}
 
 	virtual void setPosition(double* t) override;
 	virtual void setRotMatrix(double* R) override;
@@ -75,9 +77,38 @@ struct MovingCamera : public Camera {
 		alignas(16) double dquat_[3] = {0};
 		bool mouseDown = false;
 		double lastX=0, lastY=0;
-
-
 };
+
+
+struct SphericalEarthMovingCamera : public Camera {
+		SphericalEarthMovingCamera(const CameraSpec& spec);
+		SphericalEarthMovingCamera();
+		inline virtual ~SphericalEarthMovingCamera() {}
+
+	virtual void setPosition(double* t) override;
+	virtual void setRotMatrix(double* R) override;
+	
+
+	virtual void step(double dt);
+	virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+	virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
+	virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+
+	protected:
+		void maybe_set_near_far();
+		void recompute_view();
+
+		double drag_ = 1.9;
+		alignas(16) double vel_[3] = {0};
+		alignas(16) double acc_[3] = {0};
+		alignas(16) double quat_[4];
+		alignas(16) double dquat_[3] = {0};
+		bool mouseDown = false;
+		double lastX=0, lastY=0;
+
+		double last_proj_r2 = 0;
+};
+
 
 struct MatrixStack {
 	static constexpr int MAX_DEPTH = 10;

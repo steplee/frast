@@ -1,50 +1,41 @@
 
 #include "vk/app.h"
 
-#include "vk/clipmap1/clipmap1.h"
-#include "vk/tiled_renderer/tiled_renderer.h"
+#include "rt/rt.h"
 
-struct GlobeApp : public VkApp {
+using namespace rt;
 
-		std::shared_ptr<ClipMapRenderer1> clipmap;
-		std::shared_ptr<TiledRenderer> tiledRenderer;
+struct RtApp : public VkApp {
+
+		std::shared_ptr<RtRenderer> rtr;
 
 	inline virtual void init() override {
 		VkApp::init();
 		//set position of camera offset by loaded mld ctr
 
 		CameraSpec spec { (float)windowWidth, (float)windowHeight, 45 * 3.141 / 180. };
-		camera = std::make_shared<FlatEarthMovingCamera>(spec);
-		//alignas(16) float pos0[] { 0, 0, .9999f };
-		//alignas(16) float pos0[] { 0, 0, (float)(2.0 * 2.38418579e-7) };
-		alignas(16) double pos0[] { 
-			(double)(-8590834.045999 / 20037508.342789248), (float)(4757669.951554 / 20037508.342789248),
-			//0,0,
-			//(double)(2.0 * 2.38418579e-7) };
-			//(double)(2.0 * 1./(1<<(18-1))) };
-			// (double)(2.0 * 1./(1<<(10-1))) };
-			(double)(2.0 * 1./(1<<(7-1))) };
+		camera = std::make_shared<SphericalEarthMovingCamera>(spec);
+		alignas(16) double pos0[] { 0,-2.0,0 };
 		alignas(16) double R0[] {
 			1,0,0,
-			0,-1,0,
-			0,0,-1 };
+			0,0,1,
+			0,-1,0 };
 		camera->setPosition(pos0);
 		camera->setRotMatrix(R0);
 		ioUsers.push_back(camera);
 		renderState.camera = camera;
 
-		//clipmap = std::make_shared<ClipMapRenderer1>(this);
-		//clipmap->init();
+		// RtCfg cfg { "/data/gearth/dc2/" };
+		RtCfg cfg { "/data/gearth/nyc/" };
 
-		TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
-		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
-		tiledRenderer->init();
+		rtr = std::make_shared<RtRenderer>(cfg, this);
+		rtr->init();
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
 
 		std::vector<vk::CommandBuffer> cmds = {
-			tiledRenderer->stepAndRender(renderState)
+			rtr->stepAndRender(renderState)
 		};
 
 		auto& fd = *rs.frameData;
@@ -59,7 +50,7 @@ struct GlobeApp : public VkApp {
 		queueGfx.submit(submitInfo, *fd.frameDoneFence);
 	}
 
-	inline ~GlobeApp() {
+	inline ~RtApp() {
 		for (auto& fd : frameDatas)
 			deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
 	}
@@ -68,14 +59,11 @@ struct GlobeApp : public VkApp {
 
 int main() {
 
-	GlobeApp app;
+	RtApp app;
 	app.windowWidth = 1000;
 	app.windowHeight = 800;
-	// app.headless = true;
 
 	app.init();
-	//ClipMapRenderer1 cm(&app);
-	//cm.init();
 
 	while (not app.isDone()) {
 		if (not app.headless)

@@ -821,7 +821,7 @@ FrameData& BaseVkApp::acquireFrame() {
 
 	if (renders > 1)
 		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
-	if (renders % 60 == 0)
+	if (renders % (60*10) == 0)
 	printf(" - acquireFrame() (sc indx %u) (frame %d) (t %f, fps %f, dt %f)\n", ii, fd.n, fd.time, fpsMeter, fd.dt);
 
 	return fd;
@@ -865,9 +865,10 @@ void VkApp::init() {
 	};
 	std::vector<uint32_t> inds = { 0, 1, 2 };
 	simpleMesh.fill(3, verts, uvs, {}, inds);
-	//simpleMesh.createAndUpload(uploader);
+	// simpleMesh.rowSize = 4*(3+2);
 	simpleMesh.createAndUpload(deviceGpu,*pdeviceGpu,queueFamilyGfxIdxs);
 	createTexturedPipeline(texturedPipelineStuff, simpleMesh, *simpleRenderPass.pass);
+
 
 }
 
