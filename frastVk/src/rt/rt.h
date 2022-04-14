@@ -49,12 +49,15 @@ constexpr static uint32_t NO_INDEX = 999999;
 struct RtCfg {
 	std::string rootDir;
 
-	static constexpr uint32_t maxTiles = 128;
+	static constexpr uint32_t maxTiles = 512;
+	// Don't allow opening upto 8 children if we are close to hitting max tiles.
+	// Helps to prevent situation where we are deadlocked, not being to make any changes to tree.
+	static constexpr uint32_t tilesDedicatedToClosing = 12;
 	// static constexpr uint32_t maxVerts = 2048;
-	static constexpr uint32_t maxVerts = (1<<15);
+	static constexpr uint32_t maxVerts = (1<<13);
 	// static constexpr uint32_t maxInds = 8192;
-	static constexpr uint32_t maxInds = 8192 * 8;
-	static constexpr uint32_t maxTextureEdge = 512;
+	static constexpr uint32_t maxInds = 8192 * 2;
+	static constexpr uint32_t maxTextureEdge = 256;
 	static constexpr uint32_t vertBufferSize() { return maxVerts * 3; }
 	// static constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Unorm;
 	static constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Unorm;
@@ -69,6 +72,8 @@ struct __attribute__((packed)) RtGlobalData {
 
 struct RtPushConstants {
 	uint32_t index;
+	uint32_t octantMask;
+	uint32_t level;
 };
 
 struct RtDataLoader;
@@ -101,9 +106,16 @@ struct NodeCoordinate {
 	inline NodeCoordinate() { memset(key, 0, MAX_LEN); }
 	inline NodeCoordinate(const NodeCoordinate& nc) {
 		memcpy(key,nc.key, MAX_LEN);
+		len = nc.len;
+	}
+	inline NodeCoordinate(const NodeCoordinate& nc, char next) {
+		memcpy(key,nc.key, MAX_LEN);
+		len = nc.len + 1;
+		key[nc.len] = next;
 	}
 	inline NodeCoordinate(const std::string& s) {
 		for (int i=0; i<MAX_LEN; i++) key[i] = i < s.length() ? s[i] : 0;
+		len = s.length();
 	}
 	inline NodeCoordinate(const char* s) {
 		int i = 0;
@@ -115,22 +127,28 @@ struct NodeCoordinate {
 	}
 
 	char key[MAX_LEN];
+	uint8_t len=0;
 
 	bool operator==(const NodeCoordinate& b) const {
-		for (int i=0; i<MAX_LEN; i++) if (key[i] != b.key[i]) return false;
+		if (b.len != len) return false;
+		for (int i=0; i<len; i++) if (key[i] != b.key[i]) return false;
 		return true;
 	}
 	inline int level() const {
-		for (int i=0; i<MAX_LEN; i++) if (key[i] == 0) return i;
-		return MAX_LEN;
+		return len;
 	}
 	struct Hash {
 		inline uint64_t operator()(const NodeCoordinate& nc) const {
 			uint64_t acc = 0;
-			for (int i=0; i<MAX_LEN and nc.key[i] != 0; i++) acc = acc ^ (nc.key[i] * 777lu) + (acc << 3);
+			for (int i=0; i<nc.len and nc.key[i] != 0; i++) acc = acc ^ (nc.key[i] * 777lu) + (acc << 3);
 			return acc;
 		}
 	};
+};
+
+struct RtMesh {
+	uint32_t idx = NO_INDEX;
+	std::vector<float> uvScaleAndOffset;
 };
 
 struct PooledTileData;
@@ -139,23 +157,17 @@ class RtTile {
 
 	public:
 		RtTile();
-		uint32_t resId;
-		uint32_t oid;
 
 	public:
 
 	
-	inline RtTile(NodeCoordinate& c) : idx(NO_INDEX), nc(c) {
+	inline RtTile(NodeCoordinate& c) : nc(c) {
 		reset(nc);
 	}
 	~RtTile();
 
 	NodeCoordinate nc;
-	uint32_t idx;
-	//ResidentImage* img = nullptr;
-	//ResidentBuffer* altBuf = nullptr;
 	
-	// Either all exist, or all are null
 	std::vector<RtTile*> children;
 
 	// The altitude is filled in by sampling the parents'.
@@ -166,15 +178,16 @@ class RtTile {
 
 	// Needn't be resident after loading the uniform buffer.
 	std::vector<float> modelMatf;
-	std::vector<float> uvScaleAndOffset;
-	
 
 	bool loaded = false;
+	std::vector<RtMesh> meshes;
+
 	enum class MissingStatus {
 		UNKNOWN, NOT_MISSING, MISSING
 	} childrenMissing = MissingStatus::UNKNOWN;
 	bool noData = false;
 	bool want_to_close = false;
+	uint8_t mask = 0;
 
 	// Set bc, initialize corners
 	void reset(const NodeCoordinate& nc);
@@ -186,8 +199,8 @@ class RtTile {
 	void render(RtRenderContext& trc);
 
 	// Unload the tile if loaded, then return to pool.
-	bool unload(PooledTileData& ptd);
-	bool unloadChildren(PooledTileData& ptd);
+	bool unload(PooledTileData& ptd, BaseVkApp* app);
+	bool unloadChildren(PooledTileData& ptd, BaseVkApp* app);
 
 	enum class State {
 		NONE,
@@ -209,46 +222,52 @@ struct __attribute__((packed)) PackedVertex {
 static_assert(sizeof(PackedVertex) == 12);
 // struct __attribute__((packed)) RtNodeData {
 	// float modelMatrix[16];
-// };
 struct TileData {
 	ResidentImage tex;
+	ResidentImage texOld;
 	ResidentBuffer verts;
 	ResidentBuffer inds;
 	// Actually: limited amount of ubs in one DescSet, so have just one global UBO and index into it.
 	// ResidentBuffer ubo; // Holds RtNodeData
 	uint32_t residentVerts, residentInds;
+	bool mustWriteImageDesc = false;
 };
+// };
 // A temporary data type, written to by rt_decode.hpp : todo optimize
 struct DecodedTileData {
 	alignas(16) double modelMat[16];
 	// std::vector<uint8_t> vert_buffer_cpu;
-	std::vector<PackedVertex> vert_buffer_cpu;
-	std::vector<uint16_t> ind_buffer_cpu;
-	std::vector<uint8_t> img_buffer_cpu;
-	std::vector<uint8_t> tmp_buffer;
-	uint32_t texSize[3];
-	float uvOffset[2];
-	float uvScale[2];
+	struct MeshData {
+		std::vector<PackedVertex> vert_buffer_cpu;
+		std::vector<uint16_t> ind_buffer_cpu;
+		std::vector<uint8_t> img_buffer_cpu;
+		std::vector<uint8_t> tmp_buffer;
+		uint32_t texSize[3];
+		float uvOffset[2];
+		float uvScale[2];
+		int layerBounds[10];
+	};
+	std::vector<MeshData> meshes;
 	float metersPerTexel;
 };
 struct PooledTileData {
 	RtGlobalData rtgd;
 	ResidentBuffer globalBuffer;
-
 	std::vector<TileData> datas;
+	// std::vector<TileData> datas;
 	vk::raii::DescriptorSetLayout descSetLayout = {nullptr};
 	vk::raii::DescriptorSet descSet = {nullptr};
 
 	PooledTileData (RtCfg& cfg);
 
 	RtCfg& cfg;
-
 	std::vector<uint32_t> available;
+	int n_available = RtCfg::maxTiles;
 
-	private:
 	public:
-		bool withdraw(std::vector<uint32_t>& ids);
+		bool withdraw(std::vector<uint32_t>& ids, bool isClose);
 		bool deposit(std::vector<uint32_t>& ids);
+	public:
 };
 
 struct RtDataLoader {
@@ -262,6 +281,11 @@ struct RtDataLoader {
 			bool isClose = false;
 			std::vector<RtTile*> tiles;
 			RtTile* parent;
+		};
+		enum class LoadStatus {
+			eSuccess,
+			eTryAgain,
+			eFailed
 		};
 
 		~RtDataLoader();
@@ -289,7 +313,7 @@ struct RtDataLoader {
 		Uploader myUploader;
 
 	private:
-		bool loadTile(RtTile* tile);
+		LoadStatus loadTile(RtTile* tile, bool isClose);
 
 		bool populated;
 		bool populateFromFiles();

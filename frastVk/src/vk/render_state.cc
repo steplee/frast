@@ -252,8 +252,8 @@ void SphericalEarthMovingCamera::maybe_set_near_far() {
 	if (std::abs(last_proj_r2 - r2) > std::abs(last_proj_r2 - 1) / 10.) {
 		last_proj_r2 = r2;
 		double d = std::sqrt(r2) - 1; // Don't use .9966 here: we'd rather overestimate the distance!
-		spec_.near = std::max(1e-7, d / 10);
-		spec_.far = std::max(2.0, d * 5);
+		spec_.near = std::max(3e-6, d / 10);
+		spec_.far = std::max(.1, (d+1e-2) * 5);
 		compute_projection();
 		// fmt::print(" - [SECam] set near far to {} {}\n", spec_.near, spec_.far);
 	} else {
@@ -334,7 +334,8 @@ void SphericalEarthMovingCamera::step(double dt) {
 
 	//constexpr float SPEED = 5.f;
 	// double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
-	double SPEED = .0000000001 + 5.f * std::max(d, 1e-3);
+	drag_ = 15.;
+	double SPEED = .0000000001 + 25.f * std::max(d, 3e-4);
 
 	viewInv.topRightCorner<3,1>() += vel * dt + acc * dt * dt * .5 * SPEED;
 

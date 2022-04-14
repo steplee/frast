@@ -98,7 +98,7 @@ struct SphericalEarthMovingCamera : public Camera {
 		void maybe_set_near_far();
 		void recompute_view();
 
-		double drag_ = 1.9;
+		double drag_ = 2.9;
 		alignas(16) double vel_[3] = {0};
 		alignas(16) double acc_[3] = {0};
 		alignas(16) double quat_[4];

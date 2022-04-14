@@ -26,7 +26,9 @@ struct RtApp : public VkApp {
 		renderState.camera = camera;
 
 		// RtCfg cfg { "/data/gearth/dc2/" };
-		RtCfg cfg { "/data/gearth/nyc/" };
+		// RtCfg cfg { "/data/gearth/dc3/" };
+		// RtCfg cfg { "/data/gearth/nyc/" };
+		RtCfg cfg { "/data/gearth/tampa/" };
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();
@@ -48,6 +50,9 @@ struct RtApp : public VkApp {
 			1, &*fd.renderCompleteSema // signal sema
 		};
 		queueGfx.submit(submitInfo, *fd.frameDoneFence);
+
+		// TODO dsiable
+		deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
 	}
 
 	inline ~RtApp() {

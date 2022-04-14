@@ -11,13 +11,15 @@ layout (location=2) flat out uint v_tileIdx;
 
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
-	mat4 modelMats[256];
-	vec4 uvScaleAndOff[256];
+	mat4 modelMats[512];
+	vec4 uvScaleAndOff[512];
 } cameraData;
 
 layout(push_constant) uniform constants {
 	/* mat4 modelMat; */
 	uint tileIndex;
+	uint octantMask;
+	uint lvl;
 } pushConstants;
 
 void main()
@@ -32,7 +34,10 @@ void main()
 	vec3 pos = positions[gl_VertexIndex%3];
 	*/
 	vec3 pos = aPosition.xyz;
-	/* vec3 pos = vec3(0.); */
+
+	int octant = int(aPosition.w);
+	float mask = ((pushConstants.octantMask & (1<<octant)) != 0) ? 0. : 1.;
+	/* mask = 1.0; */
 
 
 	uint tileIndex = pushConstants.tileIndex;
@@ -45,12 +50,12 @@ void main()
 	/* modelMat[3][3] = 1.; */
 
 	/* mat4 modelMat = transpose(cameraData.modelMats[tileIndex]); */
-	gl_Position = transpose(cameraData.viewProj) * modelMat * vec4(pos, 1.0f);
+	gl_Position = transpose(cameraData.viewProj) * modelMat * vec4(pos, 1.0f) * mask;
 	/* gl_Position = transpose(cameraData.viewProj) *  vec4(pos, 1.0f); */
 
 	vec2 uv_scale = cameraData.uvScaleAndOff[tileIndex].xy;
 	vec2 uv_off = cameraData.uvScaleAndOff[tileIndex].zw;
-	v_uv = (aUv + uv_off) * uv_scale;
+	v_uv = (aUv + uv_off) * uv_scale * mask;
 
 	/*
 	//const array of positions for the triangle
@@ -66,7 +71,25 @@ void main()
 
 	/* vec4 c = vec4(aUv.xxy, 1.0f); */
 	vec4 c = vec4(1.0f);
+
+	float flvl = float(pushConstants.lvl);
+	flvl += pos.x / 255.0;
+	/* c.r = abs(sin(flvl*.7)); */
+	/* c.g = abs(sin((flvl+2.6)*1.2)); */
+	/* c.b = abs(sin((flvl+9.8)*.51)); */
+	vec3 axis = normalize(vec3(sin(flvl*6.5), sin(3.0+flvl*9.2), sin(19.3+flvl*3.3)));
+	float angle = sin(flvl*.97) * .7;
+	// We can't do rotation here, we must sample texture first!
+	// so store axis and angle in vec4 v_color
+	/* c.rgb += sin(angle) * cross(axis,c.rgb) + (1-cos(angle))*cross(axis,cross(axis,c.rgb)); */
+	c = vec4(axis,angle);
+
+	/* float foct = float(aPosition.w); */
+	/* c.r *= abs(sin(foct*7.7)); */
+	/* c.b *= abs(sin(2.66+foct*3.7)); */
+
 	v_color = c;
+
 	v_tileIdx = tileIndex;
 }
 

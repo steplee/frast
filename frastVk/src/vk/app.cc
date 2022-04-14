@@ -188,6 +188,10 @@ bool BaseVkApp::make_gpu_device() {
 	};
 	extraFeatures5.pNext = &extraFeatures6;
 
+	vk::PhysicalDeviceRobustness2FeaturesEXT extraFeatures7;
+    extraFeatures7.nullDescriptor = true;
+	extraFeatures6.pNext = &extraFeatures7;
+
 	/*
 	if (require_16bit_shader_types) {
 		createInfoNext = &extraFeatures3;

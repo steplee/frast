@@ -55,9 +55,11 @@ PooledTileData::PooledTileData(RtCfg &cfg) : cfg(cfg) {
 }
 
 
-bool PooledTileData::withdraw(std::vector<uint32_t>& ids) {
+bool PooledTileData::withdraw(std::vector<uint32_t>& ids, bool isClose) {
 	for (int i=0; i<ids.size(); i++) {
-		if (available.size() == 0) return true;
+		if (
+				(isClose and available.size() == 0)
+				or (!isClose and available.size() < RtCfg::tilesDedicatedToClosing)) return true;
 		ids[i] = available.back();
 		available.pop_back();
 	}
@@ -123,6 +125,8 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 }
 
 void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
+	this->mask = 0;
+	if (parent) parent->mask |= 1 << (nc.key[nc.level()-1] - '0');
 
 	if (state == State::LOADING
 		or state == State::LOADING_INNER
@@ -130,9 +134,12 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 		or state == State::CLOSING
 		or state == State::NONE) {
 		// If in transitory state, do nothing
+
 	} else if (state == State::INNER) {
-		// If all children okay to close, queue load self and goto CLOSING
+
 		for (auto c : children) c->update(rtuc, this);
+
+		// If all children okay to close, queue load self and goto CLOSING
 		// If parent is nullptr, this node is the virtual root. So never close it.
 		if (children.size() > 0 and parent) {
 			bool okay_to_close = true;
@@ -164,8 +171,7 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 			state = State::OPENING;
 			RtDataLoader::Ask ask;
 			for (int8_t i=0; i<8; i++) {
-				NodeCoordinate nnc(nc); // TODO Make this much more efficient. Store in each tile up-to 8 iterators pointing to node coordinate hash-set/tree.
-				nnc.key[nnc.level()] = '0' + i;
+				NodeCoordinate nnc(nc, '0'+i); // TODO Make this much more efficient. Store in each tile up-to 8 iterators pointing to node coordinate hash-set/tree.
 				if (rtuc.dataLoader.tileExists(nnc)) {
 					ask.tiles.push_back(new RtTile());
 					ask.tiles.back()->nc = nnc;
@@ -178,46 +184,64 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 		} else if (lastSSE >= rtuc.sseThresholdOpen) {
 			// fmt::print(" - [#update] leaf tile {}/{} sse {}, not opening zero children\n", nc.key, nc.level(), lastSSE);
 		}
-
 	}
+
 
 }
 void RtTile::render(RtRenderContext& rtc) {
 	// TODO
 
-	if ((state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
-		assert(idx != NO_INDEX);
-		auto &cmd = rtc.cmd;
-		auto &td = rtc.pooledTileData.datas[idx];
-		cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*td.verts.buffer}, {0u});
-		cmd.bindIndexBuffer(*td.inds.buffer, {0u}, vk::IndexType::eUint16);
-		// fmt::print(" - [#RtTile::render] tile {}/{} idx {} with {} inds.\n", nc.key, nc.level(), idx, td.residentInds);
+	// if ((state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
+	if ((state == State::INNER or state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
 
-		RtPushConstants pushc;
-		pushc.index = idx;
-		cmd.pushConstants(*rtc.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const RtPushConstants>{1, &pushc});
+		if (state == State::INNER) for (auto c : children) c->render(rtc);
 
-		cmd.drawIndexed(td.residentInds, 1, 0,0,0);
+		if (loaded) {
+			auto &cmd = rtc.cmd;
+			int mi = 0;
+			for (auto& mesh : meshes) {
+				assert(mesh.idx != NO_INDEX);
+				auto &td = rtc.pooledTileData.datas[mesh.idx];
+				cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*td.verts.buffer}, {0u});
+				cmd.bindIndexBuffer(*td.inds.buffer, 0u, vk::IndexType::eUint16);
+				// if (meshes.size() > 1) fmt::print(" - [#RtTile::render] tile {}/{} mesh {} idx {} with {} inds.\n", nc.key, nc.level(), mi, mesh.idx, td.residentInds);
+
+				RtPushConstants pushc;
+				pushc.index = mesh.idx;
+				pushc.octantMask = mask;
+				pushc.level = nc.level();
+				cmd.pushConstants(*rtc.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const RtPushConstants>{1, &pushc});
+
+				cmd.drawIndexed(td.residentInds, 1, 0,0,0);
+				mi++;
+			}
+		}
 	} else if (children.size() != 0) {
 		// fmt::print(" - node {} calling render on {} children\n", nc.key, children.size());
 		for (auto c : children) c->render(rtc);
 	}
 }
 
-bool RtTile::unload(PooledTileData& ptd) {
-	assert(idx != NO_INDEX);
+bool RtTile::unload(PooledTileData& ptd, BaseVkApp* app) {
 	std::vector<uint32_t> ids;
-	ids.push_back(idx);
-	idx = NO_INDEX;
+	for (auto& mesh : meshes) {
+		assert(mesh.idx != NO_INDEX);
+
+		ids.push_back(mesh.idx);
+		mesh.idx = NO_INDEX;
+	}
 	return ptd.deposit(ids);
 }
-bool RtTile::unloadChildren(PooledTileData& ptd) {
+bool RtTile::unloadChildren(PooledTileData& ptd, BaseVkApp* app) {
 	std::vector<uint32_t> ids;
 	for (auto c : children) {
 		assert(c);
-		assert(c->idx != NO_INDEX);
-		ids.push_back(c->idx);
-		c->idx = NO_INDEX;
+		for (auto& mesh : c->meshes) {
+			assert(mesh.idx != NO_INDEX);
+			ids.push_back(mesh.idx);
+			mesh.idx = NO_INDEX;
+		}
+		c->loaded = false;
 	}
 	return ptd.deposit(ids);
 }
@@ -294,19 +318,28 @@ bool RtDataLoader::loadRootTile(RtTile* rt_tile) {
 	return false;
 }
 bool RtDataLoader::pushAsk(const Ask& ask) {
-	std::vector<uint32_t> ids(ask.tiles.size(), NO_INDEX);
+	// Can't do here: we don't have n_meshes yet.
+	/*
+	int n = 0;
+	for (auto tile : ask.tiles) n += tile->meshes.size();
+	std::vector<uint32_t> ids(n, NO_INDEX);
+
 	while (true) {
-		//std::lock_guard<std::mutex> lck(mtx);
 		if (pooledTileData.withdraw(ids)) {
 			fmt::print(" - [#pushTile()] failed to withdraw {} (stack empty?)\n", ids.size());
 		}
+			fmt::print(" - [#pushTile()] failed to pushAsk with {} new (stack empty?)\n", ask.tiles.size());
 		else break;
 		usleep(20'000);
 	}
-
 	for (int i=0; i<ask.tiles.size(); i++) ask.tiles[i]->idx = ids[i];
+	int i = 0;
+	for (auto tile : ask.tiles)
+		for (auto& mesh : tile->meshse) mesh.idx = ids[i++];
 	// for (int i=0; i<ask.tiles.size(); i++) fmt::print( " - ask {} : {}\n", ask.tiles[i]->nc.key, ask.tiles[i]->idx);
 	// fmt::print(" - withdrew {} {} {} {}\n",ids[0],ids[1],ids[2],ids[3]);
+	*/
+
 	asks.push_back(ask);
 
 	return false;
@@ -314,11 +347,10 @@ bool RtDataLoader::pushAsk(const Ask& ask) {
 
 // Check if all child are not available. Return true if and only if all are not. Can be used from any thread.
 bool RtDataLoader::childrenAreMissing(const NodeCoordinate& nc) {
-	NodeCoordinate nnc { nc };
 	int level = nc.level();
 	bool have_any = false;
 	for (int8_t i=0; i<8; i++) {
-		nnc.key[level] = i + '0';
+		NodeCoordinate nnc { nc, (char)(i+'0') };
 		if (existingNodes.find(nnc) != existingNodes.end()) have_any = true;
 	}
 	return not have_any;
@@ -335,34 +367,96 @@ void RtDataLoader::init() {
  * The 'global' camera uniform buffer is not updated with the model matrix yet, though.
  * That is done in the render thread when the tile is swapped in.
  */
-bool RtDataLoader::loadTile(RtTile* tile) {
+RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 	assert(existingNodes.find(tile->nc) != existingNodes.end());
-	assert(tile->idx != NO_INDEX);
+
+
 
 	std::ifstream ifs(cfg.rootDir + "/node/" + std::string(tile->nc.key));
 	DecodedTileData dtd;
-	if (decode_node_to_tile(ifs, dtd))
-		throw std::runtime_error("Failed to load tile " + std::string(tile->nc.key));
-
-	auto& td = pooledTileData.datas[tile->idx];
-	if (dtd.texSize[0] > 0) {
-		if(0) printf(" - upload to idx %u, tex size %u %u %u resident tex size %u %u %u\n",
-				tile->idx,
-				dtd.texSize[0],
-				dtd.texSize[1],
-				dtd.texSize[2],
-				td.tex.extent.height,
-				td.tex.extent.width,
-				td.tex.extent.depth
-				);
-		myUploader.uploadSync(td.tex, dtd.img_buffer_cpu.data(), dtd.texSize[0]*dtd.texSize[1]*dtd.texSize[2], 0);
-		td.tex.extent = vk::Extent3D{dtd.texSize[0],dtd.texSize[1],1};
+	if (decode_node_to_tile(ifs, dtd)) {
+		// throw std::runtime_error("Failed to load tile " + std::string(tile->nc.key));
+		fmt::print(fmt::fg(fmt::color::orange), " - [#loadTile] decode failed, skipping tile.\n");
+		tile->loaded = true;
+		return LoadStatus::eFailed;
 	}
-	myUploader.uploadSync(td.verts, dtd.vert_buffer_cpu.data(), sizeof(PackedVertex)*dtd.vert_buffer_cpu.size(), 0);
-	myUploader.uploadSync(td.inds, dtd.ind_buffer_cpu.data(), sizeof(uint16_t)*dtd.ind_buffer_cpu.size(), 0);
-	td.residentInds = dtd.ind_buffer_cpu.size();
 
-	tile->modelMatf.resize(16);
+
+	Eigen::Matrix<uint8_t,3,1> min = {255,255,255};
+	Eigen::Matrix<uint8_t,3,1> max = {0,0,0};
+
+
+	tile->meshes.resize(dtd.meshes.size());
+	for (int i=0; i<dtd.meshes.size(); i++) {
+
+		auto& mesh = tile->meshes[i];
+		std::vector<uint32_t> idxs(1,NO_INDEX);
+		if (pooledTileData.withdraw(idxs, isClose)) {
+			fmt::print(" - [loatTile] Failed to withdraw an idx, skipping...\n");
+			tile->meshes.clear();
+			return LoadStatus::eTryAgain;
+		}
+		mesh.idx = idxs[0];
+		// assert(mesh.idx != NO_INDEX);
+
+		auto& td = pooledTileData.datas[mesh.idx];
+		auto& md = dtd.meshes[i];
+
+		if (md.texSize[0] > 0) {
+			if(0) printf(" - upload to idx %u, tex size %u %u %u resident tex size %u %u %u\n",
+					mesh.idx,
+					md.texSize[0],
+					md.texSize[1],
+					md.texSize[2],
+					td.tex.extent.height,
+					td.tex.extent.width,
+					td.tex.extent.depth
+					);
+			// md.texSize[0] = 256;
+			// md.texSize[1] = 256;
+
+			if (md.texSize[0] == td.tex.extent.height and md.texSize[1] == td.tex.extent.width) {
+				myUploader.uploadSync(td.tex, md.img_buffer_cpu.data(), md.texSize[0]*md.texSize[1]*md.texSize[2], 0);
+			} else {
+				td.texOld = std::move(td.tex);
+				td.tex = ResidentImage{};
+				// td.tex.createAsTexture(myUploader, md.texSize[0], md.texSize[1], cfg.textureFormat, md.img_buffer_cpu.data());
+				td.tex.createAsTexture(myUploader, md.texSize[0], md.texSize[1], cfg.textureFormat, nullptr);
+				myUploader.uploadSync(td.tex, md.img_buffer_cpu.data(), md.texSize[0]*md.texSize[1]*md.texSize[2], 0);
+				td.mustWriteImageDesc = true;
+			}
+		}
+
+		auto v_size = sizeof(PackedVertex)*md.vert_buffer_cpu.size();
+		auto i_size = sizeof(uint16_t)*md.ind_buffer_cpu.size();
+		if (v_size > td.verts.residentSize) {
+			td.verts.setAsVertexBuffer(v_size, false);
+			td.verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+		}
+		if (i_size > td.inds.residentSize) {
+			td.inds.setAsIndexBuffer(i_size, false);
+			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+		}
+		myUploader.uploadSync(td.verts, md.vert_buffer_cpu.data(), v_size, 0);
+		myUploader.uploadSync(td.inds, md.ind_buffer_cpu.data(), i_size, 0);
+		td.residentInds = md.ind_buffer_cpu.size();
+
+		tile->modelMatf.resize(16);
+
+
+		// tile->uvScaleAndOffset = {md.uvScale[0], md.uvScale[1], md.uvOffset[0], md.uvOffset[1]};
+		mesh.uvScaleAndOffset.resize(4);
+		mesh.uvScaleAndOffset[0] = md.uvScale[0];
+		mesh.uvScaleAndOffset[1] = md.uvScale[1];
+		mesh.uvScaleAndOffset[2] = md.uvOffset[0];
+		mesh.uvScaleAndOffset[3] = md.uvOffset[1];
+
+		Eigen::Map<Eigen::Matrix<uint8_t,-1,sizeof(PackedVertex),Eigen::RowMajor>> verts { (uint8_t*) md.vert_buffer_cpu.data() , (long)md.vert_buffer_cpu.size() , sizeof(PackedVertex)};
+		Eigen::Matrix<uint8_t,3,1> min_ = verts.leftCols(3).colwise().minCoeff().transpose();
+		Eigen::Matrix<uint8_t,3,1> max_ = verts.leftCols(3).colwise().maxCoeff().transpose();
+		for (int i=0; i<3; i++) min(i) = std::min(min_(i), min(i));
+		for (int i=0; i<3; i++) max(i) = std::max(max_(i), max(i));
+	}
 
 	Eigen::Map<Eigen::Matrix4d> mm(dtd.modelMat);
 	constexpr double R1         = (6378137.0);
@@ -384,17 +478,12 @@ bool RtDataLoader::loadTile(RtTile* tile) {
 
 	for (int i=0; i<16; i++) tile->modelMatf[i] = (float) dtd.modelMat[i];
 
-	// tile->uvScaleAndOffset = {dtd.uvScale[0], dtd.uvScale[1], dtd.uvOffset[0], dtd.uvOffset[1]};
-	tile->uvScaleAndOffset.resize(4);
-	tile->uvScaleAndOffset[0] = dtd.uvScale[0];
-	tile->uvScaleAndOffset[1] = dtd.uvScale[1];
-	tile->uvScaleAndOffset[2] = dtd.uvOffset[0];
-	tile->uvScaleAndOffset[3] = dtd.uvOffset[1];
-
-	if (dtd.metersPerTexel < 0) {
+	if (dtd.metersPerTexel <= 0) {
 		// TODO: Is this a good approx?
 		// dtd.metersPerTexel = 2 * R1 / (1 << tile->nc.level());
-		tile->geoError = 4.0 * (1/255.) / (1 << tile->nc.level());
+		// tile->geoError = 4.0 * (1/255.) / (1 << tile->nc.level());
+		tile->geoError = 8.0 * (1/255.) / (1 << tile->nc.level());
+		// tile->geoError = 16.0 * (1/255.) / (1 << tile->nc.level());
 	} else {
 		// tile->geoError = dtd.metersPerTexel / (255. * R1);
 		tile->geoError = dtd.metersPerTexel / (R1);
@@ -402,9 +491,6 @@ bool RtDataLoader::loadTile(RtTile* tile) {
 
 	// Compute corners
 	// Would be better to get the OBB from the bulk metadata, but this should suffice.
-	Eigen::Map<Eigen::Matrix<uint8_t,-1,12,Eigen::RowMajor>> verts { (uint8_t*) dtd.vert_buffer_cpu.data() , (long)dtd.vert_buffer_cpu.size() , 12};
-	Eigen::Matrix<uint8_t,3,1> min = verts.leftCols(3).colwise().minCoeff().transpose();
-	Eigen::Matrix<uint8_t,3,1> max = verts.leftCols(3).colwise().maxCoeff().transpose();
 	Eigen::Matrix<float,2,3> corners_;
 	corners_.row(0) = (mm.topLeftCorner<3,3>() * min.cast<double>() + mm.topRightCorner<3,1>()).cast<float>();
 	corners_.row(1) = (mm.topLeftCorner<3,3>() * max.cast<double>() + mm.topRightCorner<3,1>()).cast<float>();
@@ -414,19 +500,19 @@ bool RtDataLoader::loadTile(RtTile* tile) {
 	if (tile->childrenMissing == RtTile::MissingStatus::UNKNOWN) {
 		bool have_any_children = false;
 		for (int8_t i=0; i<8; i++) {
-			NodeCoordinate nnc(tile->nc);
-			nnc.key[nnc.level()] = '0' + i;
+			NodeCoordinate nnc(tile->nc, '0'+i);
 			have_any_children |= tileExists(nnc);
 		}
 		tile->childrenMissing = have_any_children ? RtTile::MissingStatus::NOT_MISSING : RtTile::MissingStatus::MISSING;
 	}
 
-	fmt::print(" - [#RtDataLoader::loadTile] successfully loaded {}, lvl {}, geoError {}\n", tile->nc.key, tile->nc.level(), tile->geoError);
+
+	// fmt::print(" - [#RtDataLoader::loadTile] successfully loaded {}, lvl {}, geoError {}\n", tile->nc.key, tile->nc.level(), tile->geoError);
 	// fmt::print(" -                          tl {}, r {}\n", tile->corners.row(0), tile->corners.norm());
 	// fmt::print(" -                          br {}, r {}\n", tile->corners.row(1), tile->corners.norm());
 	tile->loaded = true;
 
-	return false;
+	return LoadStatus::eSuccess;
 }
 
 bool RtDataLoader::populateFromFiles() {
@@ -466,6 +552,7 @@ void RtDataLoader::internalLoop() {
 
 	while (not shouldStop) {
 		std::vector<Ask> curAsks;
+		std::vector<Ask> nxtAsks;
 		{
 			std::lock_guard<std::mutex> lck(mtx);
 			//std::swap(curAsks, this->asks);
@@ -484,10 +571,14 @@ void RtDataLoader::internalLoop() {
 				const NodeCoordinate &nc = ask.tiles[0]->nc;
 				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading one ({})\n", nc.key);
 
-				if (loadTile(ask.tiles[0])) {
-					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] FAILED loading one ({})\n", nc.key);
+				auto stat = loadTile(ask.tiles[0], true);
+				if (stat == LoadStatus::eFailed) {
+					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] not allowed to faile loading parent (should be impossible) ({})\n", nc.key);
 					continue;
-				} else {
+				} else if (stat == LoadStatus::eTryAgain) {
+					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] not allowed to fail loading parent with eTryAgain (tree is dead-locked) ({})\n", nc.key);
+					continue;
+				} else if (stat == LoadStatus::eSuccess) {
 					res.isClose = true;
 					// res.tiles = std::move(ask.tiles);
 					res.tiles = (ask.tiles);
@@ -500,13 +591,20 @@ void RtDataLoader::internalLoop() {
 				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading {} children (parent {})\n", ask.tiles.size(), parent_nc.key);
 				bool failed = false;
 				for (int i=0; i<ask.tiles.size(); i++) {
-					if (loadTile(ask.tiles[i])) {
+
+					// TODO: Withdraw idx's up front, that we we avoid loading some and immediately throwing them away!!!
+					auto stat = loadTile(ask.tiles[i], false);
+					if (stat == LoadStatus::eFailed) {
 						const NodeCoordinate nc = ask.tiles[i]->nc;
 						fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] FAILED loading quad (ci {}/{}) ({})\n", i,8, nc.key);
+						// failed = true;
+					} else if (stat == LoadStatus::eTryAgain) {
+						const NodeCoordinate nc = ask.tiles[i]->nc;
+						fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] failed open with eTryAgain, will try later ({})\n", nc.key);
+						nxtAsks.push_back(std::move(ask));
 						failed = true;
-						break;
-					} else
-						{}
+					} else if (stat == LoadStatus::eSuccess) {
+					}
 				}
 
 				if (not failed) {
@@ -517,13 +615,19 @@ void RtDataLoader::internalLoop() {
 				} else continue;
 			}
 
-
 			// Lock; push
 			{
 				std::lock_guard<std::mutex> lck(mtx);
 				loadedResults.push_back(res);
 			}
 		}
+
+		// Copy eTryAgain asks to next period
+		{
+			std::lock_guard<std::mutex> lck(mtx);
+			for (auto& ask : nxtAsks) asks.push_back(std::move(ask));
+		}
+
 		usleep(63'000);
 	}
 }
@@ -568,6 +672,31 @@ void RtRenderer::update(RenderState& rs) {
 		root->update(rtuc, nullptr);
 	}
 
+	auto writeImgDesc = [&](TileData& td, uint32_t idx) {
+		std::vector<vk::DescriptorImageInfo> i_infos;
+		i_infos.push_back(vk::DescriptorImageInfo{
+				*td.tex.sampler,
+				*td.tex.view,
+				vk::ImageLayout::eShaderReadOnlyOptimal
+				});
+		std::vector<vk::WriteDescriptorSet> writeDesc = { {
+			*pooledTileData.descSet,
+				0, idx, (uint32_t)i_infos.size(),
+				vk::DescriptorType::eCombinedImageSampler,
+				i_infos.data(), nullptr, nullptr
+		} };
+		app->deviceGpu.updateDescriptorSets({(uint32_t)writeDesc.size(), writeDesc.data()}, nullptr);
+		td.texOld = ResidentImage{}; // Free
+	};
+	auto checkWriteImgDesc = [&](RtTile* tile) {
+		for (auto& mesh : tile->meshes) {
+			if (pooledTileData.datas[mesh.idx].mustWriteImageDesc) {
+				pooledTileData.datas[mesh.idx].mustWriteImageDesc = false;
+				writeImgDesc(pooledTileData.datas[mesh.idx], mesh.idx);
+			}
+		}
+	};
+
 
 	// Handle results
 	
@@ -593,24 +722,30 @@ void RtRenderer::update(RenderState& rs) {
 				auto tile = res.tiles[0];
 				// fmt::print(" - [#update] handling close at {}\n", tile->nc.key);
 
-				tile->unloadChildren(pooledTileData);
+				tile->unloadChildren(pooledTileData, app);
 				for (auto c : tile->children) {
 					delete c;
 				}
 				tile->children.clear();
 
 				tile->state = RtTile::State::LEAF;
+				checkWriteImgDesc(tile);
 
 			} else {
 				// We've loaded N children to replace a single parent.
 				// (unload parent) and (set parent as inner) and (set children as leaves)
-				if (parent->loaded) parent->unload(pooledTileData);
-				parent->loaded = false;
 				parent->state = RtTile::State::INNER;
+
+				if (1) {
+					if (parent->loaded) parent->unload(pooledTileData, app);
+					parent->loaded = false;
+				}
+
 				// fmt::print(" - [#update] handling open at {} with {} children\n", parent->nc.key, res.tiles.size());
 				for (int i=0; i<res.tiles.size(); i++) {
 					auto tile = res.tiles[i];
 					tile->state = RtTile::State::LEAF;
+					checkWriteImgDesc(tile);
 				}
 				parent->children = (res.tiles);
 			}
@@ -620,15 +755,12 @@ void RtRenderer::update(RenderState& rs) {
 				if (res.tiles[i]) {
 					auto tile = res.tiles[i];
 					std::vector<float>& mm = tile->modelMatf;
-					// fmt::print(" - loading model mat:\n");
-					// fmt::print(" {} {} {} {}\n", mm[0*4+0], mm[0*4+1], mm[0*4+2], mm[0*4+3]);
-					// fmt::print(" {} {} {} {}\n", mm[1*4+0], mm[1*4+1], mm[1*4+2], mm[1*4+3]);
-					// fmt::print(" {} {} {} {}\n", mm[2*4+0], mm[2*4+1], mm[2*4+2], mm[2*4+3]);
-					// fmt::print(" {} {} {} {}\n", mm[3*4+0], mm[3*4+1], mm[3*4+2], mm[3*4+3]);
-					memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+tile->idx), mm.data(), sizeof(float)*16);
-					memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+cfg.maxTiles) + sizeof(float)*(4*tile->idx), tile->uvScaleAndOffset.data(), sizeof(float)*4);
+					for (auto& mesh : tile->meshes) {
+						memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+mesh.idx), mm.data(), sizeof(float)*16);
+						memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+cfg.maxTiles) + sizeof(float)*(4*mesh.idx), mesh.uvScaleAndOffset.data(), sizeof(float)*4);
+						mesh.uvScaleAndOffset.clear();
+					}
 					tile->modelMatf.clear();
-					tile->uvScaleAndOffset.clear();
 				}
 			}
 		}
