@@ -18,10 +18,12 @@ class TileData:
 
         self.middle_ = verts.mean(0)
 
-        self.LTP_ = lookAtR(self.middle, np.zeros(3), np.array((0,0,1.)))
+        self.LTP_ = lookAtR(self.middle_, np.zeros(3), np.array((0,0,1.)))
 
         verts_ltp = verts @ self.LTP_
-        verts_ltp = verts_ltp - verts.mean(0,keepdims=True)
+        verts_ltp = verts_ltp - verts_ltp.mean(0,keepdims=True)
+        print(verts_ltp)
+        print(verts_ltp - verts_ltp.mean(0,keepdims=True))
         self.extent_ = (verts_ltp[:2].max(0) - verts_ltp[:2].min(0)).max()
 
         some_geodetics = np.stack((geodetic_to_ecef(*c) for c in verts[::4]))
@@ -66,10 +68,12 @@ class Generator():
         print(' - Have')
         for name,lvls in lvlsByName.items():
             print('\t -',name)
-            for lvl,arr in lvls.items(): print('\t\t lvl {}: {} nodes'.format(lvl,len(arr)))
+            for lvl,arr in sorted(lvls.items(),key=lambda x:x[0]):
+                print('\t\t lvl {}: {} nodes'.format(lvl,len(arr)))
 
         self.nodeFiles, self.lvlsByName = nodeFiles, lvlsByName
         self.args = args
+        self.wh = args.wh
 
     def generate_one(self):
         # Pick a dset, level, and tile
@@ -79,12 +83,18 @@ class Generator():
         # Generate M perturbed poses
         # Render and save each
 
-        dset = random.choice(list(self.lvlsByName.keys()))
-        lvl  = random.choice(list(self.lvlsByName[dset]))
-        tile = random.choice(self.lvlsByName[dset][lvl])
+        while True:
+            dset = random.choice(list(self.lvlsByName.keys()))
+            lvl  = random.choice(list(self.lvlsByName[dset]))
+            tile = random.choice(self.lvlsByName[dset][lvl])
 
-        tileData = self.loadTile(tile)
-        altTileData = self.loadTile(tile[:self.args.altLevel])
+            try:
+                tileData = self.loadTile(tile)
+                altTileData = self.loadTile(tile[:self.args.altLevel])
+                # print(' - loaded', tile)
+                break
+            except FileNotFoundError:
+                print(' - failed on', tile)
         altTileMeanAlt = altTileData.meanAlt()
 
         hfov = np.deg2rad(np.random.sample() * 30 + 30) # Between 30 and 60
@@ -95,12 +105,16 @@ class Generator():
         extent = tileData.extent()
 
         # LTP matrix
-        R = lookAt(anchor, np.zeros(3), np.array((0,0,1.)))
+        R = lookAtR(anchor, np.zeros(3), np.array((0,0,1.)))
 
         aglAlt = (np.random.sample() * .4 + .8) * extent / np.tan(hfov * .5)
         z = altTileMeanAlt + aglAlt
         xy = np.random.sample(2) * extent * .7
         local_p = np.array((*xy,z))
+
+        print(' - anchor', anchor / Earth.R1)
+        print(' - extent', extent, 'lvl', len(tile))
+        print(' - R\n', R)
 
         p = anchor + R.T @ local_p
 
@@ -119,17 +133,20 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--srcDir', required=True)
     parser.add_argument('--outDir', required=True)
-    parser.add_argument('--N', default=1000)
-    parser.add_argument('--minAlt', default=40)
-    parser.add_argument('--maxAlt', default=1500)
-    parser.add_argument('--minLvl', default=14)
-    parser.add_argument('--maxLvl', default=22)
-    parser.add_argument('--altLevel', default=13)
-    parser.add_argument('--wh', default=13)
+    parser.add_argument('--N', default=1000, type=int)
+    parser.add_argument('--minAlt', default=40, type=float)
+    parser.add_argument('--maxAlt', default=1500, type=float)
+    parser.add_argument('--minLvl', default=14, type=int)
+    parser.add_argument('--maxLvl', default=22, type=int)
+    parser.add_argument('--altLevel', default=13, type=int)
+    parser.add_argument('--wh', default=13, type=int)
     args = parser.parse_args()
 
     gen = Generator(args)
     gen.run()
 
+
 if __name__ == '__main__':
+    np.random.seed(0)
+    random.seed(0)
     main()

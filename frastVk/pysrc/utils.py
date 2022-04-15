@@ -61,13 +61,16 @@ def box_xsects(tl1,br1, tl2,br2):
 
 def normalize1(x): return x / np.linalg.norm(x)
 
+def quat_inv(p):
+    return p * (-1,1,1,1)
+
 # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
 def quat_to_matrix(p):
     w,x,y,z = p
     return np.array((
         1 - 2 * (y*y + z*z),
         2 * (x*y - w*z),
-        2 * (q*y + x*z),
+        2 * (w*y + x*z),
         2 * (x*y + w*z),
         1 - 2 * (x*x + z*z),
         2 * (y*z - w*x),
@@ -76,15 +79,15 @@ def quat_to_matrix(p):
         1 - 2 * (x*x + y*y))).reshape(3,3)
 
 def quat_mul(p,q):
-    r = np.array(4,dtype=np.float64)
-    r[0] = p[0]*q[0] - p.dot(q)
+    r = np.empty((4,),dtype=np.float64)
+    r[0] = p[0]*q[0] - p[1:].dot(q[1:])
     r[1:] = p[0]*q[1:] + q[0]*p[1:] - np.cross(p[1:],q[1:])
     return r
 
 def quat_exp(u):
     angle = np.linalg.norm(u)
     v = u / angle
-    return np.array((np.cos(angle/2.0), np.sin(angle/2.0)*v))
+    return np.array((np.cos(angle/2.0), *np.sin(angle/2.0)*v))
 
 def quat_log(q):
     angle = np.arccos(q[0])
@@ -148,3 +151,90 @@ def lookAtR(eye, ctr, up):
     r = normalize1(np.cross(f, up))
     u = normalize1(np.cross(f,r))
     return np.stack((r,u,f)).reshape(3,3)
+
+
+def quat_to_z_axis(q):
+    w,x,y,z = q
+    return np.array((
+        2 * (x*z - w*y),
+        2 * (w*x + y*z),
+        1 - 2 * (x*x + y*y)))
+def quat_to_y_axis(q):
+    w,x,y,z = q
+    return np.array((
+        2 * (x*y + w*z),
+        1 - 2 * (x*x + z*z),
+        2 * (y*z - w*x)))
+
+# I tried https://www.euclideanspace.com/maths/algebra/vectors/lookat/index.htm,
+# but it did not work.
+# Instead I have a two-step process like theres, but the second (rotate-y-up) step is done local to the first,
+# rather than in the outer coordsys.
+# TODO: I think this will fail at the equator and/or poles.
+def lookAtQ(eye, ctr, up):
+    z0 = np.array((0,0,1))
+    f = (ctr - eye) # Don't need to normalize these, its done later.
+    r = (np.cross(f, up))
+    u = normalize1(np.cross(f,r))
+
+    axis1 = -normalize1(np.cross(z0,f))
+    angle1 = np.arccos(np.dot(f,z0))
+    q1 = quat_exp(axis1*angle1)
+
+    new_y = quat_to_y_axis(q1) # We need just the Y axis of the transformed space.
+    angle2 = -np.arccos(np.dot(new_y, u))
+    axis2 = np.array((0,0,1))
+    q2 = quat_exp(axis2*angle2)
+
+
+    q = normalize1(quat_mul(q1,q2))
+    return q
+
+
+'''
+def test_angle_axis():
+    z0 = np.array((0,0,1))
+    p = normalize1(np.array((.5,.5,.4)))
+
+    lR = lookAtR(p, np.zeros(3), np.array((0,0,1)))
+    print(' - lookAt R:\n', lR)
+
+    axis1 = -normalize1(np.cross(z0,-p))
+    angle1 = np.arccos(np.dot(-p,z0))
+    # angle = np.deg2rad(90+45+45+45+45)
+
+    q1 = quat_exp(axis1*angle1)
+
+
+    up = lR[1]
+    # up = z0
+
+    axis2 = -p
+    lR1 = quat_to_matrix(q1)
+    angle2 = -np.arccos(np.dot(lR1[1], up))
+    axis2 = np.array((0,0,1))
+    q2 = quat_exp(axis2*angle2)
+
+
+    q = quat_mul(q1,q2)
+    # q = quat_mul(q2,q1)
+
+
+    print(' - dq', quat_mul((R_to_quat(lR)), quat_inv(q1)))
+    print(' - dq', quat_mul(quat_inv(R_to_quat(lR)), (q1)))
+    print(' - dq', quat_mul(quat_inv(q1), (R_to_quat(lR))))
+    print(' - dq', quat_mul(q1, quat_inv(R_to_quat(lR))))
+    # print(' - cycle', lR - quat_to_matrix(R_to_quat(lR)))
+
+    R = quat_to_matrix(q)
+    print(' - lookAt R{q1}:\n', quat_to_matrix(q1))
+    print(' - lookAt R{q}:\n', R)
+    print(' - q1', q1)
+    print(' - q2', q2)
+    print(' - q', q)
+    print(' - axis1', axis1)
+    print(' - angle1', np.rad2deg(angle1))
+    print(' - axis2', axis2)
+    print(' - angle2', np.rad2deg(angle2))
+    print(' - p:', p)
+'''

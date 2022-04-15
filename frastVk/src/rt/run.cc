@@ -28,7 +28,8 @@ struct RtApp : public VkApp {
 		// RtCfg cfg { "/data/gearth/dc2/" };
 		// RtCfg cfg { "/data/gearth/dc3/" };
 		// RtCfg cfg { "/data/gearth/nyc/" };
-		RtCfg cfg { "/data/gearth/tampa/" };
+		// RtCfg cfg { "/data/gearth/tampa/" };
+		RtCfg cfg { "/data/gearth/many/" };
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();
