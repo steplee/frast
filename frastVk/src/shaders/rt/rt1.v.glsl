@@ -11,6 +11,7 @@ layout (location=2) flat out uint v_tileIdx;
 
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
+	vec4 anchor;
 	mat4 modelMats[512];
 	vec4 uvScaleAndOff[512];
 } cameraData;
@@ -49,8 +50,11 @@ void main()
 	/* modelMat[2][2] = 1. / 255.; */
 	/* modelMat[3][3] = 1.; */
 
+	/* vec3 anchor = -vec3(0.17466, -0.757475,  0.627331); */
+
 	/* mat4 modelMat = transpose(cameraData.modelMats[tileIndex]); */
-	gl_Position = transpose(cameraData.viewProj) * modelMat * vec4(pos, 1.0f) * mask;
+	/* gl_Position = transpose(cameraData.viewProj) * (modelMat * vec4(pos, 1.0f) * mask + vec4(anchor,0.)); */
+	gl_Position = transpose(cameraData.viewProj) * (modelMat * vec4(pos, 1.0f) * mask + cameraData.anchor);
 	/* gl_Position = transpose(cameraData.viewProj) *  vec4(pos, 1.0f); */
 
 	vec2 uv_scale = cameraData.uvScaleAndOff[tileIndex].xy;

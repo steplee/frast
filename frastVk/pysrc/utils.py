@@ -1,5 +1,10 @@
 import numpy as np, os, sys, cv2
 
+######################
+# Coordinate stuff
+######################
+
+'''
 class Earth:
     R1         = 6378137.0
     R2         = 6356752.314245179
@@ -44,6 +49,54 @@ def ecef_to_geodetic(x,y,z):
     alt = (abs(z) + p - rn * (coslat + (1-Earth.ne2) * sinabslat)) / (coslat + sinabslat)
 
     return np.array((np.rad2deg(lng), np.rad2deg(lat), alt*Earth.R1))
+'''
+
+# MISNOMERS: RT does not use geodetic, but authalic coordinates!
+class Earth:
+    R = 6371010.0
+    a = b = R
+    na = nb = 1
+def geodetic_to_ecef(lng,lat, alt):
+    # print(lng,lat,alt)
+    cos_phi, cos_lam = np.cos(np.deg2rad(lat)), np.cos(np.deg2rad(lng))
+    sin_phi, sin_lam = np.sin(np.deg2rad(lat)), np.sin(np.deg2rad(lng))
+    n_phi = 0
+    return (Earth.R + alt) * np.array((cos_phi * cos_lam, \
+           cos_phi * sin_lam, \
+           sin_phi))
+
+def ecef_to_geodetic(x,y,z):
+    z,y,x = z/Earth.R,y/Earth.R,x/Earth.R
+
+    lng = np.arctan2(y,x)
+    p = np.sqrt(x*x+y*y)
+    lat = np.arctan2(z,p)
+
+    # rn = Earth.na / np.sqrt(1-Earth.ne2*(np.sin(lat)) ** 2)
+    # sinabslat, coslat = np.sin(abs(lat)), np.cos(lat)
+    # alt = (abs(z) + p - rn * (coslat + (1-Earth.ne2) * sinabslat)) / (coslat + sinabslat)
+    alt = np.linalg.norm((x,y,z)) - 1.0
+    # print(lng,lat,np.linalg.norm((x,y,z)))
+
+    return np.array((np.rad2deg(lng), np.rad2deg(lat), alt*Earth.R))
+
+truth_table_ = np.array((
+    0,0,0,
+    0,0,1,
+    0,1,0,
+    0,1,1,
+    1,0,0,
+    1,0,1,
+    1,1,0,
+    1,1,1)).reshape(-1,3)[:, [2,1,0]]
+def truth_table():
+    global truth_table_
+    return truth_table_
+
+
+######################
+# Intersection stuff
+######################
 
 def box_contains(tl, br, pt):
     x = pt - tl
@@ -52,6 +105,33 @@ def box_xsects(tl1,br1, tl2,br2):
     assert (tl1<br1).all()
     assert (tl2<br2).all()
     return (tl1 <= br2).all() and (br1 >= tl2).all()
+
+def box_xsects_rotated(box1, box2):
+    # faces1 = box1[[0,1,2, 0,1,4, 1,3,5, 2,3,6, 0,2,4, 4,5,6]].reshape(6,3,3)
+    # faces2 = box2[[0,1,2, 0,1,4, 1,3,5, 2,3,6, 0,2,4, 4,5,6]].reshape(6,3,3)
+    # Three faces have same normals, due to symmetry, and so can be avoided
+    faces1 = box1[[0,1,2, 0,1,4, 1,3,5]].reshape(3,3,3)
+    faces2 = box2[[0,1,2, 0,1,4, 1,3,5]].reshape(3,3,3)
+
+    axes1 = np.cross(faces1[:,0] - faces1[:,1], faces1[:,2] - faces1[:,1])
+    bnds11 = (box1[np.newaxis] * axes1[:,np.newaxis]).sum(-1)
+    bnds12 = (box2[np.newaxis] * axes1[:,np.newaxis]).sum(-1)
+
+    # If there is no overlap in any axes, there is no collision.
+    l1,r1 = bnds11.min(1), bnds11.max(1)
+    l2,r2 = bnds12.min(1), bnds12.max(1)
+    if (r1 < l2).any() or (l1 > r2).any(): return False
+
+    axes2 = np.cross(faces2[:,0] - faces2[:,1], faces2[:,2] - faces2[:,1])
+    bnds21 = (box1[np.newaxis] * axes2[:,np.newaxis]).sum(-1)
+    bnds22 = (box2[np.newaxis] * axes2[:,np.newaxis]).sum(-1)
+
+    l1,r1 = bnds21.min(1), bnds21.max(1)
+    l2,r2 = bnds22.min(1), bnds22.max(1)
+    if (r1 < l2).any() or (l1 > r2).any(): return False
+
+    return True
+
 
 
 
@@ -90,6 +170,7 @@ def quat_exp(u):
     return np.array((np.cos(angle/2.0), *np.sin(angle/2.0)*v))
 
 def quat_log(q):
+    assert(False)
     angle = np.arccos(q[0])
     # TODO:
     if angle < 1e-6:
@@ -130,11 +211,11 @@ def R_to_quat(R):
 
 
 def generate_random_rvec(amplitude, axisWeight=(1,1,5)):
-    axis = (np.random.random(3) - .5) * mult
+    axis = (np.random.random(3) - .5) * amplitude
     axis = (axis * axisWeight)
-    axis = axis / np.linalg.normalize(axis)
+    axis = axis / np.linalg.norm(axis)
     angle = (np.random.random() - .5) * amplitude * 2.
-    return axis, angle
+    return axis * angle
 
 # Take pos, quat
 # Return pos, quat, logQuat (which is the box-minus of the input vs output)
@@ -148,7 +229,7 @@ def perturb_pose(p,q, posAmp=10, oriAmp=.1):
 
 def lookAtR(eye, ctr, up):
     f = normalize1(ctr - eye)
-    r = normalize1(np.cross(f, up))
+    r = normalize1(np.cross(up, f))
     u = normalize1(np.cross(f,r))
     return np.stack((r,u,f)).reshape(3,3)
 

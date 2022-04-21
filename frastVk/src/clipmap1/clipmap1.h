@@ -1,7 +1,7 @@
 #pragma once
 
-#include "vk/buffer_utils.h"
-#include "vk/app.h"
+#include "core/buffer_utils.h"
+#include "core/app.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>

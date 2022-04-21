@@ -5,9 +5,11 @@
 
 #include <frast/db.h>
 
-#include "../render_state.h"
-#include "../app.h"
+#include "core/render_state.h"
+#include "core/app.h"
 #include "utils/eigen.h"
+
+namespace tr2 {
 
 constexpr static uint32_t NO_INDEX = 999999;
 class Tile;
@@ -30,22 +32,16 @@ struct TiledRendererCfg {
 };
 
 struct SharedTileData {
-	//vk::raii::Buffer vertsXY = {nullptr};
-	//vk::raii::Buffer inds = {nullptr};
-	ResidentBuffer vertsXYI;
+	// ResidentBuffer vertsXYZ;
+	ResidentBuffer vertsXYZs[TiledRendererCfg::maxTiles];
 	ResidentBuffer inds;
 	PipelineStuff pipelineStuff;
 	uint32_t numInds = 0;
 };
 
-/*struct ResidentTile {
-	vk::raii::Image colorTex = {nullptr};
-	vk::raii::Buffer altBuf = {nullptr};
-}; */
 struct PooledTileData {
 	//std::vector<Tile> tiles;
 	std::vector<ResidentImage> texs;
-	std::vector<ResidentBuffer> altBufs;
 	vk::raii::DescriptorSetLayout descSetLayout = {nullptr};
 	vk::raii::DescriptorSet descSet = {nullptr};
 
@@ -59,12 +55,6 @@ struct PooledTileData {
 		bool withdrawFour(uint32_t out[4]);
 		bool depositOne(uint32_t in[1]);
 		bool depositFour(uint32_t in[4]);
-};
-
-
-struct __attribute__((packed)) AltBuffer {
-	uint32_t x,y,z, pad;
-	float alt[64];
 };
 
 struct TileDataLoader {
@@ -82,7 +72,7 @@ struct TileDataLoader {
 		};
 
 		~TileDataLoader();
-		inline TileDataLoader(BaseVkApp* app, PooledTileData& p) : app(app), pooledTileData(p), cfg(p.cfg) {}
+		inline TileDataLoader(BaseVkApp* app, SharedTileData& s, PooledTileData& p) : app(app), sharedTileData(s), pooledTileData(p), cfg(p.cfg) {}
 		bool tileExists(const BlockCoordinate& bc);
 
 		bool loadRootTile(Tile* tile);
@@ -101,6 +91,7 @@ struct TileDataLoader {
 		PooledTileData& pooledTileData;
 		BaseVkApp* app;
 		Image::Format colorFormat;
+		SharedTileData& sharedTileData;
 
 		vk::raii::Queue myUploadQueue  = { nullptr };
 		Uploader myUploader;
@@ -116,8 +107,6 @@ struct TileDataLoader {
 
 		Image colorBuf;
 		Image elevBuf;
-		AltBuffer altBuffer;
-
 
 		bool loadColor(Tile* tile);
 		bool loadElevAndMeta(Tile* tile);
@@ -144,9 +133,13 @@ struct TiledRenderer {
 
 
 	private:
+		int frameCnt = 0;
 		BaseVkApp* app;
 		Tile* root = nullptr;
 		TiledRendererCfg cfg;
+
+		// vk::raii::Buffer drawBuffer;
+		ResidentBuffer drawBuffer;
 
 
 		vk::raii::DescriptorPool descPool = {nullptr};
@@ -204,14 +197,14 @@ struct Tile {
 	BlockCoordinate bc;
 	uint32_t idx;
 	//ResidentImage* img = nullptr;
-	//ResidentBuffer* altBuf = nullptr;
 	
 	// Either all exist, or all are null
 	Tile* children[4] = {nullptr};
 
 	// The altitude is filled in by sampling the parents'.
 	// Contains min/max box (expanded to 8 points of a cube in update())
-	Eigen::Matrix<float, 2,3, Eigen::RowMajor> corners;
+	// Eigen::Matrix<float, 2,3, Eigen::RowMajor> corners;
+	Eigen::Matrix<float, 4,3, Eigen::RowMajor> corners;
 	float lastSSE = -1;
 	
 
@@ -224,7 +217,7 @@ struct Tile {
 	//bool opening = false;
 
 	// Set bc, initialize corners
-	void reset(const BlockCoordinate& bc);
+	void reset(const BlockCoordinate& bc, bool setCorners=false);
 
 	float computeSSE(const TileUpdateContext& cam);
 	inline bool hasChildren() const { return children[0] != nullptr; }
@@ -246,3 +239,4 @@ struct Tile {
 	} state = State::NONE;
 };
 
+}

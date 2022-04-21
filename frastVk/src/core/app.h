@@ -86,6 +86,9 @@ struct AbstractSwapchain {
 
 	std::vector<vk::raii::Image> headlessImages;
 	std::vector<vk::raii::DeviceMemory> headlessMemory;
+	std::vector<vk::raii::CommandBuffer> headlessCopyCmds;
+	std::vector<vk::raii::Semaphore> headlessCopyDoneSemas;
+	std::vector<vk::raii::Fence> headlessCopyDoneFences;
 
 
 	inline std::vector<vk::Image> getImages() {
@@ -193,6 +196,7 @@ class VkApp : public BaseVkApp {
 		// VkApp provides standard starter function that further calls doRender()
 		virtual void render();
 		virtual void doRender(RenderState& rs) =0;
+		inline virtual void handleCompletedHeadlessRender(RenderState& rs) {};
 
 		bool isDone();
 

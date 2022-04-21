@@ -14,6 +14,8 @@
 
 
 namespace {
+	using namespace tr1;
+
 	bool projection_xsects_ndc_box(const Vector2f& a, const Vector2f& b) {
 		//Vector2f tl { std::min(a(0), b(0)), std::min(a(1), b(1)) };
 		//Vector2f br { std::max(a(0), b(0)), std::max(a(1), b(1)) };
@@ -34,6 +36,8 @@ namespace {
 		return "???";
 	}
 }
+
+namespace tr1 {
 
 PooledTileData::PooledTileData(TiledRendererCfg &cfg) : cfg(cfg) {
 	available.resize(cfg.maxTiles);
@@ -979,3 +983,4 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	return *cmd;
 }
 
+}

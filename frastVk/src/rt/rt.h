@@ -11,9 +11,9 @@
 // #include <unordered_map>
 #include <unordered_set>
 
-#include "vk/app.h"
-#include "vk/buffer_utils.h"
-#include "vk/render_state.h"
+#include "core/app.h"
+#include "core/buffer_utils.h"
+#include "core/render_state.h"
 
 #include "utils/eigen.h"
 
@@ -65,6 +65,7 @@ struct RtCfg {
 
 struct __attribute__((packed)) RtGlobalData {
 	float mvp[16];
+	float offset[4];
 	float modelMats[16*RtCfg::maxTiles];
 	float uvScalesAndOffs[4*RtCfg::maxTiles];
 	// uint32_t drawTileIds[RtCfg::maxTiles];

@@ -665,10 +665,8 @@ void RtRenderer::update(RenderState& rs) {
 	rtuc.sseThresholdOpen = 1.7;
 	rtuc.sseThresholdClose = .8;
 
-	// TODO.
-
+	// Update all tiles recursively. Will computeSSE, queue opens/closes
 	if (root) {
-		// TODO.
 		root->update(rtuc, nullptr);
 	}
 
@@ -698,8 +696,7 @@ void RtRenderer::update(RenderState& rs) {
 	};
 
 
-	// Handle results
-	
+	// Handle loaded opens/closes
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
 
@@ -756,8 +753,9 @@ void RtRenderer::update(RenderState& rs) {
 					auto tile = res.tiles[i];
 					std::vector<float>& mm = tile->modelMatf;
 					for (auto& mesh : tile->meshes) {
-						memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+mesh.idx), mm.data(), sizeof(float)*16);
-						memcpy(((uint8_t*)rtgd_buf) + sizeof(float)*16*(1+cfg.maxTiles) + sizeof(float)*(4*mesh.idx), mesh.uvScaleAndOffset.data(), sizeof(float)*4);
+						// The +4*4 is for the new 'offset' field
+						memcpy(((uint8_t*)rtgd_buf) + 4*4 + sizeof(float)*(16)*(1+mesh.idx), mm.data(), sizeof(float)*16);
+						memcpy(((uint8_t*)rtgd_buf) + 4*4 + sizeof(float)*(16)*(1+cfg.maxTiles) + sizeof(float)*(4*mesh.idx), mesh.uvScaleAndOffset.data(), sizeof(float)*4);
 						mesh.uvScaleAndOffset.clear();
 					}
 					tile->modelMatf.clear();
@@ -814,11 +812,39 @@ vk::CommandBuffer RtRenderer::render(RenderState& rs) {
 
 	// Load global data (camera and such)
 	RtGlobalData rtgd;
+	
+	// We need to fix float32 jumpyness by shifting the camera center.
+	// I think this works because it avoids mixing position into rotation (todo: invesgiatge this)
+	// There are three options:
+	//		1) Do nothing (bad)
+	//		2) Shift by nearest position on ellipsoid
+	//		3) Shift by camera center, to zero it out.
+	// Not sure if (2) or (3) is better, but (3) is simpler to implement and avoids an extra float64 matmul,
+	// so I do it here.
+	Vector3d offset;
+	rs.eyed(offset.data());
+	// offset = offset.normalized();
+	// RowMatrix4d offsetMatrix = RowMatrix4d::Identity();
+	// offsetMatrix.topRightCorner<3,1>() = offset;
+
+	rs.mstack.reset();
+	rs.mstack.push(rs.camera->proj());
+	// rs.mstack.push(offsetMatrix.data());
+	// rs.mstack.push(rs.camera->view());
+	double mm[16];
+	memcpy(mm,rs.camera->view(), 16*8);
+	mm[0*4+3] = mm[1*4+3] = mm[2*4+3] = 0;
+	rs.mstack.push(mm);
+
 	rs.mvpf(rtgd.mvp);
+	rtgd.offset[0] = -offset(0);
+	rtgd.offset[1] = -offset(1);
+	rtgd.offset[2] = -offset(2);
+	rtgd.offset[3] = 0;
 	//fmt::print(" - [#render] copying {} bytes to global buffer.\n", size);
 	// for (int i=0; i<rtc.drawTileIds.size(); i++) rtgd.drawTileIds[i] = rtc.drawTileIds[i];
 	void* dbuf = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
-	memcpy(dbuf, &rtgd, sizeof(RtGlobalData::mvp));
+	memcpy(dbuf, &rtgd, sizeof(RtGlobalData::mvp) + sizeof(RtGlobalData::offset));
 	pooledTileData.globalBuffer.mem.unmapMemory();
 
 	if (root) root->render(rtc);

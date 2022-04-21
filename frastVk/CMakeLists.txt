@@ -31,14 +31,15 @@ endif()
 
 add_library(frastVk
 	SHARED
-	src/vk/app.cc
-	src/vk/buffer_utils.cc
-	src/vk/render_state.cc
+	src/core/app.cc
+	src/core/buffer_utils.cc
+	src/core/render_state.cc
 
-	src/vk/clipmap1/clipmap1.cc
-	src/vk/clipmap1/clipmap1_load.cc
+	src/clipmap1/clipmap1.cc
+	src/clipmap1/clipmap1_load.cc
 
-	src/vk/tiled_renderer/tiled_renderer.cc
+	src/tiled_renderer/tiled_renderer.cc
+	src/tiled_renderer2/tiled_renderer.cc
 
 	src/rt/rt.cc
 	src/rt/protos/rocktree.pb.cc
@@ -76,7 +77,7 @@ target_precompile_headers(frastVk PUBLIC
 	)
 
 
-add_executable(runGlobe src/globe.cc)
+add_executable(runGlobe src/tiled_renderer2/globe.cc)
 target_link_libraries(runGlobe frastVk)
 target_precompile_headers(runGlobe REUSE_FROM frastVk)
 

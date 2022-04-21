@@ -8,9 +8,15 @@
 uint64_t scalarSizeOfFormat(const vk::Format& f) {
 	switch (f) {
 		case vk::Format::eD32Sfloat: return 4*1;
+		case vk::Format::eR32Sfloat: return 4*1;
 		case vk::Format::eR32G32Sfloat: return 4*2;
 		case vk::Format::eR32G32B32Sfloat: return 4*3;
 		case vk::Format::eR32G32B32A32Sfloat: return 4*4;
+
+		case vk::Format::eR64Sfloat: return 8*1;
+		case vk::Format::eR64G64Sfloat: return 8*2;
+		case vk::Format::eR64G64B64Sfloat: return 8*3;
+		case vk::Format::eR64G64B64A64Sfloat: return 8*4;
 
 		case vk::Format::eR8Uint:
 		case vk::Format::eR8Sint:
@@ -98,7 +104,7 @@ void ResidentBuffer::setAsUniformBuffer(uint64_t len, bool mappable) {
 void ResidentBuffer::setAsStorageBuffer(uint64_t len, bool mappable) {
 	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eStorageBuffer);
 }
-void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::BufferUsageFlagBits usage) {
+void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage) {
 	givenSize = len;
 	memPropFlags = mappable ? vk::MemoryPropertyFlagBits::eHostVisible
 		                    : vk::MemoryPropertyFlagBits::eDeviceLocal;
@@ -347,6 +353,24 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 	if (data != nullptr)
 		uploader.uploadSync(*this, data, size(), 0);
 }
+void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data) {
+	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
+	format = f;
+	usageFlags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
+	aspectFlags = vk::ImageAspectFlagBits::eColor;
+	memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
+
+	create_(uploader);
+
+	vk::SamplerCreateInfo samplerInfo {};
+	samplerInfo.magFilter = vk::Filter::eLinear;
+	samplerInfo.minFilter = vk::Filter::eLinear;
+	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
+
+	if (data != nullptr)
+		uploader.uploadSync(*this, data, size(), 0);
+}
 
 void ResidentImage::create_(Uploader& uploader) {
 
@@ -362,19 +386,22 @@ void ResidentImage::create_(Uploader& uploader) {
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = vk::SampleCountFlagBits::e1;
-    imageInfo.tiling = vk::ImageTiling::eOptimal;
+    imageInfo.tiling = memPropFlags == vk::MemoryPropertyFlagBits::eHostVisible ? vk::ImageTiling::eLinear : vk::ImageTiling::eOptimal;
     imageInfo.usage = usageFlags;
 
 	image = std::move(d.createImage(imageInfo));
 
-	uint64_t size_ = image.getMemoryRequirements().size;
+	auto reqs = image.getMemoryRequirements();
+	uint64_t size_ = reqs.size;
+	// auto memPropFlags_ = memPropFlags | ((vk::Flags<vk::MemoryPropertyFlagBits>) reqs.memoryTypeBits);
+	auto memPropFlags_ = memPropFlags ;
 	//printf(" - image computed size %lu, vulkan given size %lu\n", size_);
 
 	// Memory
 	uint32_t idx = 0;
 	uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
-	idx = findMemoryTypeIndex(pd, memPropFlags);
-	//printf(" - creating image buffers to memory type idx %u\n", idx);
+	idx = findMemoryTypeIndex(pd, memPropFlags_);
+	// printf(" - creating image buffers to memory type idx %u\n", idx);
 	vk::MemoryAllocateInfo allocInfo { std::max(minSize,size()), idx };
 	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
 

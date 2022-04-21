@@ -29,14 +29,15 @@ uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPro
 	return 99999999;
 }
 
+
 uint32_t AbstractSwapchain::acquireNextImage(vk::raii::Device& device, vk::Semaphore acquireSema, vk::Fence readyFence) {
 	if (!headlessImages.size()) {
 		uint32_t idx = sc.acquireNextImage(0, acquireSema, readyFence).second;
 		return idx;
 	} else {
-		device.signalSemaphore(vk::SemaphoreSignalInfo{acquireSema});
+		// device.signalSemaphore(vk::SemaphoreSignalInfo{acquireSema});
 		device.resetFences({readyFence});
-		return curIdx++;
+		return curIdx++ % headlessImages.size();
 	}
 }
 
@@ -153,6 +154,7 @@ bool BaseVkApp::make_gpu_device() {
 		VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME,
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 		,VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME 
+		// ,VK_EXT_MULTI_DRAW_EXTENSION_NAME  
 		//,VK_KHR_16BIT_STORAGE_EXTENSION_NAME
 	};
 
@@ -181,16 +183,14 @@ bool BaseVkApp::make_gpu_device() {
 	bufLayoutFeature.pNext = &extraFeatures5;
 	//extraFeatures4.pNext = &extraFeatures5;
 
-	VkPhysicalDeviceUniformBufferStandardLayoutFeatures extraFeatures6 = {
-	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES_KHR,
-		nullptr,
-		true
-	};
+	vk::PhysicalDeviceMultiDrawFeaturesEXT extraFeatures6;
+	extraFeatures6.multiDraw = true;
 	extraFeatures5.pNext = &extraFeatures6;
 
 	vk::PhysicalDeviceRobustness2FeaturesEXT extraFeatures7;
     extraFeatures7.nullDescriptor = true;
 	extraFeatures6.pNext = &extraFeatures7;
+
 
 	/*
 	if (require_16bit_shader_types) {
@@ -250,7 +250,7 @@ bool BaseVkApp::make_headless_swapchain() {
 		auto idx = findMemoryTypeIndex(*pdeviceGpu, memPropFlags);
 		vk::MemoryAllocateInfo allocInfo { std::max(minSize,size_), idx };
 		sc.headlessMemory.push_back(std::move(vk::raii::DeviceMemory(deviceGpu, allocInfo)));
-		std::cout << "  headless image with size " << size_  << " v " << 4*windowWidth*windowHeight << "\n";
+		// std::cout << "  headless image with size " << size_  << " v " << 4*windowWidth*windowHeight << "\n";
 
 		sc.headlessImages.back().bindMemory(*sc.headlessMemory.back(), 0);
 
@@ -265,6 +265,24 @@ bool BaseVkApp::make_headless_swapchain() {
 				0, 1, 0, 1 }
 		};
 		scImageViews.push_back(std::move(deviceGpu.createImageView(viewInfo)));
+
+	}
+
+	vk::CommandPoolCreateInfo poolInfo {
+		vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+		queueFamilyGfxIdxs[0] };
+	commandPool = std::move(deviceGpu.createCommandPool(poolInfo));
+
+	// Allocate command buffers for copying.
+	vk::CommandBufferAllocateInfo bufInfo {
+		*commandPool,
+		vk::CommandBufferLevel::ePrimary,
+		(uint32_t)scNumImages };
+	sc.headlessCopyCmds = std::move(deviceGpu.allocateCommandBuffers(bufInfo));
+
+	for (int i=0; i<scNumImages; i++) {
+		sc.headlessCopyDoneSemas.push_back(std::move(deviceGpu.createSemaphore({})));
+		sc.headlessCopyDoneFences.push_back(std::move(deviceGpu.createFence({})));
 	}
 
 	return false;
@@ -382,14 +400,15 @@ bool BaseVkApp::make_swapchain() {
 		scImageViews.push_back(std::move(deviceGpu.createImageView(viewInfo)));
 	}
 
-	return false;
-}
-bool BaseVkApp::make_frames() {
-
 	vk::CommandPoolCreateInfo poolInfo {
 		vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		queueFamilyGfxIdxs[0] };
 	commandPool = std::move(deviceGpu.createCommandPool(poolInfo));
+
+	return false;
+}
+bool BaseVkApp::make_frames() {
+
 
 	vk::CommandBufferAllocateInfo bufInfo {
 		*commandPool,
@@ -807,6 +826,16 @@ FrameData& BaseVkApp::acquireFrame() {
 	uint32_t new_scIndx;
 	if (headless) {
 		// new_scIndx = sc.acquireNextImage(deviceGpu, *fd.scAcquireSema );
+		new_scIndx = sc.acquireNextImage(deviceGpu, *fd.scAcquireSema, *fd.frameReadyFence);
+		// deviceGpu.waitForFences({*fd.frameReadyFence}, true, 999999999);
+		deviceGpu.resetFences({*fd.frameReadyFence});
+
+		// deviceGpu.signalSemaphore(vk::SemaphoreSignalInfo{*fd.scAcquireSema});
+		// VkSemaphoreSignalInfo ssinfo;
+		// ssinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
+		// ssinfo.semaphore = *fd.scAcquireSema;
+		// vkSignalSemaphore(*deviceGpu, &ssinfo);
+
 	} else {
 		new_scIndx = sc.acquireNextImage(deviceGpu, *fd.scAcquireSema, *fd.frameReadyFence);
 		deviceGpu.waitForFences({*fd.frameReadyFence}, true, 999999999);
@@ -822,11 +851,12 @@ FrameData& BaseVkApp::acquireFrame() {
 	fd.time = time();
 	fd.dt = fd.time - frameDatas[ii1].time;
 	fd.n = renders-1;
+	// std::cout << " - acquired headless idx " << fd.scIndx << " for frame " << fd.n << "\n";
 
 	if (renders > 1)
 		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
 	if (renders % (60*10) == 0)
-	printf(" - acquireFrame() (sc indx %u) (frame %d) (t %f, fps %f, dt %f)\n", ii, fd.n, fd.time, fpsMeter, fd.dt);
+		printf(" - acquireFrame() (sc indx %u) (frame %d) (t %f, fps %f, dt %f)\n", ii, fd.n, fd.time, fpsMeter, fd.dt);
 
 	return fd;
 }
@@ -1049,62 +1079,14 @@ void VkApp::render() {
 	FrameData& fd = acquireFrame();
 	camera->step(fd.dt);
 
-
-
-	// TODO: Have just one commandBuffer for one render, then 3 others that blit to current framebuffer.
-	if (fd.n == 0) {
-
-		for (int i=0; i<scNumImages; i++) {
-
-			vk::CommandBufferBeginInfo beginInfo {
-				//vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-				{},
-					{} };
-
-			vk::RenderPassBeginInfo rpInfo {
-				*simpleRenderPass.pass,
-				*simpleRenderPass.framebuffers[i],
-				aoi,
-				{2, clears_} };
-
-			vk::raii::CommandBuffer &cmd_ = frameDatas[i].cmd;
-
-			cmd_.reset();
-			cmd_.begin(beginInfo);
-			cmd_.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-
-			/*
-			if (0) {
-				cmd_.bindPipeline(vk::PipelineBindPoint::eGraphics, *simplePipelineStuff.pipeline);
-				cmd_.draw(3, 1, 0, 0);
-			} else {
-				cmd_.bindPipeline(vk::PipelineBindPoint::eGraphics, *texturedPipelineStuff.pipeline);
-				cmd_.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*simpleMesh.vertBuffer.buffer}, {0u});
-				cmd_.bindIndexBuffer(*simpleMesh.indBuffer.buffer, {0u}, vk::IndexType::eUint32);
-
-				MeshPushContants pushed;
-				for (int i=0; i<16; i++) pushed.model[i] = i % 5 == 0;
-				cmd_.pushConstants(*texturedPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const MeshPushContants>{1, &pushed});
-
-				cmd_.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *texturedPipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
-				cmd_.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *texturedPipelineStuff.pipelineLayout, 1, {1,&*texDescSet}, nullptr);
-
-				cmd_.drawIndexed(3, 1, 0, 0, 0);
-			}
-			cmd_.endRenderPass();
-			cmd_.end();
-			*/
-		}
-	}
-
 	vk::raii::CommandBuffer &cmd = fd.cmd;
 
 	// Update Camera Buffer
 	if (1) {
 		renderState.frameBegin(&fd);
-		void* dbuf = (void*) camBuffer.mem.mapMemory(0, 16*4, {});
-		memcpy(dbuf, renderState.mvp(), 16*4);
-		camBuffer.mem.unmapMemory();
+		// void* dbuf = (void*) camBuffer.mem.mapMemory(0, 16*4, {});
+		// memcpy(dbuf, renderState.mvp(), 16*4);
+		// camBuffer.mem.unmapMemory();
 	}
 
 
@@ -1128,6 +1110,26 @@ void VkApp::render() {
 	doRender(renderState);
 
 	if (headless) {
+
+		// Actually, the user application should do this
+		/*
+		auto &copyCmd = sc.headlessCopyCmds[fd.scIndx];
+		copyCmd.reset();
+		copyCmd.copyImage(sc.headlessImage[fd.scIndx]);
+
+		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
+		vk::SubmitInfo submitInfo {
+			{1, &(*fd.renderCompleteSema)}, // wait sema
+			{1, &waitMask},
+			{1, copyCmd},
+			{}
+		};
+		// queueGfx.submit(submitInfo, *fd.frameDoneFence);
+		queueGfx.submit(submitInfo);
+		*/
+
+		handleCompletedHeadlessRender(renderState);
+
 	} else {
 		vk::PresentInfoKHR presentInfo {
 			1, &*fd.renderCompleteSema, // wait sema

@@ -7,7 +7,7 @@ import cv2
 
 def decode_verts(bites):
     xyz = np.frombuffer(bites, dtype=np.uint8).reshape(3,-1)
-    xyz = xyz.cumsum(1)
+    xyz = xyz.cumsum(1, dtype=np.uint8)
     return xyz.T
 
 def decode_inds(bites):

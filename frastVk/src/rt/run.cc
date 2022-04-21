@@ -1,5 +1,5 @@
 
-#include "vk/app.h"
+#include "core/app.h"
 
 #include "rt/rt.h"
 
@@ -15,6 +15,7 @@ struct RtApp : public VkApp {
 
 		CameraSpec spec { (float)windowWidth, (float)windowHeight, 45 * 3.141 / 180. };
 		camera = std::make_shared<SphericalEarthMovingCamera>(spec);
+		/*
 		alignas(16) double pos0[] { 0,-2.0,0 };
 		alignas(16) double R0[] {
 			1,0,0,
@@ -22,14 +23,26 @@ struct RtApp : public VkApp {
 			0,-1,0 };
 		camera->setPosition(pos0);
 		camera->setRotMatrix(R0);
+		*/
+
+		Eigen::Vector3d pos0 { .2,-1.0,.84};
+		Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
+		R0.row(2) = -pos0.normalized();
+		R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+		R0.row(1) =  R0.row(2).cross(R0.row(0)).normalized();
+		R0.transposeInPlace();
+		camera->setPosition(pos0.data());
+		camera->setRotMatrix(R0.data());
+
 		ioUsers.push_back(camera);
 		renderState.camera = camera;
+
 
 		// RtCfg cfg { "/data/gearth/dc2/" };
 		// RtCfg cfg { "/data/gearth/dc3/" };
 		// RtCfg cfg { "/data/gearth/nyc/" };
 		// RtCfg cfg { "/data/gearth/tampa/" };
-		RtCfg cfg { "/data/gearth/many/" };
+		RtCfg cfg { "/data/gearth/many3/" };
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();

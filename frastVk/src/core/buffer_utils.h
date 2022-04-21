@@ -51,7 +51,7 @@ struct ResidentBuffer {
 	void setAsUniformBuffer(uint64_t len, bool mappable=false);
 	void setAsOtherBuffer(uint64_t len, bool mappable=false);
 	void setAsStorageBuffer(uint64_t len, bool mappable=false);
-	void setAsBuffer(uint64_t len, bool mappable, vk::BufferUsageFlagBits usage);
+	void setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage);
 	void create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices);
 	void upload(void* cpuData, uint64_t len, uint64_t offset=0);
 
@@ -189,6 +189,7 @@ struct ResidentImage {
 
 	void createAsDepthBuffer(Uploader& uploader, int h, int w);
 	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data);
+	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data);
 	void create_(Uploader& uploader);
 };
 
