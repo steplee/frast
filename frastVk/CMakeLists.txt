@@ -77,7 +77,7 @@ target_precompile_headers(frastVk PUBLIC
 	)
 
 
-add_executable(runGlobe src/tiled_renderer2/globe.cc)
+add_executable(runGlobe src/tiled_renderer2/runGlobe.cc)
 target_link_libraries(runGlobe frastVk)
 target_precompile_headers(runGlobe REUSE_FROM frastVk)
 

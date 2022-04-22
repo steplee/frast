@@ -10,6 +10,8 @@
 
 #include "rt_decode.hpp"
 
+#include "shaders/compiled/all.hpp"
+
 
 namespace {
 	using namespace rt;
@@ -518,6 +520,7 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 bool RtDataLoader::populateFromFiles() {
 	namespace fs = std::experimental::filesystem;
 
+	fmt::print(" - populating tiles, may take a while if not cached...\n");
 	fs::path root { cfg.rootDir };
 	auto bulkDir = cfg.rootDir / fs::path{"bulk"};
 	auto nodeDir = cfg.rootDir / fs::path{"node"};
@@ -1025,9 +1028,13 @@ void RtRenderer::init() {
 	// Create pipeline
 	{
 		PipelineBuilder plBuilder;
-		std::string vsrcPath = "../src/shaders/rt/rt1.v.glsl";
-		std::string fsrcPath = "../src/shaders/rt/rt1.f.glsl";
-		createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+
+		// Old way
+		// std::string vsrcPath = "../src/shaders/rt/rt1.v.glsl";
+		// std::string fsrcPath = "../src/shaders/rt/rt1.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+		// New way
+		createShaderFromSpirv(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, rt_rt1_v_glsl_len, rt_rt1_f_glsl_len, rt_rt1_v_glsl, rt_rt1_f_glsl);
 
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();

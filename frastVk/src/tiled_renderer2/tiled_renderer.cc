@@ -7,6 +7,8 @@
 
 #include "conversions.hpp"
 
+#include "shaders/compiled/all.hpp"
+
 
 #if 0
 #define dprint(...) fmt::print(__VA_ARGS__)
@@ -855,9 +857,11 @@ void TiledRenderer::init() {
 	// Create pipeline
 	{
 		PipelineBuilder plBuilder;
-		std::string vsrcPath = "../src/shaders/tiledRenderer2/1.v.glsl";
-		std::string fsrcPath = "../src/shaders/tiledRenderer2/1.f.glsl";
-		createShaderFromFiles(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs, vsrcPath, fsrcPath);
+		// std::string vsrcPath = "../src/shaders/tiledRenderer2/1.v.glsl";
+		// std::string fsrcPath = "../src/shaders/tiledRenderer2/1.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs, vsrcPath, fsrcPath);
+		createShaderFromSpirv(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs,
+				tiledRenderer2_1_v_glsl_len, tiledRenderer2_1_f_glsl_len, tiledRenderer2_1_v_glsl, tiledRenderer2_1_f_glsl);
 
 		sharedTileData.pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();
@@ -887,15 +891,132 @@ void TiledRenderer::init() {
 		sharedTileData.pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
 	}
 
-	// Create tile objects
-	// Well: I can have the pool include the tile objects,
-	// but I think I'd rather create/free tile objects on the fly and pool just the resources.
-	/*{
-		pooledTileData.tiles.resize(cfg.maxTiles);
-		for (int i=0; i<cfg.maxTiles; i++) {
-			pooledTileData.tiles[i] = Tile(i);
+	//
+	// Caster stuff (1: descriptor set and layout, 2: pipeline stuff)
+	//
+
+	// Create descriptor stuff for caster
+	{
+		std::vector<vk::DescriptorPoolSize> poolSizes = {
+			vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
+			vk::DescriptorPoolSize { vk::DescriptorType::eCombinedImageSampler, 2 },
+		};
+		vk::DescriptorPoolCreateInfo poolInfo {
+			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, // allow raii to free the owned sets
+				1,
+				(uint32_t)poolSizes.size(), poolSizes.data()
+		};
+		sharedTileData.casterDescPool = std::move(vk::raii::DescriptorPool(app->deviceGpu, poolInfo));
+
+		sharedTileData.casterBuffer.setAsUniformBuffer(sizeof(CasterBuffer), true);
+		sharedTileData.casterBuffer.create(app->deviceGpu,*app->pdeviceGpu,app->queueFamilyGfxIdxs);
+		// Initialize caster buffer as all zeros
+		void* dbuf = (void*) sharedTileData.casterBuffer.mem.mapMemory(0, sizeof(CasterBuffer), {});
+		memset(dbuf, 0, sizeof(CasterBuffer));
+		sharedTileData.casterBuffer.mem.unmapMemory();
+
+
+
+		// Setup bindings. There is one for the casterData, and one for the casterImages.
+		// The casterData is not an array. The casterImages is an array of length two.
+		{
+			std::vector<vk::DescriptorSetLayoutBinding> bindings;
+			// casterData
+			bindings.push_back({
+					0, vk::DescriptorType::eUniformBuffer,
+					1, vk::ShaderStageFlagBits::eVertex });
+			// casterImages binding
+			bindings.push_back({
+					1, vk::DescriptorType::eCombinedImageSampler,
+					// 2, vk::ShaderStageFlagBits::eFragment });
+					1, vk::ShaderStageFlagBits::eFragment });
+
+			vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
+			sharedTileData.casterDescSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
+
+			vk::DescriptorSetAllocateInfo allocInfo {
+				*descPool, 1, &*sharedTileData.casterDescSetLayout
+			};
+			sharedTileData.casterDescSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
+
+			// descSet is allocated, now make the arrays point correctly on the gpu side.
+			std::vector<vk::DescriptorImageInfo> i_infos;
+			std::vector<vk::DescriptorBufferInfo> b_infos;
+
+			b_infos.push_back(vk::DescriptorBufferInfo{
+					*sharedTileData.casterBuffer.buffer, 0, VK_WHOLE_SIZE
+					});
+
+			// for (int j=0; j<2; j++) {
+			for (int j=0; j<1; j++) {
+				i_infos.push_back(vk::DescriptorImageInfo{
+						*sharedTileData.casterImages[j].sampler,
+						*sharedTileData.casterImages[j].view,
+						vk::ImageLayout::eShaderReadOnlyOptimal
+				});
+			}
+
+			std::vector<vk::WriteDescriptorSet> writeDesc = {
+				{
+					*sharedTileData.casterDescSet,
+					0, 0, (uint32_t)b_infos.size(),
+					vk::DescriptorType::eUniformBuffer,
+					nullptr,
+					b_infos.data(),
+					nullptr
+				},
+				/*{
+					*sharedTileData.casterDescSet,
+					1, 0, (uint32_t)i_infos.size(),
+					vk::DescriptorType::eCombinedImageSampler,
+					i_infos.data(),
+					nullptr,
+					nullptr
+				}*/
+			};
+			app->deviceGpu.updateDescriptorSets({(uint32_t)writeDesc.size(), writeDesc.data()}, nullptr);
 		}
-	}*/
+	}
+
+	// Create pipeline stuff for caster
+	{
+		PipelineBuilder plBuilder;
+		std::string vsrcPath = "../src/shaders/tiledRenderer2/cast.v.glsl";
+		std::string fsrcPath = "../src/shaders/tiledRenderer2/cast.f.glsl";
+		createShaderFromFiles(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs, vsrcPath, fsrcPath);
+		// createShaderFromSpirv(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs,
+				// tiledRenderer2_cast_v_glsl_len, tiledRenderer2_cast_f_glsl_len, tiledRenderer2_cast_v_glsl, tiledRenderer2_cast_f_glsl);
+
+		sharedTileData.casterPipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
+		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();
+		MeshDescription md;
+		md.posDims = 3;
+		md.rows = cfg.vertsAlongEdge*cfg.vertsAlongEdge;
+		// md.cols = 3 + 2;
+		md.haveUvs = true;
+		md.haveNormals = false;
+		md.indType = vk::IndexType::eUint8EXT;
+		VertexInputDescription vertexInputDescription = md.getVertexDescription();
+		plBuilder.init(
+				vertexInputDescription,
+				vk::PrimitiveTopology::eTriangleList,
+				*sharedTileData.casterPipelineStuff.vs, *sharedTileData.casterPipelineStuff.fs);
+
+		// Add Push Constants & Set Layouts.
+		sharedTileData.casterPipelineStuff.setLayouts.push_back(*globalDescSetLayout);
+		sharedTileData.casterPipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
+
+		// For the caster matrices and metadata, we have a third set.
+		sharedTileData.casterPipelineStuff.setLayouts.push_back(*sharedTileData.casterDescSetLayout);
+
+		sharedTileData.casterPipelineStuff.pushConstants.push_back(vk::PushConstantRange{
+				vk::ShaderStageFlagBits::eFragment,
+				0,
+				sizeof(TiledRendererPushConstants) });
+
+		sharedTileData.casterPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
+	}
+
 
 	// Find root frast tile, then create the Tile backing it.
 	// Done on the current thread, so we synch load it
@@ -994,6 +1115,51 @@ vk::CommandBuffer TiledRenderer::stepAndRender(const RenderState& rs) {
 }
 
 
+void TiledRenderer::setCasterInRenderThread(const CasterWaitingData& cwd) {
+	// Update cpu mask
+	sharedTileData.casterMask = cwd.mask;
+
+	// Upload texture
+	{
+		// If texture is new size, must create it then write descSet
+		if (sharedTileData.casterImages[0].extent.width != cwd.image.w or sharedTileData.casterImages[0].extent.height != cwd.image.h) {
+			fmt::print(" - [setCaster] new image size {} {} {}\n", cwd.image.h, cwd.image.w, cwd.image.channels());
+			if (cwd.image.format == Image::Format::GRAY)
+				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.w, cwd.image.h, vk::Format::eR8Unorm, cwd.image.buffer);
+			else
+				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.w, cwd.image.h, vk::Format::eR8G8B8A8Unorm, cwd.image.buffer);
+
+			std::vector<vk::DescriptorImageInfo> i_infos = {
+				vk::DescriptorImageInfo{
+					*sharedTileData.casterImages[0].sampler,
+					*sharedTileData.casterImages[0].view,
+					vk::ImageLayout::eShaderReadOnlyOptimal
+					}};
+			vk::WriteDescriptorSet writeDesc = {
+				*sharedTileData.casterDescSet,
+				1, 0, (uint32_t)i_infos.size(),
+				vk::DescriptorType::eCombinedImageSampler,
+				i_infos.data(),
+				nullptr,
+				nullptr
+			};
+			app->deviceGpu.updateDescriptorSets({1, &writeDesc}, nullptr);
+			sharedTileData.casterTextureSet = true;
+		} else {
+			app->uploader.uploadSync(sharedTileData.casterImages[0], cwd.image.buffer, cwd.image.w*cwd.image.h*cwd.image.channels(), 0);
+		}
+	}
+
+	// Upload UBO
+	{
+		CasterBuffer* cameraBuffer = (CasterBuffer*) sharedTileData.casterBuffer.mem.mapMemory(0, sizeof(CasterBuffer), {});
+		cameraBuffer->casterMask = cwd.mask;
+		if (cwd.haveMatrix1) memcpy(cameraBuffer->casterMatrix   , cwd.casterMatrix1, sizeof(float)*16);
+		if (cwd.haveMatrix2) memcpy(cameraBuffer->casterMatrix+16, cwd.casterMatrix2, sizeof(float)*16);
+		sharedTileData.casterBuffer.mem.unmapMemory();
+	}
+}
+
 
 
 
@@ -1031,11 +1197,21 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	cmd.begin(beginInfo);
 	cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *sharedTileData.pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *sharedTileData.pipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+	PipelineStuff* thePipelineStuff = 0;
+	if (sharedTileData.casterTextureSet and (sharedTileData.casterMask)) {
+		// fmt::print(" - using caster pipeline\n");
+		thePipelineStuff = &sharedTileData.casterPipelineStuff;
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 2, {1,&*sharedTileData.casterDescSet}, nullptr);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipeline);
+	} else {
+		thePipelineStuff = &sharedTileData.pipelineStuff;
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipeline);
+	}
 
-
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *sharedTileData.pipelineStuff.pipeline);
 	// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vertsXYZ.buffer}, {0u});
 	cmd.bindIndexBuffer(*sharedTileData.inds.buffer, {0u}, vk::IndexType::eUint8EXT);
 	root->render(trc);
@@ -1052,8 +1228,9 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 
 	// TODO: Having two shaders probably more efficient
 	TiledRendererPushConstants pushc;
-	pushc.grayscale = true;
-	cmd.pushConstants(*sharedTileData.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const TiledRendererPushConstants>{1, &pushc});
+	// pushc.grayscale = true;
+	pushc.grayscale = false;
+	cmd.pushConstants(*thePipelineStuff->pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const TiledRendererPushConstants>{1, &pushc});
 
 	// Now make draw call, with as many instances as tiles to draw
 	std::string tiless;
@@ -1063,37 +1240,8 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 
 	if (frameCnt++ % 30 == 0)
 		fmt::print(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
-	//trc.drawTileIds = {trc.drawTileIds.back()};
 
-
-	// cmd.drawIndexed(trc.numInds, trc.drawTileIds.size(), 0,0,0);
-	/*
-	if (trc.drawTileIds.size() > 0) {
-		int mapSize = trc.drawTileIds.size() * sizeof(VkDrawIndexedIndirectCommand);
-		auto drawCmds = (VkDrawIndexedIndirectCommand*) drawBuffer.mem.mapMemory(0, mapSize, {});
-		for (int i=0; i<trc.drawTileIds.size(); i++) {
-			drawCmds[i].indexCount = sharedTileData.numInds;
-			drawCmds[i].instanceCount = 1;
-			drawCmds[i].firstIndex = 0;
-			drawCmds[i].vertexOffset = trc.drawTileIds[i] * cfg.vertsAlongEdge * cfg.vertsAlongEdge;
-			drawCmds[i].firstInstance = 0;
-		}
-		drawBuffer.mem.unmapMemory();
-		// fucking doesnt work
-		// cmd.drawIndexedIndirect(*drawBuffer.buffer, 0, trc.drawTileIds.size(), sizeof(VkDrawIndexedIndirectCommand));
-		for (int i=0; i<trc.drawTileIds.size(); i++)
-			cmd.drawIndexedIndirect(*drawBuffer.buffer, sizeof(VkDrawIndexedIndirectCommand)*i, 1, sizeof(VkDrawIndexedIndirectCommand));
-	}
-	*/
-	// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vctsXYZ.buffer}, {0u});
-	// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vertsXYZ.buffer}, {0u});
 	for (int i=0; i<trc.drawTileIds.size(); i++) {
-		// cmd.drawIndexed(trc.numInds, 1, 0, trc.drawTileIds[i]*cfg.vertsAlongEdge*cfg.vertsAlongEdge, 0);
-		// cmd.drawIndexed(trc.numInds, 1, 0, trc.drawTileIds[i]*cfg.vertsAlongEdge*cfg.vertsAlongEdge, i);
-
-		// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vertsXYZ.buffer}, {trc.drawTileIds[i]*4*5*cfg.vertsAlongEdge*cfg.vertsAlongEdge});
-		// cmd.drawIndexed(trc.numInds, 1, 0,0,i);
-
 		cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vertsXYZs[trc.drawTileIds[i]].buffer}, {0u});
 		// Set the 'firstInstance' as @i, to tell the shader what tile it is (needed for texture)
 		cmd.drawIndexed(trc.numInds, 1, 0,0,i);

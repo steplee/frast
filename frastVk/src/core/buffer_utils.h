@@ -81,6 +81,7 @@ struct Uploader {
 		q = o.q;
 		return *this;
 	}
+	ResidentBuffer scratchBuffer;
 
 	void uploadSync(ResidentBuffer& buffer, void *data, uint64_t len, uint64_t off);
 	void uploadSync(ResidentImage& image, void *data, uint64_t len, uint64_t off);

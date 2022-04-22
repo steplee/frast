@@ -13,6 +13,8 @@ struct CameraSpec {
 	CameraSpec();
 	CameraSpec(double w, double h, double vfov);
 	inline double aspect() const { return h / w; }
+
+	void compute_projection(double* dest) const;
 };
 
 /*
@@ -42,11 +44,14 @@ struct Camera : public UsesIO {
 
 		virtual void step(double dt) = 0;
 
+		inline void compute_projection() {
+			spec_.compute_projection(proj_);
+		}
+
 
 	protected:
 		CameraSpec spec_;
 
-		void compute_projection();
 
 		alignas(16) double view_[16];
 		alignas(16) double viewInv_[16];

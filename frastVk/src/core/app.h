@@ -62,6 +62,11 @@ bool createShaderFromFiles(
 		vk::raii::Device& dev,
 		vk::raii::ShaderModule& vs, vk::raii::ShaderModule& fs,
 		const std::string& vsrcPath, const std::string& fsrcPath);
+bool createShaderFromSpirv(
+		vk::raii::Device& dev,
+		vk::raii::ShaderModule& vs, vk::raii::ShaderModule& fs,
+		size_t v_spirv_len, size_t f_spirv_len,
+		const char* v_spirv, const char* f_spirv);
 
 
 
@@ -146,6 +151,7 @@ struct BaseVkApp : public Window {
 	vk::SurfaceFormatKHR scSurfaceFormat;
 	std::vector<vk::raii::ImageView> scImageViews;
 	int scNumImages = 0;
+	int frameOverlap = 0;
 	inline vk::Image getSwapChainImage(int i) {
 		return sc.getImage(i);
 		// return vk::Image(sc.getImages()[i]);

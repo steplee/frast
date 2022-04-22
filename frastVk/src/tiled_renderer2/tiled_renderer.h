@@ -31,12 +31,45 @@ struct TiledRendererCfg {
 	uint32_t channels = 3; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
 };
 
+// This is not allocated on the CPU, but is useful to access mapped data instead of the void*
+struct __attribute__((packed)) CasterBuffer {
+	float casterMatrix[2*16];
+	uint32_t casterMask;
+};
+
+class TiledRenderer;
+
+struct CasterWaitingData {
+	friend class TiledRenderer;
+	public:
+		inline void setMatrix1(float* m) { memcpy(casterMatrix1, m, sizeof(float)*16); haveMatrix1 = true; }
+		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
+		inline void setImage(const Image& image_) { image = image_; }
+		inline void setMask(const uint32_t mask_) { mask = mask_; }
+
+	private:
+		Image image;
+		float casterMatrix1[16];
+		float casterMatrix2[16];
+		uint32_t mask = 0;
+		bool haveMatrix1=false, haveMatrix2=false;
+};
+
 struct SharedTileData {
 	// ResidentBuffer vertsXYZ;
 	ResidentBuffer vertsXYZs[TiledRendererCfg::maxTiles];
 	ResidentBuffer inds;
 	PipelineStuff pipelineStuff;
 	uint32_t numInds = 0;
+
+	uint32_t casterMask; // should match the gpu buffer variable.
+	bool casterTextureSet = false; // true after first time set
+	ResidentImage casterImages[1];
+	ResidentBuffer casterBuffer;
+	PipelineStuff casterPipelineStuff;
+	vk::raii::DescriptorPool casterDescPool = {nullptr};
+	vk::raii::DescriptorSetLayout casterDescSetLayout = {nullptr};
+	vk::raii::DescriptorSet casterDescSet = {nullptr};
 };
 
 struct PooledTileData {
@@ -82,6 +115,7 @@ struct TileDataLoader {
 		bool childrenAreMissing(const BlockCoordinate& bc);
 
 		void init(const std::string& colorDsetPath, const std::string& elevDsetPath);
+
 
 	public:
 		TiledRendererCfg& cfg;
@@ -131,6 +165,9 @@ struct TiledRenderer {
 
 		void init();
 
+		// This must be called from the render thread, hence the long name
+		// It is the responsibility of the app to get it to the correct thread
+		void setCasterInRenderThread(const CasterWaitingData& cwd);
 
 	private:
 		int frameCnt = 0;

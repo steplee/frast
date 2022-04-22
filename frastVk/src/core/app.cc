@@ -5,6 +5,8 @@
 #include <fstream>
 #include <chrono>
 
+#include <fmt/core.h>
+
 
 
 namespace {
@@ -409,6 +411,8 @@ bool BaseVkApp::make_swapchain() {
 }
 bool BaseVkApp::make_frames() {
 
+	frameOverlap = scNumImages;
+	// frameOverlap = 1;
 
 	vk::CommandBufferAllocateInfo bufInfo {
 		*commandPool,
@@ -416,7 +420,7 @@ bool BaseVkApp::make_frames() {
 		(uint32_t)scNumImages };
 	std::vector<vk::raii::CommandBuffer> commandBuffers = std::move(deviceGpu.allocateCommandBuffers(bufInfo));
 
-	for (int i=0; i<scNumImages; i++) {
+	for (int i=0; i<frameOverlap; i++) {
 		frameDatas.push_back(FrameData{});
 		frameDatas.back().scAcquireSema = std::move(deviceGpu.createSemaphore({}));
 		frameDatas.back().renderCompleteSema = std::move(deviceGpu.createSemaphore({}));
@@ -425,7 +429,7 @@ bool BaseVkApp::make_frames() {
 		//frameDatas.back().frameReadyFence = std::move(deviceGpu.createFence({}));
 		//frameDatas.back().frameDoneFence = std::move(deviceGpu.createFence({}));
 		frameDatas.back().cmd = std::move(commandBuffers[i]);
-		frameDatas.back().scIndx = i;
+		// frameDatas.back().scIndx = i; // This is actually done in acquireFrame()!
 	}
 
 	return false;
@@ -809,8 +813,8 @@ float BaseVkApp::time() {
 }
 
 FrameData& BaseVkApp::acquireFrame() {
-	int ii1 = renders == 0 ? scNumImages-1 : (renders-1) % scNumImages;
-	int ii = renders % scNumImages;
+	int ii1 = renders == 0 ? frameOverlap-1 : (renders-1) % frameOverlap;
+	int ii = renders % frameOverlap;
 
 	FrameData& fd = frameDatas[ii];
 
@@ -842,16 +846,19 @@ FrameData& BaseVkApp::acquireFrame() {
 		deviceGpu.resetFences({*fd.frameReadyFence});
 	}
 
+	fd.scIndx = new_scIndx;
+
 
 	renders++;
 	if (renders == 1) {
 		time0 = getSeconds(true);
 		for (auto& fd : frameDatas) fd.time = time0;
 	}
-	fd.time = time();
-	fd.dt = fd.time - frameDatas[ii1].time;
+	auto time_ = time();
+	fd.dt = time_ - frameDatas[ii1].time;
+	fd.time = time_;
 	fd.n = renders-1;
-	// std::cout << " - acquired headless idx " << fd.scIndx << " for frame " << fd.n << "\n";
+	// std::cout << " - acquired idx " << fd.scIndx << " for frame " << fd.n << " at i " << ii << "\n";
 
 	if (renders > 1)
 		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
@@ -1089,47 +1096,11 @@ void VkApp::render() {
 		// camBuffer.mem.unmapMemory();
 	}
 
-
-	/*
-	std::vector<vk::CommandBuffer> cmds = {
-		//clipmap->stepAndRender(renderState, camera.get())
-		tiledRenderer->stepAndRender(renderState)
-		//,*cmd
-	};
-
-	vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
-	vk::SubmitInfo submitInfo {
-		1, &(*fd.scAcquireSema), // wait sema
-		&waitMask,
-		//1, &(*commandBuffers[fd.scIndx]),
-		(uint32_t)cmds.size(), cmds.data(),
-		1, &*fd.renderCompleteSema // signal sema
-	};
-	queueGfx.submit(submitInfo, *fd.frameDoneFence);
-	*/
 	doRender(renderState);
 
 	if (headless) {
-
-		// Actually, the user application should do this
-		/*
-		auto &copyCmd = sc.headlessCopyCmds[fd.scIndx];
-		copyCmd.reset();
-		copyCmd.copyImage(sc.headlessImage[fd.scIndx]);
-
-		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
-		vk::SubmitInfo submitInfo {
-			{1, &(*fd.renderCompleteSema)}, // wait sema
-			{1, &waitMask},
-			{1, copyCmd},
-			{}
-		};
-		// queueGfx.submit(submitInfo, *fd.frameDoneFence);
-		queueGfx.submit(submitInfo);
-		*/
-
+		// Copy output and what not
 		handleCompletedHeadlessRender(renderState);
-
 	} else {
 		vk::PresentInfoKHR presentInfo {
 			1, &*fd.renderCompleteSema, // wait sema
@@ -1259,6 +1230,7 @@ bool createShaderFromStrings(
 		vk::raii::Device& dev,
 		vk::raii::ShaderModule& vs, vk::raii::ShaderModule& fs,
 		const std::string& vsrc, const std::string& fsrc) {
+	fmt::print(" - Deprecated: use createShaderFromSpirv and pysrc/compile_shaders instead.\n");
 
 	std::vector<uint32_t> vs_spirv = compileSource(vsrc, vk::ShaderStageFlagBits::eVertex);
 	std::vector<uint32_t> fs_spirv = compileSource(fsrc, vk::ShaderStageFlagBits::eFragment);
@@ -1271,6 +1243,7 @@ bool createShaderFromStrings(
 
 	return false;
 }
+
 // TODO: This does extra read->write->read. instead, skip
 bool createShaderFromFiles(
 		vk::raii::Device& dev,
@@ -1284,4 +1257,20 @@ bool createShaderFromFiles(
 	vsrc << vi.rdbuf();
 	fsrc << fi.rdbuf();
 	return createShaderFromStrings(dev, vs,fs, vsrc.str(), fsrc.str());
+}
+
+bool createShaderFromSpirv(
+		vk::raii::Device& dev,
+		vk::raii::ShaderModule& vs, vk::raii::ShaderModule& fs,
+		size_t v_spirv_len, size_t f_spirv_len,
+		const char* v_spirv, const char* f_spirv) {
+
+
+	vk::ShaderModuleCreateInfo vs_info { {}, v_spirv_len, (uint32_t*) v_spirv };
+	vk::ShaderModuleCreateInfo fs_info { {}, f_spirv_len, (uint32_t*) f_spirv };
+
+	vs = std::move(dev.createShaderModule(vs_info));
+	fs = std::move(dev.createShaderModule(fs_info));
+
+	return false;
 }

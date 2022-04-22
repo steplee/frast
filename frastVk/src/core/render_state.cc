@@ -25,17 +25,6 @@ void MatrixStack::push(const double* t) {
 		//std::cout << C << std::endl;
 	} else {
 		assert(d < (MAX_DEPTH-1)); // too deep
-		//printf(" - push matrix to depth %d\n", d); fflush(stdout);
-		/*
-		for (int i=0; i<4; i++)
-		for (int j=0; j<4; j++) {
-			double acc = 0;
-			for (int k=0; k<4; k++) acc += m[d*16+4*i+k] * t[k*4+j];
-			m[(d+1)*16 + 4*i + j] = acc;
-		}
-		d++;
-		*/
-
 		// Note: requires alignment of input!
 		Map<const Matrix<double,4,4,RowMajor>> A ( m+(d-1)*16 );
 		Map<const Matrix<double,4,4,RowMajor>> B ( t );
@@ -72,7 +61,7 @@ void RenderState::frameBegin(FrameData* d) {
 /* ===================================================
  *
  *
- *                  Camera / CameraSpec
+ *            Camera / CameraSpec
  *
  *
  * =================================================== */
@@ -86,6 +75,21 @@ CameraSpec::CameraSpec(double w, double h, double vfov) : w(w), h(h), vfov(vfov)
 	hfov = std::atan(std::tan(vfov) / aspect());
 }
 
+void CameraSpec::compute_projection(double* dest) const {
+	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
+	//double u = 1.f / std::tan(.5* spec_.hfov);
+	double u = aspect() / std::tan(.5* vfov);
+	double v = 1.f / std::tan(.5* vfov);
+	double n = near, f = far;
+	proj <<
+		//2*n / 2*u, 0, 0, 0,
+		//0, 2*n / 2*v, 0, 0,
+		2*1 / 2*u, 0, 0, 0,
+		0, 2*1 / 2*v, 0, 0,
+		0, 0, (f+n)/(f-n), -2*f*n/(f-n),
+		0, 0, 1, 0;
+
+}
 
 Camera::Camera(const CameraSpec& spec) {
 	setSpec(spec);
@@ -96,26 +100,6 @@ Camera::Camera() {
 
 }
 
-void Camera::compute_projection() {
-	Map<Matrix<double,4,4,RowMajor>> proj ( proj_ );
-	//double u = 1.f / std::tan(.5* spec_.hfov);
-	double u = spec_.aspect() / std::tan(.5* spec_.vfov);
-	double v = 1.f / std::tan(.5* spec_.vfov);
-	//double n = .02f, f =  200.f;
-	//double n = .02f, f =  200.f;
-	//double n = .01 * 2.38418579e-7, f =  .4f;
-	// double n = 10. * 2.38418579e-7, f =  .4f;
-	// double n = 1e-5, f = 3.;
-	double n = spec_.near, f = spec_.far;
-	proj <<
-		//2*n / 2*u, 0, 0, 0,
-		//0, 2*n / 2*v, 0, 0,
-		2*1 / 2*u, 0, 0, 0,
-		0, 2*1 / 2*v, 0, 0,
-		0, 0, (f+n)/(f-n), -2*f*n/(f-n),
-		0, 0, 1, 0;
-
-}
 
 
 /* ===================================================
