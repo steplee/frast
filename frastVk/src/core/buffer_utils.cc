@@ -449,24 +449,38 @@ Uploader::Uploader(BaseVkApp* app_, vk::Queue q_) : app(app_), q(q_)
 	cmd = std::move(app->deviceGpu.allocateCommandBuffers(bufInfo)[0]);
 }
 
+void Uploader::uploadScratch(void* data, size_t len) {
+	if (len > scratchBuffer.residentSize) {
+		//if (scratchBuffer.residentSize == 0) {
+			scratchBuffer.setAsStorageBuffer(len, true);
+			scratchBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
+			scratchBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+		//}
+	}
+	scratchBuffer.upload(data, len);
+}
+
 void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, uint64_t off) {
 	assert(app != nullptr);
 
 	vk::CommandBufferBeginInfo beginInfo { vk::CommandBufferUsageFlagBits::eOneTimeSubmit, {} };
 	//vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
+	/*
 	ResidentBuffer tmpBuffer;
 	//tmpBuffer.setAsUniformBuffer(len, true);
 	tmpBuffer.setAsStorageBuffer(len, true);
 	tmpBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
 	tmpBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 	tmpBuffer.upload(data, len);
+	*/
+	uploadScratch(data, len);
 
 	vk::BufferCopy regions[1] = { { 0, 0, len } };
 
 	cmd.reset();
 	cmd.begin(beginInfo);
-	cmd.copyBuffer(*tmpBuffer.buffer, *dstBuffer.buffer, {1,regions});
+	cmd.copyBuffer(*scratchBuffer.buffer, *dstBuffer.buffer, {1,regions});
 	cmd.end();
 	//printf(" - [uploadSync q%p] copying %lu bytes.\n", (void*)(VkQueue)(q), regions[0].size);
 
@@ -485,12 +499,15 @@ void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uin
 	vk::CommandBufferBeginInfo beginInfo { vk::CommandBufferUsageFlagBits::eOneTimeSubmit, {} };
 	//vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
+	/*
 	ResidentBuffer tmpBuffer;
 	//tmpBuffer.setAsUniformBuffer(len, true);
 	tmpBuffer.setAsStorageBuffer(len, true);
 	tmpBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
 	tmpBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 	tmpBuffer.upload(data, len);
+	*/
+	uploadScratch(data, len);
 
 	vk::ImageSubresourceLayers subres {
 		vk::ImageAspectFlagBits::eColor,
@@ -536,7 +553,7 @@ void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uin
 	cmd.reset();
 	cmd.begin(beginInfo);
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, {1,&barrierIn});
-	cmd.copyBufferToImage(*tmpBuffer.buffer, *dstImage.image, vk::ImageLayout::eTransferDstOptimal, {1,regions});
+	cmd.copyBufferToImage(*scratchBuffer.buffer, *dstImage.image, vk::ImageLayout::eTransferDstOptimal, {1,regions});
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eAllCommands, {}, {}, {}, {1,&barrierOut});
 	cmd.end();
 

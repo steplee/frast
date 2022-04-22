@@ -77,12 +77,14 @@ struct GlobeApp : public VkApp {
 			
 			Image casterImage { 256, 256, Image::Format::RGBA };
 			casterImage.alloc();
-			for (int y=0; y<256; y++)
-			for (int x=0; x<256; x++) {
-				casterImage.buffer[y*256*4+x*4 +0] = (((x/32) + (y/32))%2 == 0) ? 240 : 130;
-				casterImage.buffer[y*256*4+x*4 +1] = (((x/32) + (y/32))%2 == 0) ? 240 : 130;
-				casterImage.buffer[y*256*4+x*4 +2] = (((x/32) + (y/32))%2 == 0) ? 240 : 130;
-				casterImage.buffer[y*256*4+x*4 +3] = 255;
+			for (int y=0; y<256; y++) {
+				int yy = y + fd.n;
+				for (int x=0; x<256; x++) {
+					casterImage.buffer[y*256*4+x*4 +0] = (((x/32) + (yy/32))%2 == 0) ? 240 : 130;
+					casterImage.buffer[y*256*4+x*4 +1] = (((x/32) + (yy/32))%2 == 0) ? 240 : 130;
+					casterImage.buffer[y*256*4+x*4 +2] = (((x/32) + (yy/32))%2 == 0) ? 240 : 130;
+					casterImage.buffer[y*256*4+x*4 +3] = 255;
+				}
 			}
 
 			CasterWaitingData cwd;
