@@ -160,8 +160,10 @@ struct TiledRenderer {
 		TiledRenderer(TiledRendererCfg& cfg, BaseVkApp* app);
 
 		void update(const RenderState& rs);
-		vk::CommandBuffer render(const RenderState& rs);
-		vk::CommandBuffer stepAndRender(const RenderState& rs);
+		// vk::CommandBuffer render(const RenderState& rs);
+		// vk::CommandBuffer stepAndRender(const RenderState& rs);
+		void stepAndRenderInPass(const RenderState& rs, vk::CommandBuffer& cmd);
+		void renderInPass(const RenderState& rs, vk::CommandBuffer& cmd);
 
 		void init();
 
@@ -216,7 +218,7 @@ struct TileUpdateContext {
 
 struct TileRenderContext {
 	const RenderState& rs;
-	vk::raii::CommandBuffer& cmd;
+	vk::CommandBuffer& cmd;
 	SharedTileData& std;
 	uint32_t numInds;
 	std::vector<uint32_t> drawTileIds;

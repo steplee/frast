@@ -411,8 +411,8 @@ bool BaseVkApp::make_swapchain() {
 }
 bool BaseVkApp::make_frames() {
 
-	frameOverlap = scNumImages;
-	// frameOverlap = 1;
+	// frameOverlap = scNumImages;
+	frameOverlap = 1;
 
 	vk::CommandBufferAllocateInfo bufInfo {
 		*commandPool,
@@ -517,13 +517,9 @@ bool BaseVkApp::make_basic_render_stuff() {
 		vk::ImageLayout::eDepthStencilAttachmentOptimal
 	};
 
-	vk::SubpassDescription subpass0 {
-		{},
-			vk::PipelineBindPoint::eGraphics,
-			{ },
-			{ 1, &colorAttachmentRef },
-			{ },
-			&depthAttachmentRef
+	std::vector<vk::SubpassDescription> subpasses {
+		{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
+		{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef }
 	};
 
 
@@ -535,13 +531,25 @@ bool BaseVkApp::make_basic_render_stuff() {
                          VULKAN_HPP_NAMESPACE::AccessFlags        srcAccessMask_   = {},
                          VULKAN_HPP_NAMESPACE::AccessFlags        dstAccessMask_   = {},
                          VULKAN_HPP_NAMESPACE::DependencyFlags    dependencyFlags_ = {} ) VULKAN_HPP_NOEXCEPT*/
-	vk::SubpassDependency depthDependency {
-		VK_SUBPASS_EXTERNAL, 0,
-		vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
-		vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
-		{},
-		vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-		{}
+	vk::SubpassDependency dependencies[2] = {
+		// Depth
+		{
+			VK_SUBPASS_EXTERNAL, 0,
+			vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+			vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+			{},
+			vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			{}
+		},
+		// 0-1
+		{
+			0, 1,
+			vk::PipelineStageFlagBits::eAllGraphics,
+			vk::PipelineStageFlagBits::eAllGraphics,
+			vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			vk::DependencyFlagBits::eDeviceGroup
+		}
 	};
 
 
@@ -549,8 +557,10 @@ bool BaseVkApp::make_basic_render_stuff() {
 	vk::RenderPassCreateInfo rpInfo {
 		{},
 		{ 2, atts },
-		{ 1, &subpass0 },
-		{ 1, &depthDependency }
+		// { 1, &subpass0 },
+		subpasses,
+		// { 1,dependencies }
+		{ 2u, dependencies }
 	};
 	simpleRenderPass.pass = std::move(deviceGpu.createRenderPass(rpInfo));
 
@@ -598,6 +608,9 @@ void BaseVkApp::init() {
 	if (headless) {
 		make_gpu_device();
 		make_headless_swapchain();
+		scSurfaceFormat = vk::SurfaceFormatKHR {};
+		scSurfaceFormat.format = vk::Format::eR8G8B8A8Unorm;
+		scSurfaceFormat.colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
 		uploader = std::move(Uploader(this, *queueGfx));
 	} else {
 		setupWindow();
@@ -739,7 +752,7 @@ bool PipelineStuff::setup_viewport(float w, float h, float x, float y) {
 	return false;
 }
 
-bool PipelineStuff::build(PipelineBuilder& builder, vk::raii::Device& device, const vk::RenderPass& pass) {
+bool PipelineStuff::build(PipelineBuilder& builder, vk::raii::Device& device, const vk::RenderPass& pass, uint32_t subpass) {
 	vk::PipelineViewportStateCreateInfo viewportState = {};
 	viewportState.viewportCount = 1;
 	viewportState.pViewports = &viewport;
@@ -800,7 +813,7 @@ bool PipelineStuff::build(PipelineBuilder& builder, vk::raii::Device& device, co
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.layout = *pipelineLayout;
 	pipelineInfo.renderPass = pass;
-	pipelineInfo.subpass = 0;
+	pipelineInfo.subpass = subpass;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
 	pipeline = std::move(device.createGraphicsPipeline(nullptr, pipelineInfo));
@@ -890,9 +903,10 @@ VkApp::VkApp() :
 void VkApp::init() {
 	BaseVkApp::init();
 
+	initDescriptors();
+	/*
 	createSimplePipeline(simplePipelineStuff, *simpleRenderPass.pass);
 
-	initDescriptors();
 
 	std::vector<float> verts = {
 		1,1,0,
@@ -909,6 +923,7 @@ void VkApp::init() {
 	// simpleMesh.rowSize = 4*(3+2);
 	simpleMesh.createAndUpload(deviceGpu,*pdeviceGpu,queueFamilyGfxIdxs);
 	createTexturedPipeline(texturedPipelineStuff, simpleMesh, *simpleRenderPass.pass);
+	*/
 
 
 }
@@ -1129,7 +1144,7 @@ void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 
 
 bool VkApp::createSimplePipeline(PipelineStuff& out, vk::RenderPass pass) {
-	simplePipelineStuff.setup_viewport(windowWidth, windowHeight);
+	out.setup_viewport(windowWidth, windowHeight);
 
 	std::string vsrcPath = "../src/shaders/simple.v.glsl";
 	std::string fsrcPath = "../src/shaders/simple.f.glsl";
@@ -1141,7 +1156,7 @@ bool VkApp::createSimplePipeline(PipelineStuff& out, vk::RenderPass pass) {
 			vk::PrimitiveTopology::eTriangleList,
 			*out.vs, *out.fs);
 
-	return out.build(builder, deviceGpu, pass);
+	return out.build(builder, deviceGpu, pass, 0);
 }
 
 bool VkApp::createTexturedPipeline(PipelineStuff& out, ResidentMesh& mesh, vk::RenderPass pass) {
@@ -1171,7 +1186,7 @@ bool VkApp::createTexturedPipeline(PipelineStuff& out, ResidentMesh& mesh, vk::R
 		out.setLayouts.push_back(*texDescLayout);
 	}
 
-	return out.build(builder, deviceGpu, pass);
+	return out.build(builder, deviceGpu, pass, 0);
 }
 
 

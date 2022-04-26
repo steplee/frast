@@ -1,3 +1,9 @@
+#define USE_TIMER
+#include <chrono>
+#include <frast/utils/timer.hpp>
+static AtomicTimer timer_tr_render("tr::render");
+static AtomicTimer timer_tr_update("tr::update");
+
 #include "tiled_renderer.h"
 
 #include <iostream>
@@ -8,6 +14,8 @@
 #include "conversions.hpp"
 
 #include "shaders/compiled/all.hpp"
+
+
 
 
 #if 0
@@ -888,7 +896,7 @@ void TiledRenderer::init() {
 				0,
 				sizeof(TiledRendererPushConstants) });
 
-		sharedTileData.pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
+		sharedTileData.pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
 
 	//
@@ -1014,7 +1022,7 @@ void TiledRenderer::init() {
 				0,
 				sizeof(TiledRendererPushConstants) });
 
-		sharedTileData.casterPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
+		sharedTileData.casterPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
 
 
@@ -1033,6 +1041,8 @@ void TiledRenderer::init() {
 }
 
 void TiledRenderer::update(const RenderState& rs) {
+	AtomicTimerMeasurement atm { timer_tr_update };
+
 	TileUpdateContext tuc { dataLoader };
 	tuc.mvp = Eigen::Map<const RowMatrix4d> { rs.mvp() }.cast<float>();
 	Vector3d eyed;
@@ -1109,9 +1119,9 @@ void TiledRenderer::update(const RenderState& rs) {
 	root->update(tuc, nullptr);
 }
 
-vk::CommandBuffer TiledRenderer::stepAndRender(const RenderState& rs) {
+void TiledRenderer::stepAndRenderInPass(const RenderState& rs, vk::CommandBuffer& cmd) {
 	update(rs);
-	return render(rs);
+	renderInPass(rs, cmd);
 }
 
 
@@ -1163,8 +1173,10 @@ void TiledRenderer::setCasterInRenderThread(const CasterWaitingData& cwd) {
 
 
 
-vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
-	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+void TiledRenderer::renderInPass(const RenderState& rs, vk::CommandBuffer& cmd) {
+	AtomicTimerMeasurement atm ( timer_tr_render );
+
+	// vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
 	TileRenderContext trc {
 		rs,
 		cmd,
@@ -1174,6 +1186,7 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	};
 	trc.drawTileIds.reserve(cfg.maxTiles);
 
+	/*
 	cmd.reset();
 	cmd.begin({});
 
@@ -1196,6 +1209,7 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 	cmd.reset();
 	cmd.begin(beginInfo);
 	cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+	*/
 
 	PipelineStuff* thePipelineStuff = 0;
 	if (sharedTileData.casterTextureSet and (sharedTileData.casterMask)) {
@@ -1247,10 +1261,8 @@ vk::CommandBuffer TiledRenderer::render(const RenderState& rs) {
 		cmd.drawIndexed(trc.numInds, 1, 0,0,i);
 	}
 
-	cmd.endRenderPass();
-	cmd.end();
-
-	return *cmd;
+	// cmd.endRenderPass();
+	// cmd.end();
 }
 
 }

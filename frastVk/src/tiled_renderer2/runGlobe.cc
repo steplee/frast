@@ -16,10 +16,19 @@
 #include "tiled_renderer2/tiled_renderer.h"
 using namespace tr2;
 
+#include "extra/particleCloud/particleCloud.h"
+#include "extra/frustum/frustum.h"
+#include "extra/ellipsoid.hpp"
+
 struct GlobeApp : public VkApp {
 
 		std::shared_ptr<ClipMapRenderer1> clipmap;
 		std::shared_ptr<TiledRenderer> tiledRenderer;
+		std::shared_ptr<ParticleCloudRenderer> particleCloud;
+		std::shared_ptr<FrustumSet> frustumSet;
+		std::shared_ptr<EarthEllipsoid> earthEllipsoid;
+
+	inline virtual uint32_t mainSubpass() const override { return 1; }
 
 	inline virtual void init() override {
 		VkApp::init();
@@ -65,6 +74,48 @@ struct GlobeApp : public VkApp {
 		TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
+
+		particleCloud = std::make_shared<ParticleCloudRenderer>(this);
+		std::vector<float> particles4;
+		Vector3d p { camera->viewInv()[0*4+3], camera->viewInv()[1*4+3], camera->viewInv()[2*4+3] };
+		Vector3d t = p.normalized();
+		p = p * .003 + t * .997;
+		RowMatrix3d P = RowMatrix3d::Identity() - t*t.transpose();
+		const int N = 1024*64;
+		for (int i=0; i<1024; i++) {
+			Vector3d x = p + P * Vector3d::Random() * .1;
+			particles4.push_back((float)x[0]);
+			particles4.push_back((float)x[1]);
+			particles4.push_back((float)x[2]);
+			particles4.push_back(((float)i)/N);
+		}
+		particleCloud->uploadParticles(particles4);
+
+		if (1) {
+			frustumSet = std::make_shared<FrustumSet>(this, 2);
+			Vector3d pos { 0.17287, -0.754957,  0.631011 };
+			Vector3d t = p.normalized();
+
+			Eigen::Matrix<double,3,3,Eigen::RowMajor> R;
+			R.row(2) = -pos.normalized();
+			R.row(0) =  R.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+			R.row(1) =  R.row(2).cross(R.row(0)).normalized();
+			R.transposeInPlace();
+
+			Vector3d pos2 = pos + Vector3d{1e-5,1e-6,1e-7};
+			Eigen::Vector4f color1 { 0,1,0,1 };
+			Eigen::Vector4f color2 { 0,0,1,.5 };
+			frustumSet->setPose(0, pos, R);
+			frustumSet->setIntrin(0, spec.w,spec.h, spec.fx(),spec.fy());
+			frustumSet->setColor(0,color1.data());
+			frustumSet->setPose(1, pos2, R);
+			frustumSet->setIntrin(1, spec.w,spec.h, spec.fx(),spec.fy());
+			frustumSet->setColor(1,color2.data());
+		}
+
+		earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
+		earthEllipsoid->init(0);
+
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
@@ -135,11 +186,53 @@ struct GlobeApp : public VkApp {
 		}
 
 
+		// If we use a frustum, it must be rendered in a pass, so we can use the simpleRenderPass from VkApp.
+		vk::CommandBuffer frame_cmd = *fd.cmd;
+		frame_cmd.reset();
+		frame_cmd.begin(vk::CommandBufferBeginInfo{});
+
+		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
+		vk::ClearValue clears_[2] = {
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.05f,.1f,1.f } } }, // color
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 1.f,1.f,1.f,1.f } } }  // depth
+		};
+		vk::RenderPassBeginInfo rpInfo {
+				*simpleRenderPass.pass, *simpleRenderPass.framebuffers[rs.frameData->scIndx],
+				aoi, {2, clears_}
+		};
+
+
+		// Note: Can roll back to just one subpass, I thought there was a dependency issue -- it was just a depth-test issue.
+		frame_cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+		if (earthEllipsoid) earthEllipsoid->renderInPass(rs, frame_cmd);
+		frame_cmd.nextSubpass(vk::SubpassContents::eInline);
+
+		/*
+		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
+			vk::ImageMemoryBarrier {
+				{},{},
+				{}, {},
+				{}, {},
+				*sc.headlessImages[fd.scIndx],
+				vk::ImageSubresourceRange { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+			}};
+		if (earthEllipsoid) frame_cmd.pipelineBarrier(
+				vk::PipelineStageFlagBits::eAllGraphics,
+				vk::PipelineStageFlagBits::eAllGraphics,
+				vk::DependencyFlagBits::eDeviceGroup,
+				{}, {}, imgBarriers );
+				*/
+
+		tiledRenderer->stepAndRenderInPass(renderState, frame_cmd);
+		if (frustumSet) frustumSet->renderInPass(rs, frame_cmd);
+		frame_cmd.endRenderPass();
+		frame_cmd.end();
 
 
 		std::vector<vk::CommandBuffer> cmds = {
-			tiledRenderer->stepAndRender(renderState)
+			frame_cmd
 		};
+		cmds.push_back( particleCloud->render(renderState, *simpleRenderPass.framebuffers[renderState.frameData->scIndx]) );
 
 		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
 

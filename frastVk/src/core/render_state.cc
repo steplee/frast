@@ -75,11 +75,18 @@ CameraSpec::CameraSpec(double w, double h, double vfov) : w(w), h(h), vfov(vfov)
 	hfov = std::atan(std::tan(vfov) / aspect());
 }
 
+float CameraSpec::fx() const {
+	return w * .5f / std::tan(.5 * hfov);
+}
+float CameraSpec::fy() const {
+	return h * .5f / std::tan(.5 * vfov);
+}
+
 void CameraSpec::compute_projection(double* dest) const {
 	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
-	//double u = 1.f / std::tan(.5* spec_.hfov);
-	double u = aspect() / std::tan(.5* vfov);
-	double v = 1.f / std::tan(.5* vfov);
+	// double u = aspect() / std::tan(.5* vfov);
+	double u = 1. / std::tan(.5* hfov);
+	double v = 1. / std::tan(.5* vfov);
 	double n = near, f = far;
 	proj <<
 		//2*n / 2*u, 0, 0, 0,

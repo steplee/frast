@@ -45,6 +45,12 @@ uint64_t scalarSizeOfFormat(const vk::Format& f) {
 		case vk::Format::eR8G8B8A8Snorm:
 		case vk::Format::eR8G8B8A8Sscaled:
 		case vk::Format::eR8G8B8A8Uscaled:
+		case vk::Format::eB8G8R8A8Uint:
+		case vk::Format::eB8G8R8A8Sint:
+		case vk::Format::eB8G8R8A8Unorm:
+		case vk::Format::eB8G8R8A8Snorm:
+		case vk::Format::eB8G8R8A8Sscaled:
+		case vk::Format::eB8G8R8A8Uscaled:
 											  return 4;
 		default: {
 					 throw std::runtime_error("[scalarSizeOfFormat] Unsupported format " + vk::to_string(f));
@@ -92,8 +98,8 @@ void ResidentBuffer::upload(void* cpuData, uint64_t len, uint64_t offset) {
 	mem.unmapMemory();
 }
 
-void ResidentBuffer::setAsVertexBuffer(uint64_t len, bool mappable) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eVertexBuffer);
+void ResidentBuffer::setAsVertexBuffer(uint64_t len, bool mappable, vk::BufferUsageFlags extraFlags) {
+	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eVertexBuffer | extraFlags);
 }
 void ResidentBuffer::setAsIndexBuffer(uint64_t len, bool mappable) {
 	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eIndexBuffer);
@@ -335,10 +341,10 @@ void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w) {
 	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
 	create_(uploader);
 }
-void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data) {
+void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
-	usageFlags = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
+	usageFlags = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | extraFlags;
 	aspectFlags = vk::ImageAspectFlagBits::eColor;
 	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
 
@@ -348,12 +354,14 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
 	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	samplerInfo.unnormalizedCoordinates = unnormalizedCoordinates;
 	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
 
 	if (data != nullptr)
 		uploader.uploadSync(*this, data, size(), 0);
 }
-void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data) {
+
+void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	usageFlags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
@@ -366,6 +374,7 @@ void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::For
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
 	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	samplerInfo.unnormalizedCoordinates = unnormalizedCoordinates;
 	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
 
 	if (data != nullptr)
@@ -488,7 +497,7 @@ void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, u
 	//vk::SubmitInfo submitInfo { nullptr, {1,&waitMask}, nullptr, nullptr, };
 	vk::SubmitInfo submitInfo { nullptr, nullptr, {1,&*cmd}, nullptr };
 	q.submit(submitInfo, *fence);
-	app->deviceGpu.waitForFences({1, &*fence}, true, 9999999);
+	app->deviceGpu.waitForFences({1, &*fence}, true, 9999999999);
 	app->deviceGpu.resetFences({1, &*fence});
 }
 
@@ -559,6 +568,6 @@ void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uin
 
 	vk::SubmitInfo submitInfo { nullptr, nullptr, {1,&*cmd}, nullptr };
 	q.submit(submitInfo, *fence);
-	app->deviceGpu.waitForFences({1, &*fence}, true, 9999999);
+	app->deviceGpu.waitForFences({1, &*fence}, true, 99999999999);
 	app->deviceGpu.resetFences({1, &*fence});
 }

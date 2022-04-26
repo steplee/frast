@@ -51,7 +51,7 @@ struct PipelineStuff {
 	std::vector<vk::DescriptorSetLayout> setLayouts;
 
 	bool setup_viewport(float w, float h, float x=0, float y=0);
-	bool build(PipelineBuilder& builder, vk::raii::Device& device, const vk::RenderPass& pass);
+	bool build(PipelineBuilder& builder, vk::raii::Device& device, const vk::RenderPass& pass, uint32_t subpass);
 };
 
 bool createShaderFromStrings(
@@ -166,6 +166,8 @@ struct BaseVkApp : public Window {
 	SimpleRenderPass simpleRenderPass;
 
 	Uploader uploader;
+
+	inline virtual uint32_t mainSubpass() const { return 0; }
 
 	protected:
 		bool require_16bit_shader_types = true;

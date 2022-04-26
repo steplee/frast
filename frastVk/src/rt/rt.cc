@@ -1066,7 +1066,7 @@ void RtRenderer::init() {
 				0,
 				sizeof(RtPushConstants) });
 
-		pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass);
+		pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
 
 	// Find root frast tile, then create the Tile backing it.

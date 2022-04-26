@@ -14,6 +14,9 @@ struct CameraSpec {
 	CameraSpec(double w, double h, double vfov);
 	inline double aspect() const { return h / w; }
 
+	float fx() const;
+	float fy() const;
+
 	void compute_projection(double* dest) const;
 };
 

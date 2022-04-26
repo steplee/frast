@@ -35,14 +35,17 @@ add_library(frastVk
 	src/core/buffer_utils.cc
 	src/core/render_state.cc
 
-	src/clipmap1/clipmap1.cc
-	src/clipmap1/clipmap1_load.cc
+	# src/clipmap1/clipmap1.cc
+	# src/clipmap1/clipmap1_load.cc
 
-	src/tiled_renderer/tiled_renderer.cc
+	# src/tiled_renderer/tiled_renderer.cc
 	src/tiled_renderer2/tiled_renderer.cc
 
 	src/rt/rt.cc
 	src/rt/protos/rocktree.pb.cc
+
+	src/extra/particleCloud/particleCloud.cc
+	src/extra/frustum/frustum.cc
 )
 
 
@@ -89,3 +92,13 @@ target_precompile_headers(testParseRt REUSE_FROM frastVk)
 add_executable(runRt src/rt/run.cc src/rt/protos/rocktree.pb.cc)
 target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)
+
+
+##################
+#   Install
+##################
+
+install(TARGETS frastVk LIBRARY DESTINATION /usr/local/lib)
+#install(FILES "src/core/app.h" "src/core/buffer_utils.h" "src/core/render_state.h" "src/core/window.hpp" DESTINATION /usr/local/include/frastVk/core)
+#install(FILES "src/rt/rt.h" "src/rt/rt_decode.hpp" "src/rt/protos/window.hpp" DESTINATION /usr/local/include/frastVk/core)
+install(DIRECTORY src/core src/entity src/extra src/rt src/tiled_renderer2 src/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN ".hpp")

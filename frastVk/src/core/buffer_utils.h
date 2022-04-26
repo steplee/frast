@@ -46,7 +46,7 @@ struct ResidentBuffer {
 	//vk::ImageAspectFlags aspectFlags;
 
 	// If mappable, make sure it's host accessible. Otherwise its device local, but eTransferDst.
-	void setAsVertexBuffer(uint64_t len, bool mappable=false);
+	void setAsVertexBuffer(uint64_t len, bool mappable=false, vk::BufferUsageFlags extraFlags={});
 	void setAsIndexBuffer(uint64_t len, bool mappable=false);
 	void setAsUniformBuffer(uint64_t len, bool mappable=false);
 	void setAsOtherBuffer(uint64_t len, bool mappable=false);
@@ -181,6 +181,8 @@ struct ResidentImage {
 	vk::MemoryPropertyFlagBits memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
 	// ImageView details
 	vk::ImageAspectFlags aspectFlags;
+	// Passed to sampler.
+	bool unnormalizedCoordinates = false;
 
 	inline uint32_t channels() const {
 		return scalarSizeOfFormat(format);
@@ -190,8 +192,8 @@ struct ResidentImage {
 	}
 
 	void createAsDepthBuffer(Uploader& uploader, int h, int w);
-	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data);
-	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data);
+	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={});
+	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={});
 	void create_(Uploader& uploader);
 };
 
