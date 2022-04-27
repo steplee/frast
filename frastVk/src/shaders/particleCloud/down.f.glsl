@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_scalar_block_layout: enable
 
 layout (location=0) in vec2 v_uv;
 
@@ -6,10 +7,11 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 
 layout (location = 0) out vec4 outFragColor;
 
-layout(push_constant) uniform PushConstants {
+layout(std430, push_constant) uniform PushConstants {
 	uint w;
 	uint h;
 	float s;
+	float d;
 } pushConstants;
 
 void main() {
@@ -50,12 +52,18 @@ void main() {
 	/* vec2 uv = v_uv * vec2(float(2*pushConstants.w) - 1.0, float(2*pushConstants.h) - 1.0); */
 	vec4 c = vec4(0.);
 	vec2 duv = 1.0 * vec2(1.0, 1.0);
-	c += 4.0 * textureLod(tex, uv + duv * vec2(0.), 0);
-	c += textureLod(tex, uv + duv * vec2(-1., -1.), 0);
-	c += textureLod(tex, uv + duv * vec2( 1., -1.), 0);
-	c += textureLod(tex, uv + duv * vec2( 1.,  1.), 0);
-	c += textureLod(tex, uv + duv * vec2(-1.,  1.), 0);
+	c += 2.0 * textureLod(tex, uv + duv * vec2(0.), 0);
+	/* float z = -1., o = 1.; */
+	float z = -2., o = 2.;
+	/* float z = -.5, o = .5; */
+	/* z*=3.0; */
+	/* o*=3.0; */
+	c += textureLod(tex, uv + duv * vec2(z,z), 0);
+	c += textureLod(tex, uv + duv * vec2(o,z), 0);
+	c += textureLod(tex, uv + duv * vec2(o,o), 0);
+	c += textureLod(tex, uv + duv * vec2(z,o), 0);
 	/* c.r = (sin(.5*uv.y)) * 5.; */
 	/* c.r = v_uv.y * 5.; */
-	outFragColor = clamp(c * .2, 0., 1.);
+	/* c.a *= pushConstants.d; */
+	outFragColor = clamp(c * .5, 0., 1.);
 }

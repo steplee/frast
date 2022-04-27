@@ -32,6 +32,9 @@ struct PipelineBuilder {
 	vk::PipelineMultisampleStateCreateInfo multisampling;
 	vk::PipelineDepthStencilStateCreateInfo depthState;
 
+	bool additiveBlending = false;
+	bool depthTest = true, depthWrite = true;
+
 	virtual void init(
 			const VertexInputDescription& vertexDesc,
 			vk::PrimitiveTopology topo,

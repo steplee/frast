@@ -18,5 +18,7 @@ void main()
 {
 	gl_PointSize = 1;
 	gl_Position = transpose(cameraData.viewProj) * vec4(aPosition,1.0);
-	v_color = vec4(1.0);
+	/* v_color = vec4(vec3(intensity), 1.0); */
+	/* v_color = vec4(1.0, 1.0 ,1.0, intensity); */
+	v_color = vec4(intensity);
 }

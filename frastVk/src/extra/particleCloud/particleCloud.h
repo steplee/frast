@@ -13,6 +13,11 @@ class ParticleRenderPass {
 struct __attribute__((aligned)) ParticleCloudPushConstants {
 	uint32_t w, h;
 	float s;
+	float d;
+};
+
+enum class ParticleRenderMode {
+	eFiltered, ePoints, eNone
 };
 
 class ParticleCloudRenderer {
@@ -30,7 +35,13 @@ class ParticleCloudRenderer {
 		// Should only be called in render thread!
 		void uploadParticles(const std::vector<float>& particles);
 
+		inline void setRenderMode(ParticleRenderMode mode_) { mode = mode_; }
+
 	private:
+
+		vk::CommandBuffer renderFiltered(RenderState& rs, vk::Framebuffer outputFramebuffer);
+		vk::CommandBuffer renderPoints(RenderState& rs, vk::Framebuffer outputFramebuffer);
+		ParticleRenderMode mode = ParticleRenderMode::eFiltered;
 
 		uint32_t w, h;
 		uint32_t n_lvl = 3;

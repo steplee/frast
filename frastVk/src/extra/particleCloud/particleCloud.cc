@@ -102,7 +102,8 @@ void ParticleCloudRenderer::setup_fbos() {
 		vk::AttachmentDescription colorAttachment {
 			{},
 				// app->scSurfaceFormat.format,
-				vk::Format::eR32Sfloat,
+				// vk::Format::eR32Sfloat,
+				vk::Format::eR32G32B32A32Sfloat,
 				vk::SampleCountFlagBits::e1,
 				//vk::AttachmentLoadOp::eStore, vk::AttachmentStoreOp::eStore,
 				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
@@ -187,10 +188,12 @@ void ParticleCloudRenderer::setup_fbos() {
 			particleImages.back().unnormalizedCoordinates = true;
 			particleImages.back().createAsTexture(app->uploader, h, w,
 					// app->scSurfaceFormat.format,
-					vk::Format::eR32Sfloat,
+					// vk::Format::eR32Sfloat,
+					vk::Format::eR32G32B32A32Sfloat,
 					emptyImage.data(),
 					vk::ImageUsageFlagBits::eColorAttachment |
-					vk::ImageUsageFlagBits::eSampled
+					vk::ImageUsageFlagBits::eSampled,
+					vk::SamplerAddressMode::eClampToBorder
 					);
 
 			vk::ImageView views[2] = { *particleImages[i].view, *app->simpleRenderPass.depthImages[i].view };
@@ -212,7 +215,8 @@ void ParticleCloudRenderer::setup_fbos() {
 		vk::AttachmentDescription colorAttachment {
 			{},
 				// app->scSurfaceFormat.format,
-				vk::Format::eR32Sfloat,
+				// vk::Format::eR32Sfloat,
+				vk::Format::eR32G32B32A32Sfloat,
 				vk::SampleCountFlagBits::e1,
 				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
 				// vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eStore,
@@ -261,7 +265,8 @@ void ParticleCloudRenderer::setup_fbos() {
 			filterImages[jj].unnormalizedCoordinates = true;
 			filterImages[jj].createAsTexture(app->uploader, h, w,
 					// app->scSurfaceFormat.format, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
-					vk::Format::eR32Sfloat, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+					vk::Format::eR32Sfloat, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+					vk::SamplerAddressMode::eClampToBorder);
 
 			print("\t - create filterFramebuffers[{}]\n", jj);
 			/*
@@ -537,6 +542,9 @@ void ParticleCloudRenderer::setup_pipelines() {
 					sizeof(ParticleCloudPushConstants) });
 
 			PipelineBuilder builder;
+			builder.additiveBlending = true;
+			builder.depthTest = false;
+			builder.depthWrite = false;
 			builder.init(
 					{},
 					vk::PrimitiveTopology::eTriangleList,
@@ -556,6 +564,31 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 	auto &fd = *rs.frameData;
 
 	AtomicTimerMeasurement atm { timer_pc };
+
+	if (mode == ParticleRenderMode::eNone) {
+		vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+		cmd.reset();
+		vk::CommandBufferBeginInfo beginInfo { {}, {} };
+		vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
+		vk::ClearValue clears_[1] = {
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.0f,.0f,.0f } } }, // color
+		};
+		vk::RenderPassBeginInfo rpInfo {
+			*particlePass, *particleFramebuffers[rs.frameData->scIndx], aoi, {1, clears_}
+		};
+		cmd.begin(beginInfo);
+		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+		cmd.endRenderPass();
+		cmd.end();
+		return *cmd;
+	}
+
+	else if (mode == ParticleRenderMode::eFiltered) return renderFiltered(rs, outputFramebuffer);
+	else return renderPoints(rs, outputFramebuffer);
+}
+
+vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Framebuffer outputFramebuffer) {
+	auto &fd = *rs.frameData;
 
 	/*
 	// std::vector<uint8_t> img0(w*h*4,0);
@@ -577,16 +610,11 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 
 	vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
-	// print(" - [ParticleCloudRenderer::render()]\n");
-
-
 	// TODO: Try to use just two passes with many subpasses for each lvl.
-
-
 	cmd.reset();
 	cmd.begin(beginInfo);
 
-	ParticleCloudPushConstants pushc { w, h, 1.0f };
+	ParticleCloudPushConstants pushc { w, h, 1.0f, .5f };
 
 	// Render particles
 	{
@@ -612,33 +640,8 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		cmd.endRenderPass();
 	}
 
-	if (0) {
-		vk::ImageMemoryBarrier barrier;
-		barrier.image = *particleImages[fd.scIndx].image;
-		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-		barrier.oldLayout = vk::ImageLayout::eUndefined;
-		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
-
-		vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
-		vk::RenderPassBeginInfo rpInfo {
-			*outputPass, outputFramebuffer, aoi, {}
-		};
-		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&*particleDescSet[fd.scIndx]}, nullptr);
-		pushc.w = w;
-		pushc.h = h;
-		pushc.s = 1.0f;
-		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
-		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-		cmd.draw(6, 1, 0, 0);
-		cmd.endRenderPass();
-	}
+	// float dstep = .1f;
+	pushc.d = 0.0f;
 
 	// Do down filtering
 	int lvl_i = 0;
@@ -647,10 +650,6 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		vk::Image inImg;
 		vk::DescriptorSet inSet;
 		vk::Framebuffer outFbo;
-
-		pushc.w >>= 1;
-		pushc.h >>= 1;
-		pushc.s /= 2.0f;
 
 		if (lvl_i == 0) {
 			inImg = *particleImages[fd.scIndx].image;
@@ -661,6 +660,43 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 			inSet = *filterDescSet[lvl_i%2];
 			outFbo = *filterFramebuffers[(1+lvl_i)%2];
 		}
+
+		if (lvl_i == 0) {
+			vk::ImageMemoryBarrier barrier;
+			barrier.image = inImg;
+			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.oldLayout = vk::ImageLayout::eUndefined;
+			barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+
+			vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
+			vk::RenderPassBeginInfo rpInfo {
+				*outputPass, outputFramebuffer, aoi, {}
+			};
+			// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&inSet}, nullptr);
+			ParticleCloudPushConstants pushc2;
+			pushc2 = pushc;
+			pushc2.s = 1.0f;
+			pushc2.d = .4f;
+			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
+			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+			cmd.draw(6, 1, 0, 0);
+			for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+			cmd.endRenderPass();
+		}
+
+		pushc.w >>= 1;
+		pushc.h >>= 1;
+		pushc.s /= 2.0f;
+		// pushc.d -= dstep;
+		pushc.d = .2f;
+
 
 		vk::Rect2D aoi { { 0, 0 }, { pushc.w, pushc.h } };
 		vk::ClearValue clears_[1] = { vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.0f,.0f,.0f } } } };
@@ -686,10 +722,15 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		cmd.draw(6, 1, 0,0);
 		cmd.endRenderPass();
 
+
+
+
 		// barrier.oldLayout = vk::ImageLayout::eUndefined;
 		// barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
 		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, {}, {}, {}, {1, &barrier});
 	}
+
+	// pushc.d -= dstep * .5f;
 
 
 	// Do up filtering
@@ -702,6 +743,7 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		pushc.w <<= 1;
 		pushc.h <<= 1;
 		pushc.s *= 2.0f;
+		// pushc.d -= dstep;
 
 		// if (lvl_i == 0) {
 			// inImg = *particleImages[fd.scIndx].image;
@@ -740,6 +782,8 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 
 	lvl_i--;
 
+	// pushc.d -= dstep;
+
 	// Draw new texture ontop of old fbo
 	{
 		vk::ImageMemoryBarrier barrier;
@@ -760,6 +804,78 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&*filterDescSet[(lvl_i+1)%2]}, nullptr);
+		pushc.w = w;
+		pushc.h = h;
+		pushc.s = 1.0f;
+		pushc.d = .6f;
+		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
+		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+		cmd.draw(6, 1, 0, 0);
+		for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+		cmd.endRenderPass();
+	}
+
+	cmd.end();
+	return *cmd;
+}
+
+vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Framebuffer outputFramebuffer) {
+	auto &fd = *rs.frameData;
+	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+
+	vk::CommandBufferBeginInfo beginInfo { {}, {} };
+
+	// TODO: Try to use just two passes with many subpasses for each lvl.
+	cmd.reset();
+	cmd.begin(beginInfo);
+
+	ParticleCloudPushConstants pushc { w, h, 1.0f };
+
+	// Render particles
+	{
+		vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
+		vk::ClearValue clears_[1] = {
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.0f,.0f,.0f } } }, // color
+		};
+		vk::RenderPassBeginInfo rpInfo {
+			*particlePass, *particleFramebuffers[rs.frameData->scIndx], aoi, {1, clears_}
+		};
+
+		float mvp[16];
+		rs.mvpf(mvp);
+		void* dbuf = (void*) globalBuffer.mem.mapMemory(0, 16*4, {});
+		memcpy(dbuf, mvp, 16*4);
+		globalBuffer.mem.unmapMemory();
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipelineStuff.pipeline);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *particlePipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+		cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*particleBuffer.buffer}, {0u});
+		cmd.draw(numParticles, 1, 0,0);
+		cmd.endRenderPass();
+	}
+
+
+
+	{
+		vk::ImageMemoryBarrier barrier;
+		barrier.image = *particleImages[rs.frameData->scIndx].image;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eUndefined;
+		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+
+		vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
+		vk::RenderPassBeginInfo rpInfo {
+			*outputPass, outputFramebuffer, aoi, {}
+		};
+		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&*particleDescSet[rs.frameData->scIndx]}, nullptr);
 		pushc.w = w;
 		pushc.h = h;
 		pushc.s = 1.0f;

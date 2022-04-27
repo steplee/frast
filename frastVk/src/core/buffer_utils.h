@@ -192,8 +192,8 @@ struct ResidentImage {
 	}
 
 	void createAsDepthBuffer(Uploader& uploader, int h, int w);
-	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={});
-	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={});
+	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
+	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void create_(Uploader& uploader);
 };
 

@@ -698,7 +698,6 @@ void PipelineBuilder::init(
 	{
 		vk::PipelineDepthStencilStateCreateInfo info = {};
 
-		bool depthTest = true, depthWrite = true;
 		info.depthTestEnable = depthTest ? VK_TRUE : VK_FALSE;
 		info.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
 		info.depthCompareOp = depthTest ? vk::CompareOp::eLess : vk::CompareOp::eAlways;
@@ -721,7 +720,7 @@ void PipelineBuilder::init(
 		multisampling = info;
 	}
 
-	{
+	if (not additiveBlending) {
 		vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
 		colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |
 			vk::ColorComponentFlagBits::eG |
@@ -733,6 +732,19 @@ void PipelineBuilder::init(
 		colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
 		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eSrcAlpha;
 		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+		this->colorBlendAttachment = colorBlendAttachment;
+	} else {
+		vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
+		colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |
+			vk::ColorComponentFlagBits::eG |
+			vk::ColorComponentFlagBits::eB |
+			vk::ColorComponentFlagBits::eA ;
+		//colorBlendAttachment.blendEnable = VK_FALSE;
+		colorBlendAttachment.blendEnable = VK_TRUE;
+		colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+		colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOne;
+		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
 		this->colorBlendAttachment = colorBlendAttachment;
 	}
 

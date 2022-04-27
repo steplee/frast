@@ -341,7 +341,7 @@ void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w) {
 	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
 	create_(uploader);
 }
-void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags) {
+void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	usageFlags = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | extraFlags;
@@ -353,7 +353,7 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 	vk::SamplerCreateInfo samplerInfo {};
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
-	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	samplerInfo.addressModeV = samplerInfo.addressModeU = addr;
 	samplerInfo.unnormalizedCoordinates = unnormalizedCoordinates;
 	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
 
@@ -361,7 +361,7 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 		uploader.uploadSync(*this, data, size(), 0);
 }
 
-void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags) {
+void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	usageFlags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
@@ -373,7 +373,7 @@ void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::For
 	vk::SamplerCreateInfo samplerInfo {};
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
-	samplerInfo.addressModeV = samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	samplerInfo.addressModeV = samplerInfo.addressModeU = addr;
 	samplerInfo.unnormalizedCoordinates = unnormalizedCoordinates;
 	sampler = std::move(vk::raii::Sampler{uploader.app->deviceGpu, samplerInfo});
 

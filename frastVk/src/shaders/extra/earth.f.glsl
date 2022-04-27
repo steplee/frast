@@ -51,8 +51,8 @@ void main() {
 	/* vec4 rd_ = ivp * vec4(uv, 0, 1.0); vec3 rd = rd_.xyz / rd_.w; */
 
 	// Intersect with WGS84 ellipsoid.
-	/* vec3 axes_scale = vec3(1.0, 1.0, (6378137.0) / 6356752.314245179); */
-	vec3 axes_scale = vec3(1.0, 1.0, 1.0);
+	vec3 axes_scale = vec3(1.0, 1.0, (6378137.0) / 6356752.314245179);
+	/* vec3 axes_scale = vec3(1.0, 1.0, 1.0); */
 	vec3 p1 = ro * axes_scale;
 	float c = dot(p1,p1) - (1.0 + 0.0);
 
@@ -72,16 +72,38 @@ void main() {
 	// If hit, shade.
 	if (pt[0] != 0. && pt[1] != 0.) {
 
+		float d = length(ro);
+		/* float o = 2. / (.1 + d - 1.); */
+		/* float o = 2. / (.001 + d - 1.); */
+		/* float o = 1. / (d - .5) * 45.; */
+		/* float o = 1.0 / (d); */
+		/* o = exp(-pow(d-.997,.125)) * 9.; */
+
+		d = d - .997 + .1;
+		/* d = pow(d, .5); */
+		d = d > 5.0 ? (d*d) : d;
+		float o = exp(-(d)*75.) * 9.;
+
 		/* outFragColor = vec4(0.,0.5,0.5,.75); */
 		float l = 0.0;
-		float x = atan(pt.x, pt.y) * .5;
-		float y = atan(pt.z, length(pt.xy)) * .5;
+		float x = atan(pt.y, pt.x) * 2. / 3.14159265359;
+		float y = atan(pt.z, length(pt.xy)) * 2. / 3.14159265359;
 		/* l += pow(sin(y * 80.), 4.0); */
 		/* l += pow(sin(x * 80.), 4.0); */
-		l += smoothstep(.1, .0, fract(y*45.));
-		l += smoothstep(.1, .0, fract(x*45.));
-		l += smoothstep(.1 * .5, .0, fract(y*45.*2.)) * .5;
-		l += smoothstep(.1 * .5, .0, fract(x*45.*2.)) * .5;
+
+
+		float f = 32.0;
+		for (int i=-1; i<2; i++) {
+			float oo = o + i;
+			float io = floor(oo);
+			float mo = 1. - (oo - io);
+			float io1 = pow(2.0, io);
+			float io2 = pow(2.0, io+1.0);
+			l += mo*smoothstep(.003, .0, abs(fract(f*y*io1)-.5));
+			l += mo*smoothstep(.003, .0, abs(fract(f*x*io1)-.5));
+			l += (1.-mo)*smoothstep(.003, .0, abs(fract(f*y*io2)-.5));
+			l += (1.-mo)*smoothstep(.003, .0, abs(fract(f*x*io2)-.5));
+		}
 
 		vec3 color = vec3(l);
 		color += .6;

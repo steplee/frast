@@ -82,7 +82,7 @@ struct GlobeApp : public VkApp {
 		p = p * .003 + t * .997;
 		RowMatrix3d P = RowMatrix3d::Identity() - t*t.transpose();
 		const int N = 1024*64;
-		for (int i=0; i<1024; i++) {
+		for (int i=0; i<N; i++) {
 			Vector3d x = p + P * Vector3d::Random() * .1;
 			particles4.push_back((float)x[0]);
 			particles4.push_back((float)x[1]);

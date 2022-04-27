@@ -1,12 +1,14 @@
 #version 450
 precision highp float;
+#extension GL_EXT_scalar_block_layout: enable
 
 layout (location=0) out vec2 v_uv;
 
-layout(push_constant) uniform PushConstants {
+layout(std430, push_constant) uniform PushConstants {
 	uint w;
 	uint h;
 	float s;
+	float d;
 } pushConstants;
 
 void main() {
@@ -20,7 +22,9 @@ void main() {
 		vec2( 0.,  0.)
 		};
 	vec2 p = vec2(-1.,-1.) + 2.0 * pushConstants.s * ps[gl_VertexIndex];
-	gl_Position = vec4(p, 0., 1.);
+	/* gl_Position = vec4(p, 0.9 - (pushConstants.w*.0001), 1.); */
+	/* gl_Position = vec4(p, pushConstants.d, 1.); */
+	gl_Position = vec4(p, .999, 1.);
 	/* v_uv = (p + 1.0) * .5; */
 	v_uv = ps[gl_VertexIndex];
 }
