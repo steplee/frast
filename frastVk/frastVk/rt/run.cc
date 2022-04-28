@@ -50,9 +50,31 @@ struct RtApp : public VkApp {
 
 	inline virtual void doRender(RenderState& rs) override {
 
-		std::vector<vk::CommandBuffer> cmds = {
-			rtr->stepAndRender(renderState)
+		auto cmd = *rs.frameData->cmd;
+
+		vk::CommandBufferBeginInfo beginInfo { {}, {} };
+		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
+		vk::ClearValue clears_[2] = {
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.05f,.1f,1.f } } }, // color
+			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 1.f,1.f,1.f,1.f } } }  // depth
 		};
+		vk::RenderPassBeginInfo rpInfo {
+			*simpleRenderPass.pass, *simpleRenderPass.framebuffers[rs.frameData->scIndx],
+				aoi, {2, clears_}
+		};
+		cmd.reset();
+		cmd.begin(beginInfo);
+		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+
+
+		// Render scene
+		rtr->stepAndRender(renderState, cmd);
+		std::vector<vk::CommandBuffer> cmds = {
+			cmd
+		};
+
+		cmd.endRenderPass();
+		cmd.end();
 
 		auto& fd = *rs.frameData;
 		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
@@ -64,6 +86,7 @@ struct RtApp : public VkApp {
 			1, &*fd.renderCompleteSema // signal sema
 		};
 		queueGfx.submit(submitInfo, *fd.frameDoneFence);
+
 
 		// TODO dsiable
 		deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);

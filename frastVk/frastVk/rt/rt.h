@@ -11,9 +11,9 @@
 // #include <unordered_map>
 #include <unordered_set>
 
-#include "core/app.h"
-#include "core/buffer_utils.h"
-#include "core/render_state.h"
+#include "frastVk/core/app.h"
+#include "frastVk/core/buffer_utils.h"
+#include "frastVk/core/render_state.h"
 
 #include "utils/eigen.h"
 
@@ -96,9 +96,10 @@ struct PooledTileData;
 struct RtRenderContext {
 	const RenderState& rs;
 	PooledTileData& pooledTileData;
-	vk::raii::CommandBuffer& cmd;
 	PipelineStuff& pipelineStuff;
 	std::vector<uint32_t> drawTileIds;
+
+	vk::CommandBuffer& cmd;
 };
 
 struct NodeCoordinate {
@@ -338,8 +339,8 @@ class RtRenderer {
 		~RtRenderer();
 
 		void update(RenderState& rs);
-		vk::CommandBuffer render(RenderState& rs);
-		vk::CommandBuffer stepAndRender(RenderState& rs);
+		void render(RenderState& rs, vk::CommandBuffer&);
+		void stepAndRender(RenderState& rs, vk::CommandBuffer&);
 
 		void init();
 

@@ -1,8 +1,8 @@
 #pragma once
 
 
-#include "core/buffer_utils.h"
-#include "core/app.h"
+#include "frastVk/core/buffer_utils.h"
+#include "frastVk/core/app.h"
 
 #include <vulkan/vulkan_raii.hpp>
 

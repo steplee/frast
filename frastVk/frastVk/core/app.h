@@ -6,9 +6,9 @@
 #include <vector>
 
 
-#include "buffer_utils.h"
-#include "window.hpp"
-#include "render_state.h"
+#include "frastVk/core/buffer_utils.h"
+#include "frastVk/core/window.hpp"
+#include "frastVk/core/render_state.h"
 
 struct ResidentMesh;
 

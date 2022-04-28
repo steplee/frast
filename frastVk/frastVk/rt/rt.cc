@@ -374,8 +374,10 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 
 
 
-	std::ifstream ifs(cfg.rootDir + "/node/" + std::string(tile->nc.key));
+	std::string path = cfg.rootDir + "/node/" + std::string(tile->nc.key);
+	std::ifstream ifs(path);
 	DecodedTileData dtd;
+	fmt::print(" - Decoding {}\n",path);
 	if (decode_node_to_tile(ifs, dtd)) {
 		// throw std::runtime_error("Failed to load tile " + std::string(tile->nc.key));
 		fmt::print(fmt::fg(fmt::color::orange), " - [#loadTile] decode failed, skipping tile.\n");
@@ -652,9 +654,9 @@ RtRenderer::~RtRenderer() {
 }
 
 
-vk::CommandBuffer RtRenderer::stepAndRender(RenderState& rs) {
+void RtRenderer::stepAndRender(RenderState& rs, vk::CommandBuffer& cmd) {
 	update(rs);
-	return render(rs);
+	render(rs, cmd);
 }
 
 void RtRenderer::update(RenderState& rs) {
@@ -770,17 +772,18 @@ void RtRenderer::update(RenderState& rs) {
 	}
 }
 
-vk::CommandBuffer RtRenderer::render(RenderState& rs) {
-	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
+	// vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
 	RtRenderContext rtc {
 		rs,
 		pooledTileData,
-		cmd,
 		pipelineStuff,
-		{}
+		{},
+		cmd
 	};
 	// rtc.drawTileIds.reserve(cfg.maxTiles);
 
+	/*
 	cmd.reset();
 	cmd.begin({});
 
@@ -803,6 +806,7 @@ vk::CommandBuffer RtRenderer::render(RenderState& rs) {
 	cmd.reset();
 	cmd.begin(beginInfo);
 	cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+	*/
 
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
@@ -879,10 +883,12 @@ vk::CommandBuffer RtRenderer::render(RenderState& rs) {
 	cmd.drawIndexed(rtc.numInds, rtc.drawTileIds.size(), 0,0,0);
 	*/
 
+	/*
 	cmd.endRenderPass();
 	cmd.end();
 
 	return *cmd;
+	*/
 }
 
 void RtRenderer::init() {
@@ -1013,7 +1019,7 @@ void RtRenderer::init() {
 	}
 
 	// Allocate command buffers
-	{
+	/*{
 		cmdPool = std::move(app->deviceGpu.createCommandPool(vk::CommandPoolCreateInfo{
 					vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 					app->queueFamilyGfxIdxs[0] }));
@@ -1022,7 +1028,7 @@ void RtRenderer::init() {
 					vk::CommandBufferLevel::ePrimary,
 					//(uint32_t)(app->scNumImages*levels) }));
 					(uint32_t)(app->scNumImages) }));
-	}
+	}*/
 
 
 	// Create pipeline

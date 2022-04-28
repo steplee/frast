@@ -5,9 +5,9 @@
 
 #include <frast/db.h>
 
-#include "core/render_state.h"
-#include "core/app.h"
-#include "utils/eigen.h"
+#include "frastVk/core/render_state.h"
+#include "frastVk/core/app.h"
+#include "frastVk/utils/eigen.h"
 
 namespace tr2 {
 

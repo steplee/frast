@@ -5,7 +5,8 @@ project(frastVk)
 set(CMAKE_CXX_STANDARD 17)
 
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frastVk)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/copiedHeaders/vulkanHeadersCopy)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/copiedHeaders/eigen3)
 
@@ -31,21 +32,21 @@ endif()
 
 add_library(frastVk
 	SHARED
-	src/core/app.cc
-	src/core/buffer_utils.cc
-	src/core/render_state.cc
+	frastVk/core/app.cc
+	frastVk/core/buffer_utils.cc
+	frastVk/core/render_state.cc
 
-	# src/clipmap1/clipmap1.cc
-	# src/clipmap1/clipmap1_load.cc
+	# frastVk/clipmap1/clipmap1.cc
+	# frastVk/clipmap1/clipmap1_load.cc
 
-	# src/tiled_renderer/tiled_renderer.cc
-	src/tiled_renderer2/tiled_renderer.cc
+	# frastVk/tiled_renderer/tiled_renderer.cc
+	frastVk/tiled_renderer2/tiled_renderer.cc
 
-	src/rt/rt.cc
-	src/rt/protos/rocktree.pb.cc
+	frastVk/rt/rt.cc
+	frastVk/rt/protos/rocktree.pb.cc
 
-	src/extra/particleCloud/particleCloud.cc
-	src/extra/frustum/frustum.cc
+	frastVk/extra/particleCloud/particleCloud.cc
+	frastVk/extra/frustum/frustum.cc
 )
 
 
@@ -80,16 +81,16 @@ target_precompile_headers(frastVk PUBLIC
 	)
 
 
-add_executable(runGlobe src/tiled_renderer2/runGlobe.cc)
+add_executable(runGlobe frastVk/tiled_renderer2/runGlobe.cc)
 target_link_libraries(runGlobe frastVk)
 target_precompile_headers(runGlobe REUSE_FROM frastVk)
 
 
-add_executable(testParseRt src/rt/parse.cc src/rt/protos/rocktree.pb.cc)
+add_executable(testParseRt frastVk/rt/parse.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(testParseRt frastVk)
 target_precompile_headers(testParseRt REUSE_FROM frastVk)
 
-add_executable(runRt src/rt/run.cc src/rt/protos/rocktree.pb.cc)
+add_executable(runRt frastVk/rt/run.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)
 
@@ -99,6 +100,6 @@ target_precompile_headers(runRt REUSE_FROM frastVk)
 ##################
 
 install(TARGETS frastVk LIBRARY DESTINATION /usr/local/lib)
-#install(FILES "src/core/app.h" "src/core/buffer_utils.h" "src/core/render_state.h" "src/core/window.hpp" DESTINATION /usr/local/include/frastVk/core)
-#install(FILES "src/rt/rt.h" "src/rt/rt_decode.hpp" "src/rt/protos/window.hpp" DESTINATION /usr/local/include/frastVk/core)
-install(DIRECTORY src/core src/entity src/extra src/rt src/tiled_renderer2 src/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN ".hpp")
+#install(FILES "frastVk/core/app.h" "frastVk/core/buffer_utils.h" "frastVk/core/render_state.h" "frastVk/core/window.hpp" DESTINATION /usr/local/include/frastVk/core)
+#install(FILES "frastVk/rt/rt.h" "frastVk/rt/rt_decode.hpp" "frastVk/rt/protos/window.hpp" DESTINATION /usr/local/include/frastVk/core)
+install(DIRECTORY frastVk/core frastVk/entity frastVk/extra frastVk/rt frastVk/tiled_renderer2 frastVk/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
