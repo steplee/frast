@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frastVk/core/load_shader.hpp"
+
 struct EarthEllipsoid {
 
 	inline EarthEllipsoid(BaseVkApp* app) : app(app) { }
@@ -62,9 +64,10 @@ inline void EarthEllipsoid::init(uint32_t subpass) {
 
 	{
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
-		std::string vsrcPath = "../src/shaders/extra/fullScreenQuad.v.glsl";
-		std::string fsrcPath = "../src/shaders/extra/earth.f.glsl";
-		createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+		// std::string vsrcPath = "../frastVk/shaders/extra/fullScreenQuad.v.glsl";
+		// std::string fsrcPath = "../frastVk/shaders/extra/earth.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "extra/fullScreenQuad", "extra/earth");
 
 		pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 

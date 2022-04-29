@@ -10,15 +10,17 @@
 #include <frast/utils/timer.hpp>
 static AtomicTimer timer_pc("pc::render");
 
-#define print(...) fmt::print(fmt::fg(fmt::color::medium_slate_blue), __VA_ARGS__);
-//#define print(...) {}
+#define dprint(...) fmt::print(fmt::fg(fmt::color::medium_slate_blue), __VA_ARGS__);
+//#define dprint(...) {}
+
+#include "frastVk/core/load_shader.hpp"
 
 
-ParticleCloudRenderer::ParticleCloudRenderer(BaseVkApp* app) : app(app) {
-	setup();
+ParticleCloudRenderer::ParticleCloudRenderer(BaseVkApp* app, int capacity) : app(app) {
+	setup(capacity);
 }
 
-void ParticleCloudRenderer::setup() {
+void ParticleCloudRenderer::setup(int capacity) {
 	w = app->windowWidth;
 	h = app->windowHeight;
 
@@ -27,19 +29,20 @@ void ParticleCloudRenderer::setup() {
 				vk::CommandBufferLevel::ePrimary,
 				(uint32_t)(app->scNumImages) }));
 
-	setup_buffers();
+	setup_buffers(capacity);
 	setup_fbos();
 	setup_pipelines();
 }
 
-void ParticleCloudRenderer::setup_buffers() {
-	particleBuffer.setAsVertexBuffer(1024*4, false);
+void ParticleCloudRenderer::setup_buffers(int capacity) {
+	particleBuffer.setAsVertexBuffer(capacity*4*4, false);
 	particleBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 }
 
 void ParticleCloudRenderer::setup_fbos() {
-	print(" - setting up fbos\n");
-	std::vector<uint8_t> emptyImage(h*w*4, 0);
+	dprint(" - setting up fbos\n");
+	// Multiply by four again, because it's actually float data
+	std::vector<uint8_t> emptyImage(h*w*4*4, 0);
 
 	// 0) Setup output pass.
 	{
@@ -92,7 +95,7 @@ void ParticleCloudRenderer::setup_fbos() {
 				subpasses,
 				dependencies
 		};
-		print("\t - create output pass\n");
+		dprint("\t - create output pass\n");
 		outputPass = std::move(app->deviceGpu.createRenderPass(rpInfo));
 	}
 
@@ -171,7 +174,7 @@ void ParticleCloudRenderer::setup_fbos() {
 				{ 1, &subpass0 },
 				{ 1, &depthDependency }
 		};
-		print("\t - create particle pass\n");
+		dprint("\t - create particle pass\n");
 		particlePass = std::move(app->deviceGpu.createRenderPass(rpInfo));
 
 
@@ -182,14 +185,14 @@ void ParticleCloudRenderer::setup_fbos() {
 		  uint32_t                                     width_           = {},
 		  uint32_t                                     height_          = {},
 		  uint32_t layers_ = {} ) VULKAN_HPP_NOEXCEPT*/
-		print("\t - create particle images\n");
+		dprint("\t - create particle images ({} {})\n", h,w);
 		for (int i=0; i<app->scNumImages; i++) {
 			particleImages.push_back(ResidentImage{});
-			particleImages.back().unnormalizedCoordinates = true;
+			// particleImages.back().unnormalizedCoordinates = true;
 			particleImages.back().createAsTexture(app->uploader, h, w,
 					// app->scSurfaceFormat.format,
-					// vk::Format::eR32Sfloat,
-					vk::Format::eR32G32B32A32Sfloat,
+					vk::Format::eR32Sfloat,
+					// vk::Format::eR32G32B32A32Sfloat,
 					emptyImage.data(),
 					vk::ImageUsageFlagBits::eColorAttachment |
 					vk::ImageUsageFlagBits::eSampled,
@@ -219,6 +222,7 @@ void ParticleCloudRenderer::setup_fbos() {
 				vk::Format::eR32G32B32A32Sfloat,
 				vk::SampleCountFlagBits::e1,
 				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+				// vk::AttachmentLoadOp::eNoneEXT, vk::AttachmentStoreOp::eStore,
 				// vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eStore,
 				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
 				vk::ImageLayout::eUndefined,
@@ -254,7 +258,7 @@ void ParticleCloudRenderer::setup_fbos() {
 		for (int jj=0; jj<2; jj++) {
 			// Create images & views
 
-			print("\t - create filterImages[{}]\n", jj);
+			dprint("\t - create filterImages[{}]\n", jj);
 			/*
 			for (int i=0; i<app->scNumImages; i++) {
 				filterImages[jj].push_back(ResidentImage{});
@@ -262,13 +266,13 @@ void ParticleCloudRenderer::setup_fbos() {
 					app->scSurfaceFormat.format, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment);
 			}
 			*/
-			filterImages[jj].unnormalizedCoordinates = true;
+			// filterImages[jj].unnormalizedCoordinates = true;
 			filterImages[jj].createAsTexture(app->uploader, h, w,
 					// app->scSurfaceFormat.format, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
 					vk::Format::eR32Sfloat, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
 					vk::SamplerAddressMode::eClampToBorder);
 
-			print("\t - create filterFramebuffers[{}]\n", jj);
+			dprint("\t - create filterFramebuffers[{}]\n", jj);
 			/*
 			for (int i=0; i<app->scNumImages; i++) {
 				vk::ImageView views[1] = { *filterImages[jj][i].view };
@@ -298,7 +302,7 @@ void ParticleCloudRenderer::setup_fbos() {
 }
 
 void ParticleCloudRenderer::setup_pipelines() {
-	print(" - [ParticleCloudRenderer] setup pipelines\n");
+	dprint(" - [ParticleCloudRenderer] setup pipelines\n");
 
 	// Filter Resources (just textures and pushConstants)
 	{
@@ -410,11 +414,12 @@ void ParticleCloudRenderer::setup_pipelines() {
 
 	// Particle
 	{
-		print("\t - create particlePipelineStuff\n");
+		dprint("\t - create particlePipelineStuff\n");
 		particlePipelineStuff.setup_viewport(w, h);
-		std::string vsrcPath = "../src/shaders/particleCloud/particle.v.glsl";
-		std::string fsrcPath = "../src/shaders/particleCloud/particle.f.glsl";
-		createShaderFromFiles(app->deviceGpu, particlePipelineStuff.vs, particlePipelineStuff.fs, vsrcPath, fsrcPath);
+		std::string vsrcPath = "../frastVk/shaders/particleCloud/particle.v.glsl";
+		std::string fsrcPath = "../frastVk/shaders/particleCloud/particle.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, particlePipelineStuff.vs, particlePipelineStuff.fs, vsrcPath, fsrcPath);
+		loadShader(app->deviceGpu, particlePipelineStuff.vs, particlePipelineStuff.fs, "particleCloud/particle");
 
 		particlePipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 
@@ -448,15 +453,18 @@ void ParticleCloudRenderer::setup_pipelines() {
 	vk::raii::ShaderModule downVs{nullptr}, downFs{nullptr},
 		upVs{nullptr}, upFs{nullptr},
 		outputVs{nullptr}, outputFs{nullptr};
-	std::string vsrcPath1 = "../src/shaders/particleCloud/down.v.glsl";
-	std::string fsrcPath1 = "../src/shaders/particleCloud/down.f.glsl";
-	createShaderFromFiles(app->deviceGpu, downVs, downFs, vsrcPath1, fsrcPath1);
-	std::string vsrcPath2 = "../src/shaders/particleCloud/down.v.glsl";
-	std::string fsrcPath2 = "../src/shaders/particleCloud/up.f.glsl";
-	createShaderFromFiles(app->deviceGpu, upVs, upFs, vsrcPath2, fsrcPath2);
-	std::string vsrcPath3 = "../src/shaders/particleCloud/down.v.glsl";
-	std::string fsrcPath3 = "../src/shaders/particleCloud/output.f.glsl";
-	createShaderFromFiles(app->deviceGpu, outputVs, outputFs, vsrcPath3, fsrcPath3);
+	// std::string vsrcPath1 = "../frastVk/shaders/particleCloud/down.v.glsl";
+	// std::string fsrcPath1 = "../frastVk/shaders/particleCloud/down.f.glsl";
+	// createShaderFromFiles(app->deviceGpu, downVs, downFs, vsrcPath1, fsrcPath1);
+	// std::string vsrcPath2 = "../frastVk/shaders/particleCloud/down.v.glsl";
+	// std::string fsrcPath2 = "../frastVk/shaders/particleCloud/up.f.glsl";
+	// createShaderFromFiles(app->deviceGpu, upVs, upFs, vsrcPath2, fsrcPath2);
+	// std::string vsrcPath3 = "../frastVk/shaders/particleCloud/down.v.glsl";
+	// std::string fsrcPath3 = "../frastVk/shaders/particleCloud/output.f.glsl";
+	// createShaderFromFiles(app->deviceGpu, outputVs, outputFs, vsrcPath3, fsrcPath3);
+	loadShader(app->deviceGpu, downVs, downFs, "particleCloud/down");
+	loadShader(app->deviceGpu, upVs, upFs, "particleCloud/down", "particleCloud/up");
+	loadShader(app->deviceGpu, outputVs, outputFs, "particleCloud/down", "particleCloud/output");
 
 	uint32_t ww = w, hh = h;
 
@@ -495,7 +503,7 @@ void ParticleCloudRenderer::setup_pipelines() {
 	// I think I can acheive the sub-AOI based windowing with the VkRenderPassBeginInfo renderArea field,
 	// rather than having pipelines for each viewport size
 	{
-			print("\t - create downPipelineStuff\n");
+			dprint("\t - create downPipelineStuff\n");
 			downPipelineStuff.setup_viewport(ww, hh);
 
 			downPipelineStuff.setLayouts.push_back(*filterDescSetLayout);
@@ -506,6 +514,9 @@ void ParticleCloudRenderer::setup_pipelines() {
 					sizeof(ParticleCloudPushConstants) });
 
 			PipelineBuilder builder;
+			builder.additiveBlending = true;
+			builder.depthTest = false;
+			builder.depthWrite = false;
 			builder.init(
 					{},
 					vk::PrimitiveTopology::eTriangleList,
@@ -513,7 +524,7 @@ void ParticleCloudRenderer::setup_pipelines() {
 			downPipelineStuff.build(builder, app->deviceGpu, *filterPass, 0);
 	}
 	{
-			print("\t - create upPipelineStuff\n");
+			dprint("\t - create upPipelineStuff\n");
 			upPipelineStuff.setup_viewport(ww, hh);
 
 			upPipelineStuff.setLayouts.push_back(*filterDescSetLayout);
@@ -524,6 +535,9 @@ void ParticleCloudRenderer::setup_pipelines() {
 					sizeof(ParticleCloudPushConstants) });
 
 			PipelineBuilder builder;
+			builder.additiveBlending = true;
+			builder.depthTest = false;
+			builder.depthWrite = false;
 			builder.init(
 					{},
 					vk::PrimitiveTopology::eTriangleList,
@@ -531,7 +545,7 @@ void ParticleCloudRenderer::setup_pipelines() {
 			upPipelineStuff.build(builder, app->deviceGpu, *filterPass, 0);
 	}
 	{
-			print("\t - create outputPipelineStuff\n");
+			dprint("\t - create outputPipelineStuff\n");
 			outputPipelineStuff.setup_viewport(ww, hh);
 
 			outputPipelineStuff.setLayouts.push_back(*filterDescSetLayout);
@@ -591,8 +605,8 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	auto &fd = *rs.frameData;
 
 	/*
-	// std::vector<uint8_t> img0(w*h*4,0);
-	std::vector<float> img0(w*h*1,0);
+	std::vector<uint8_t> img0(w*h*4*4,0);
+	// std::vector<float> img0(w*h*1,0);
 	for (int y=0; y<h; y++) {
 		for (int x=0; x<w; x++) {
 			// img0[y*w*4+x*4 +0] = (((x/32) + (y/32))%2 == 0) ? 240 : 130;
@@ -602,8 +616,8 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			// img0[y*w*1+x*1 +0] = (((x/32) + (y/32))%2 == 0) ? .9f : .1f;
 		}
 	}
-	app->uploader.uploadSync(filterImages[0], img0.data(), 4*img0.size(), 0);
-	app->uploader.uploadSync(filterImages[1], img0.data(), 4*img0.size(), 0);
+	app->uploader.uploadSync(filterImages[0], img0.data(), img0.size(), 0);
+	app->uploader.uploadSync(filterImages[1], img0.data(), img0.size(), 0);
 	*/
 
 	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
@@ -614,7 +628,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	cmd.reset();
 	cmd.begin(beginInfo);
 
-	ParticleCloudPushConstants pushc { w, h, 1.0f, .5f };
+	ParticleCloudPushConstants pushc { (float)w, (float)h, 1.0f, .5f };
 
 	// Render particles
 	{
@@ -641,7 +655,9 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	}
 
 	// float dstep = .1f;
-	pushc.d = 0.0f;
+	pushc.d = 1.0f;
+	pushc.d = .6f;
+	float d_gamma = .7f;
 
 	// Do down filtering
 	int lvl_i = 0;
@@ -661,7 +677,8 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			outFbo = *filterFramebuffers[(1+lvl_i)%2];
 		}
 
-		if (lvl_i == 0) {
+		// if (lvl_i == 0) {
+		if (true) {
 			vk::ImageMemoryBarrier barrier;
 			barrier.image = inImg;
 			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -683,7 +700,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			ParticleCloudPushConstants pushc2;
 			pushc2 = pushc;
 			pushc2.s = 1.0f;
-			pushc2.d = .4f;
+			pushc2.w = pushc.s;
 			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
 			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 			cmd.draw(6, 1, 0, 0);
@@ -691,14 +708,14 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			cmd.endRenderPass();
 		}
 
-		pushc.w >>= 1;
-		pushc.h >>= 1;
+		pushc.w /= 2.0f;
+		pushc.h /= 2.0f;
 		pushc.s /= 2.0f;
 		// pushc.d -= dstep;
-		pushc.d = .2f;
+		pushc.d *= d_gamma;
 
 
-		vk::Rect2D aoi { { 0, 0 }, { pushc.w, pushc.h } };
+		vk::Rect2D aoi { { 0, 0 }, { (uint32_t)pushc.w, (uint32_t)pushc.h } };
 		vk::ClearValue clears_[1] = { vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.0f,.0f,.0f } } } };
 		vk::RenderPassBeginInfo rpInfo { *filterPass, outFbo, aoi, {1, clears_} };
 		// vk::RenderPassBeginInfo rpInfo { *filterPass, outFbo, aoi, {} };
@@ -713,7 +730,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		barrier.oldLayout = vk::ImageLayout::eUndefined;
 		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
-		// print(" - [pc] down with sz {} {} | i {}\n", pushc.w, pushc.h, lvl_i);
+		// dprint(" - [pc] down with sz {} {} | i {}\n", pushc.w, pushc.h, lvl_i);
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *downPipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *downPipelineStuff.pipelineLayout, 0, {1,&inSet}, nullptr);
@@ -740,10 +757,6 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		vk::DescriptorSet inSet;
 		vk::Framebuffer outFbo;
 
-		pushc.w <<= 1;
-		pushc.h <<= 1;
-		pushc.s *= 2.0f;
-		// pushc.d -= dstep;
 
 		// if (lvl_i == 0) {
 			// inImg = *particleImages[fd.scIndx].image;
@@ -755,7 +768,43 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			outFbo = *filterFramebuffers[(1+lvl_i)%2];
 		//}
 
-		vk::Rect2D aoi { { 0, 0 }, { pushc.w, pushc.h } };
+		if (true) {
+		// if (false) {
+			vk::ImageMemoryBarrier barrier;
+			barrier.image = inImg;
+			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.oldLayout = vk::ImageLayout::eUndefined;
+			barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+
+			vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
+			vk::RenderPassBeginInfo rpInfo {
+				*outputPass, outputFramebuffer, aoi, {}
+			};
+			// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&inSet}, nullptr);
+			ParticleCloudPushConstants pushc2;
+			pushc2 = pushc;
+			pushc2.w = pushc.s;
+			pushc2.s = 1.0f;
+			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
+			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+			cmd.draw(6, 1, 0, 0);
+			for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+			cmd.endRenderPass();
+		}
+
+		pushc.w *= 2.0f;
+		pushc.h *= 2.0f;
+		pushc.s *= 2.0f;
+		pushc.d *= 1.f / d_gamma;
+
+		vk::Rect2D aoi { { 0, 0 }, { (uint32_t)pushc.w, (uint32_t)pushc.h } };
 		vk::ClearValue clears_[1] = { vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.0f,.0f,.0f } } } };
 		vk::RenderPassBeginInfo rpInfo { *filterPass, outFbo, aoi, {1, clears_} };
 		// vk::RenderPassBeginInfo rpInfo { *filterPass, outFbo, aoi, {} };
@@ -770,7 +819,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		barrier.oldLayout = vk::ImageLayout::eUndefined;
 		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
-		// print(" - [pc] up   with sz {} {} | i {}\n", pushc.w, pushc.h, lvl_i);
+		// dprint(" - [pc] up   with sz {} {} | i {}\n", pushc.w, pushc.h, lvl_i);
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *upPipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *upPipelineStuff.pipelineLayout, 0, {1,&inSet}, nullptr);
@@ -785,7 +834,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	// pushc.d -= dstep;
 
 	// Draw new texture ontop of old fbo
-	{
+	if (1) {
 		vk::ImageMemoryBarrier barrier;
 		barrier.image = *filterImages[(lvl_i+1)%2].image;
 		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -804,10 +853,10 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&*filterDescSet[(lvl_i+1)%2]}, nullptr);
-		pushc.w = w;
+		pushc.w = 1.0f;
 		pushc.h = h;
 		pushc.s = 1.0f;
-		pushc.d = .6f;
+		pushc.d = .4f;
 		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.draw(6, 1, 0, 0);
@@ -829,7 +878,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Frame
 	cmd.reset();
 	cmd.begin(beginInfo);
 
-	ParticleCloudPushConstants pushc { w, h, 1.0f };
+	ParticleCloudPushConstants pushc { (float)w, (float)h, 1.0f };
 
 	// Render particles
 	{

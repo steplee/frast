@@ -12,6 +12,7 @@ struct CameraSpec {
 
 	CameraSpec();
 	CameraSpec(double w, double h, double vfov);
+	CameraSpec(double w, double h, double hfov, double vfov);
 	inline double aspect() const { return h / w; }
 
 	float fx() const;

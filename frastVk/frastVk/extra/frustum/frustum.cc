@@ -1,6 +1,8 @@
 #include "frustum.h"
 #include <fmt/color.h>
 
+#include "frastVk/core/load_shader.hpp"
+
 
 FrustumSet::FrustumSet(BaseVkApp* app, int nInSet) : app(app), nInSet(nInSet) {
 	init();
@@ -30,7 +32,7 @@ void FrustumSet::init() {
 		};
 		nInds = inds_.size();
 
-		verts.setAsVertexBuffer(10*nInSet*3 * 4, true, vk::BufferUsageFlagBits::eTransferDst);
+		verts.setAsVertexBuffer(10*nInSet*7 * 4, true, vk::BufferUsageFlagBits::eTransferDst);
 		inds.setAsIndexBuffer(inds_.size() * 2, false);
 		verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
@@ -81,9 +83,10 @@ void FrustumSet::init() {
 
 	{
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
-		std::string vsrcPath = "../src/shaders/frustum/frustum.v.glsl";
-		std::string fsrcPath = "../src/shaders/frustum/frustum.f.glsl";
-		createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+		// std::string vsrcPath = "../frastVk/shaders/frustum/frustum.v.glsl";
+		// std::string fsrcPath = "../frastVk/shaders/frustum/frustum.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
+		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "frustum/frustum");
 
 		pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 

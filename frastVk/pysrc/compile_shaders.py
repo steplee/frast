@@ -12,6 +12,7 @@ def compileSource(sourceFile, type, path="/tmp/shader"):
     #print(' - Result:', res)
     with open(path,'rb') as fp:
         bs = fp.read()
+    # bs = bs + bytes([0])
     codeLen = len(bs)
 
     return ''.join(('\\x{}'.format(hex(b)[2:]) for b in bs)), codeLen
@@ -33,7 +34,9 @@ def main():
 
     for file in args.srcFiles:
         print(' - On',file)
-        name = '_'.join(file.rsplit('/',2)[-2:]).replace('.','_')
+        #name = '_'.join(file.rsplit('/',2)[-2:]).replace('.','_')
+        # name = '/'.join(file.rsplit('/',2)[-2:])
+        name = '/'.join(file.split('/')[2:])
 
         if '.f.glsl' in file:
             spirvs[name] = compileSource(file, 'frag')
@@ -47,11 +50,28 @@ def main():
         fp.write('#pragma once\n')
         fp.write('#include <cstring>\n\n')
         fp.write('namespace {\n')
+
+        '''
         for name,(code,codeLen) in spirvs.items():
             fp.write('const char* {} = "'.format(name))
             fp.write(code)
             fp.write('";\n')
             fp.write('const size_t {}_len = {};\n\n'.format(name, codeLen))
+        '''
+        fp.write('constexpr uint32_t _NumShaders = ' + str(len(spirvs)) + ';\n');
+        fp.write('const std::pair<std::string, std::string> _compiledShaders[{}]'.format(len(spirvs)) + ' = {' + '\n')
+        for i,(name,(code,codeLen)) in enumerate(spirvs.items()):
+            fp.write(' { ' + '"{}", '.format(name))
+            # fp.write(code[:2])
+            fp.write('std::string{"')
+            fp.write(code)
+            fp.write('",' + str(codeLen) + '}')
+            if i != len(spirvs)-1:
+                fp.write(' },\n')
+            else:
+                fp.write(' }\n')
+        fp.write('};\n')
+
         fp.write('} // namespace\n')
 
     print(' - Wrote {}'.format(args.dstName))

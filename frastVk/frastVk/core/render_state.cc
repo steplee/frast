@@ -74,6 +74,8 @@ CameraSpec::CameraSpec() {
 CameraSpec::CameraSpec(double w, double h, double vfov) : w(w), h(h), vfov(vfov) {
 	hfov = std::atan(std::tan(vfov) / aspect());
 }
+CameraSpec::CameraSpec(double w, double h, double hfov, double vfov) : w(w), h(h), hfov(hfov), vfov(vfov) {
+}
 
 float CameraSpec::fx() const {
 	return w * .5f / std::tan(.5 * hfov);

@@ -129,7 +129,7 @@ struct AbstractSwapchain {
 struct BaseVkApp : public Window {
 
 	BaseVkApp();
-	virtual void init();
+	virtual void initVk();
 
 	bool headless = false;
 
@@ -192,6 +192,7 @@ struct BaseVkApp : public Window {
 		int renders = 0;
 		float time0 = 0;
 		float lastTime = 0;
+	protected:
 		float fpsMeter = 0;
 
 };
@@ -202,12 +203,14 @@ class VkApp : public BaseVkApp {
 
 		VkApp();
 		~VkApp();
-		virtual void init() override;
+		virtual void initVk() override;
 
 		// VkApp provides standard starter function that further calls doRender()
 		virtual void render();
 		virtual void doRender(RenderState& rs) =0;
 		inline virtual void handleCompletedHeadlessRender(RenderState& rs) {};
+
+		inline virtual uint32_t mainSubpass() const override { return 1; }
 
 		bool isDone();
 

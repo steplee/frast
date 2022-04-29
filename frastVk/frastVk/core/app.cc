@@ -381,7 +381,10 @@ bool BaseVkApp::make_swapchain() {
 		nullptr,
 		vk::SurfaceTransformFlagBitsKHR::eIdentity,
 		vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		vk::PresentModeKHR::eFifo,
+		// See https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
+		// vk::PresentModeKHR::eFifo,
+		// vk::PresentModeKHR::eImmediate,
+		vk::PresentModeKHR::eFifoRelaxed,
 		VK_TRUE, nullptr
 	};
 	scNumImages = 3;
@@ -411,8 +414,8 @@ bool BaseVkApp::make_swapchain() {
 }
 bool BaseVkApp::make_frames() {
 
-	// frameOverlap = scNumImages;
-	frameOverlap = 1;
+	frameOverlap = scNumImages;
+	// frameOverlap = 1;
 
 	vk::CommandBufferAllocateInfo bufInfo {
 		*commandPool,
@@ -599,7 +602,7 @@ BaseVkApp::BaseVkApp() {
 	windowHeight = 480;
 }
 
-void BaseVkApp::init() {
+void BaseVkApp::initVk() {
 	std::cout << " - initial      : " << *deviceGpu << " " << *surface << "\n";
 
 	make_instance();
@@ -912,8 +915,8 @@ VkApp::VkApp() :
 {
 }
 
-void VkApp::init() {
-	BaseVkApp::init();
+void VkApp::initVk() {
+	BaseVkApp::initVk();
 
 	initDescriptors();
 	/*
@@ -1111,7 +1114,10 @@ void VkApp::render() {
 	*/
 
 	FrameData& fd = acquireFrame();
-	camera->step(fd.dt);
+	// camera->step(fd.dt);
+	// camera->step(1.0 / 60.0);
+	if (fpsMeter > .0000001)
+		camera->step(1.0 / fpsMeter);
 
 	vk::raii::CommandBuffer &cmd = fd.cmd;
 
@@ -1158,8 +1164,8 @@ void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 bool VkApp::createSimplePipeline(PipelineStuff& out, vk::RenderPass pass) {
 	out.setup_viewport(windowWidth, windowHeight);
 
-	std::string vsrcPath = "../src/shaders/simple.v.glsl";
-	std::string fsrcPath = "../src/shaders/simple.f.glsl";
+	std::string vsrcPath = "../frastVk/shaders/simple.v.glsl";
+	std::string fsrcPath = "../frastVk/shaders/simple.f.glsl";
 	createShaderFromFiles(deviceGpu, out.vs, out.fs, vsrcPath, fsrcPath);
 
 	PipelineBuilder builder;
@@ -1174,8 +1180,8 @@ bool VkApp::createSimplePipeline(PipelineStuff& out, vk::RenderPass pass) {
 bool VkApp::createTexturedPipeline(PipelineStuff& out, ResidentMesh& mesh, vk::RenderPass pass) {
 	texturedPipelineStuff.setup_viewport(windowWidth, windowHeight);
 
-	std::string vsrcPath = "../src/shaders/textured.v.glsl";
-	std::string fsrcPath = "../src/shaders/textured.f.glsl";
+	std::string vsrcPath = "../frastVk/shaders/textured.v.glsl";
+	std::string fsrcPath = "../frastVk/shaders/textured.f.glsl";
 	createShaderFromFiles(deviceGpu, out.vs, out.fs, vsrcPath, fsrcPath);
 
 	PipelineBuilder builder;

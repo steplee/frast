@@ -11,7 +11,7 @@ class RenderState;
 class ParticleRenderPass {
 };
 struct __attribute__((aligned)) ParticleCloudPushConstants {
-	uint32_t w, h;
+	float w, h;
 	float s;
 	float d;
 };
@@ -24,7 +24,7 @@ class ParticleCloudRenderer {
 
 	public:
 
-		ParticleCloudRenderer(BaseVkApp* app);
+		ParticleCloudRenderer(BaseVkApp* app, int capacity);
 
 
 		// 1) Splat particles onto internal framebuffer, with depth testing from scene depthmap
@@ -45,11 +45,12 @@ class ParticleCloudRenderer {
 
 		uint32_t w, h;
 		uint32_t n_lvl = 3;
+		// uint32_t n_lvl = 5;
 
 		BaseVkApp* app = nullptr;
 
-		void setup();
-		void setup_buffers();
+		void setup(int capacity);
+		void setup_buffers(int capacity);
 		void setup_fbos();
 		void setup_pipelines();
 

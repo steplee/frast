@@ -28,10 +28,9 @@ struct GlobeApp : public VkApp {
 		std::shared_ptr<FrustumSet> frustumSet;
 		std::shared_ptr<EarthEllipsoid> earthEllipsoid;
 
-	inline virtual uint32_t mainSubpass() const override { return 1; }
 
-	inline virtual void init() override {
-		VkApp::init();
+	inline virtual void initVk() override {
+		VkApp::initVk();
 		initFinalImage();
 		//set position of camera offset by loaded mld ctr
 
@@ -75,7 +74,7 @@ struct GlobeApp : public VkApp {
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
 
-		particleCloud = std::make_shared<ParticleCloudRenderer>(this);
+		particleCloud = std::make_shared<ParticleCloudRenderer>(this, 1024*64);
 		std::vector<float> particles4;
 		Vector3d p { camera->viewInv()[0*4+3], camera->viewInv()[1*4+3], camera->viewInv()[2*4+3] };
 		Vector3d t = p.normalized();
@@ -413,9 +412,7 @@ int main() {
 	app.headless = true;
 	app.headless = false;
 
-	app.init();
-	//ClipMapRenderer1 cm(&app);
-	//cm.init();
+	app.initVk();
 
 	while (not app.isDone()) {
 		if (not app.headless)

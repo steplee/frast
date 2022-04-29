@@ -37,20 +37,22 @@ void main()
 	/* if (v_caster_uv.xy != vec2(0.)) { */
 
 	// Note: casted images are weighted 3x tile texture
-	vec2 dd1 = abs(v_caster_uv.xy - .5);
+	vec2 uv_c1 = v_caster_uv.xy;
+	vec2 dd1 = abs(uv_c1 - .5);
 	float d1 = max(dd1.x , dd1.y);
 	if (d1 < .4999) {
-		vec4 c = texture(casterTex[0], v_caster_uv.xy);
+		vec4 c = texture(casterTex[0], uv_c1);
 		/* final_color = (final_color * (1-c.a)) + (c.a) * vec4(c.rgb,1.0); */
 		c *= 3.0 * clamp(2.0 - 4. * (d1), 0., 1.);
 		final_color += c;
 	}
 
-	vec2 dd2 = abs(v_caster_uv.zw - .5);
+	vec2 uv_c2 = v_caster_uv.zw;
+	vec2 dd2 = abs(uv_c2 - .5);
 	float d2 = max(dd2.x , dd2.y);
 	/* if (v_caster_uv.zw != vec2(0.)) { */
 	if (d2 < .4999) {
-		vec4 c = texture(casterTex[0], v_caster_uv.zw);
+		vec4 c = texture(casterTex[0], uv_c2);
 		/* final_color = (final_color * (1-c.a)) + (c.a) * vec4(c.rgb,1.0); */
 		c *= 3.0 * clamp(2.0 - 4. * (d2), 0., 1.);
 		final_color += c;

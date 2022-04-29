@@ -8,8 +8,8 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 layout (location = 0) out vec4 outFragColor;
 
 layout(std430, push_constant) uniform PushConstants {
-	uint w;
-	uint h;
+	float w;
+	float h;
 	float s;
 	float d;
 } pushConstants;
@@ -49,8 +49,8 @@ void main() {
 	outFragColor = c * .3;
 	*/
 
+	/*
 	vec2 uv = v_uv * vec2(float(.5*pushConstants.w-1), float(.5*pushConstants.h-1)) + .0;
-	/* vec2 uv = v_uv * vec2(float(.5*pushConstants.w) - 1.0, float(.5*pushConstants.h) - 1.0); */
 	vec4 c = vec4(0.);
 	vec2 duv = .5 * vec2(1.0, 1.0);
 	c += 1.0 * textureLod(tex, uv + duv * vec2(0.), 0);
@@ -60,8 +60,18 @@ void main() {
 	c += textureLod(tex, uv + duv * vec2(o,z), 0);
 	c += textureLod(tex, uv + duv * vec2(o,o), 0);
 	c += textureLod(tex, uv + duv * vec2(z,o), 0);
-	/* c.a *= .9; */
-	/* c.a *= pushConstants.d; */
 	outFragColor = clamp(c * .25, 0., 1.);
+	*/
+
+	/* vec2 uv = v_uv * vec2(float(.5*pushConstants.w), float(.5*pushConstants.h)) + .0; */
+	/* vec2 uv = v_uv * vec2(float(.5*pushConstants.w-.5), float(.5*pushConstants.h-.5)) + .0; */
+	/* vec2 uv = v_uv * vec2(float(.5*pushConstants.w-1), float(.5*pushConstants.h-1)) + .5; */
+	vec2 uv = v_uv;
+	/* uv.y = 1.0 - uv.y; */
+	uv = uv * pushConstants.s * .5 + .0 / pushConstants.s;
+	vec4 c = vec4(0.);
+	vec2 duv = .0 * vec2(1.0, 1.0);
+	c += 1.0 * textureLod(tex, uv + duv * vec2(0.), 0);
+	outFragColor = clamp(c * .7, 0., 1.);
 }
 

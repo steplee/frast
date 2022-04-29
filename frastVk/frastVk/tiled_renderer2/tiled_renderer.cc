@@ -13,7 +13,8 @@ static AtomicTimer timer_tr_update("tr::update");
 
 #include "conversions.hpp"
 
-#include "shaders/compiled/all.hpp"
+// #include "shaders/compiled/all.hpp"
+#include "frastVk/core/load_shader.hpp"
 
 
 
@@ -865,11 +866,12 @@ void TiledRenderer::init() {
 	// Create pipeline
 	{
 		PipelineBuilder plBuilder;
-		// std::string vsrcPath = "../src/shaders/tiledRenderer2/1.v.glsl";
-		// std::string fsrcPath = "../src/shaders/tiledRenderer2/1.f.glsl";
+		// std::string vsrcPath = "../frastVk/shaders/tiledRenderer2/1.v.glsl";
+		// std::string fsrcPath = "../frastVk/shaders/tiledRenderer2/1.f.glsl";
 		// createShaderFromFiles(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs, vsrcPath, fsrcPath);
-		createShaderFromSpirv(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs,
-				tiledRenderer2_1_v_glsl_len, tiledRenderer2_1_f_glsl_len, tiledRenderer2_1_v_glsl, tiledRenderer2_1_f_glsl);
+		// createShaderFromSpirv(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs,
+				// tiledRenderer2_1_v_glsl_len, tiledRenderer2_1_f_glsl_len, tiledRenderer2_1_v_glsl, tiledRenderer2_1_f_glsl);
+		loadShader(app->deviceGpu, sharedTileData.pipelineStuff.vs, sharedTileData.pipelineStuff.fs, "tiledRenderer2/1");
 
 		sharedTileData.pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();
@@ -989,11 +991,12 @@ void TiledRenderer::init() {
 	// Create pipeline stuff for caster
 	{
 		PipelineBuilder plBuilder;
-		std::string vsrcPath = "../src/shaders/tiledRenderer2/cast.v.glsl";
-		std::string fsrcPath = "../src/shaders/tiledRenderer2/cast.f.glsl";
-		createShaderFromFiles(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs, vsrcPath, fsrcPath);
+		// std::string vsrcPath = "../frastVk/shaders/tiledRenderer2/cast.v.glsl";
+		// std::string fsrcPath = "../frastVk/shaders/tiledRenderer2/cast.f.glsl";
+		// createShaderFromFiles(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs, vsrcPath, fsrcPath);
 		// createShaderFromSpirv(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs,
 				// tiledRenderer2_cast_v_glsl_len, tiledRenderer2_cast_f_glsl_len, tiledRenderer2_cast_v_glsl, tiledRenderer2_cast_f_glsl);
+		loadShader(app->deviceGpu, sharedTileData.casterPipelineStuff.vs, sharedTileData.casterPipelineStuff.fs, "tiledRenderer2/cast");
 
 		sharedTileData.casterPipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();
@@ -1130,14 +1133,14 @@ void TiledRenderer::setCasterInRenderThread(const CasterWaitingData& cwd) {
 	sharedTileData.casterMask = cwd.mask;
 
 	// Upload texture
-	{
+	if (cwd.image.w > 0 and cwd.image.h > 0) {
 		// If texture is new size, must create it then write descSet
 		if (sharedTileData.casterImages[0].extent.width != cwd.image.w or sharedTileData.casterImages[0].extent.height != cwd.image.h) {
-			fmt::print(" - [setCaster] new image size {} {} {}\n", cwd.image.h, cwd.image.w, cwd.image.channels());
+			fmt::print(" - [setCaster] new image size {} {} {} old {} {}\n", cwd.image.w, cwd.image.h, cwd.image.channels(), sharedTileData.casterImages[0].extent.width, sharedTileData.casterImages[0].extent.height);
 			if (cwd.image.format == Image::Format::GRAY)
-				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.w, cwd.image.h, vk::Format::eR8Unorm, cwd.image.buffer);
+				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.h, cwd.image.w, vk::Format::eR8Unorm, cwd.image.buffer);
 			else
-				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.w, cwd.image.h, vk::Format::eR8G8B8A8Unorm, cwd.image.buffer);
+				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.h, cwd.image.w, vk::Format::eR8G8B8A8Unorm, cwd.image.buffer);
 
 			std::vector<vk::DescriptorImageInfo> i_infos = {
 				vk::DescriptorImageInfo{

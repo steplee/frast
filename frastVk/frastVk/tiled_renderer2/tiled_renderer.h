@@ -10,6 +10,27 @@
 #include "frastVk/utils/eigen.h"
 
 namespace tr2 {
+	class TiledRenderer;
+};
+
+struct CasterWaitingData {
+	friend class tr2::TiledRenderer;
+	public:
+		inline void setMatrix1(float* m) { memcpy(casterMatrix1, m, sizeof(float)*16); haveMatrix1 = true; }
+		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
+		inline void setImage(const Image& image_) { image = image_; }
+		inline void setMask(const uint32_t mask_) { mask = mask_; }
+
+	private:
+		Image image;
+		float casterMatrix1[16];
+		float casterMatrix2[16];
+		uint32_t mask = 0;
+		bool haveMatrix1=false, haveMatrix2=false;
+};
+
+
+namespace tr2 {
 
 constexpr static uint32_t NO_INDEX = 999999;
 class Tile;
@@ -38,22 +59,6 @@ struct __attribute__((packed)) CasterBuffer {
 };
 
 class TiledRenderer;
-
-struct CasterWaitingData {
-	friend class TiledRenderer;
-	public:
-		inline void setMatrix1(float* m) { memcpy(casterMatrix1, m, sizeof(float)*16); haveMatrix1 = true; }
-		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
-		inline void setImage(const Image& image_) { image = image_; }
-		inline void setMask(const uint32_t mask_) { mask = mask_; }
-
-	private:
-		Image image;
-		float casterMatrix1[16];
-		float casterMatrix2[16];
-		uint32_t mask = 0;
-		bool haveMatrix1=false, haveMatrix2=false;
-};
 
 struct SharedTileData {
 	// ResidentBuffer vertsXYZ;

@@ -48,7 +48,9 @@ void main()
 		/* if (p.z < 0 || p.z > 1 || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) v_caster_uv.xy = vec2(0.); */
 		/* else v_caster_uv.xy = p.xy; */
 		/* v_caster_uv.xy = clamp(p.xy, 0., 1.); */
-		v_caster_uv.xy = p.xy;
+		/* v_caster_uv.xy = (p.xy * vec2(1.,-1.)) * .5 + .5; */
+		/* v_caster_uv.xy = (p.xy * vec2(-1., 1.)) * .5 + .5; */
+		v_caster_uv.xy = (p.xy) * .5 + .5;
 	} else v_caster_uv.xy = vec2(0.);
 
 	if ((casterData.casterMask & 2) != 0u) {
@@ -57,7 +59,9 @@ void main()
 		/* if (p.z < 0 || p.z > 1 || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) v_caster_uv.xy = vec2(0.); */
 		/* else v_caster_uv.xy = p.xy; */
 		/* v_caster_uv.xy = clamp(p.xy, 0., 1.); */
-		v_caster_uv.zw = p.xy;
+		/* v_caster_uv.zw = (p.xy * vec2(1.,-1.)) * .5 + .5; */
+		/* v_caster_uv.zw = (p.xy * vec2(-1., 1.)) * .5 + .5; */
+		v_caster_uv.zw = (p.xy) * .5 + .5;
 	} else v_caster_uv.zw = vec2(0.);
 
 }

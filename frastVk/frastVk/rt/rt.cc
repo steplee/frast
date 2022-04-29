@@ -10,7 +10,8 @@
 
 #include "rt_decode.hpp"
 
-#include "shaders/compiled/all.hpp"
+// #include "shaders/compiled/all.hpp"
+#include "frastVk/core/load_shader.hpp"
 
 
 namespace {
@@ -1040,7 +1041,8 @@ void RtRenderer::init() {
 		// std::string fsrcPath = "../src/shaders/rt/rt1.f.glsl";
 		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
 		// New way
-		createShaderFromSpirv(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, rt_rt1_v_glsl_len, rt_rt1_f_glsl_len, rt_rt1_v_glsl, rt_rt1_f_glsl);
+		// createShaderFromSpirv(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, rt_rt1_v_glsl_len, rt_rt1_f_glsl_len, rt_rt1_v_glsl, rt_rt1_f_glsl);
+		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "rt/rt1.1");
 
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();

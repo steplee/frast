@@ -9,8 +9,8 @@ struct RtApp : public VkApp {
 
 		std::shared_ptr<RtRenderer> rtr;
 
-	inline virtual void init() override {
-		VkApp::init();
+	inline virtual void initVk() override {
+		VkApp::initVk();
 		//set position of camera offset by loaded mld ctr
 
 		CameraSpec spec { (float)windowWidth, (float)windowHeight, 45 * 3.141 / 180. };
@@ -105,7 +105,7 @@ int main() {
 	app.windowWidth = 1000;
 	app.windowHeight = 800;
 
-	app.init();
+	app.initVk();
 
 	while (not app.isDone()) {
 		if (not app.headless)
