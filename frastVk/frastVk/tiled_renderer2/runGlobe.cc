@@ -407,7 +407,7 @@ struct GlobeApp : public VkApp {
 int main() {
 
 	GlobeApp app;
-	app.windowWidth = 1000;
+	app.windowWidth = 1700;
 	app.windowHeight = 800;
 	app.headless = true;
 	app.headless = false;

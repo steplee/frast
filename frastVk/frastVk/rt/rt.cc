@@ -667,7 +667,8 @@ void RtRenderer::update(RenderState& rs) {
 	rs.eyed(eyed.data());
 	rtuc.eye = eyed.cast<float>();
 	rtuc.wh = Vector2f { rs.camera->spec().w, rs.camera->spec().h };
-	rtuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov * .5f);
+	// rtuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov() * .5f);
+	rtuc.two_tan_half_fov_y = rs.camera->spec().w / rs.camera->spec().fx();
 	rtuc.sseThresholdOpen = 1.7;
 	rtuc.sseThresholdClose = .8;
 
@@ -1042,7 +1043,7 @@ void RtRenderer::init() {
 		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
 		// New way
 		// createShaderFromSpirv(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, rt_rt1_v_glsl_len, rt_rt1_f_glsl_len, rt_rt1_v_glsl, rt_rt1_f_glsl);
-		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "rt/rt1.1");
+		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "rt/rt1");
 
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
 		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();

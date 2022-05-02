@@ -69,26 +69,39 @@ void RenderState::frameBegin(FrameData* d) {
 
 CameraSpec::CameraSpec() {
 	w=h=0;
-	hfov=vfov=0;
+	fx_=fy_=0;
 }
-CameraSpec::CameraSpec(double w, double h, double vfov) : w(w), h(h), vfov(vfov) {
-	hfov = std::atan(std::tan(vfov) / aspect());
+CameraSpec::CameraSpec(double w, double h, double vfov) : w(w), h(h) {
+	// double hfov = std::atan(std::tan(vfov) / aspect());
+	// double hfov = vfov / aspect();
+	fx_ = w / (2 * std::tan(vfov / 2.)) * (h/w);
+	// fx_ = w / (2 * std::tan(vfov / 2.));
+	fy_ = h / (2 * std::tan(vfov / 2.));
 }
-CameraSpec::CameraSpec(double w, double h, double hfov, double vfov) : w(w), h(h), hfov(hfov), vfov(vfov) {
+CameraSpec::CameraSpec(double w, double h, double hfov, double vfov) : w(w), h(h) {
+	fx_ = w / (2 * std::tan(hfov / 2.));
+	fy_ = h / (2 * std::tan(vfov / 2.));
 }
 
 float CameraSpec::fx() const {
-	return w * .5f / std::tan(.5 * hfov);
+	return fx_;
 }
 float CameraSpec::fy() const {
-	return h * .5f / std::tan(.5 * vfov);
+	return fy_;
+}
+float CameraSpec::hfov() const {
+	return 2 * std::atan(w / (2 * fx_));
+}
+float CameraSpec::vfov() const {
+	return 2 * std::atan(h / (2 * fy_));
 }
 
 void CameraSpec::compute_projection(double* dest) const {
 	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
 	// double u = aspect() / std::tan(.5* vfov);
-	double u = 1. / std::tan(.5* hfov);
-	double v = 1. / std::tan(.5* vfov);
+	// double u = fx_ * 2. / (w /  aspect());
+	double u = fx_ * 2. / (w);
+	double v = fy_ * 2. / h;
 	double n = near, f = far;
 	proj <<
 		//2*n / 2*u, 0, 0, 0,

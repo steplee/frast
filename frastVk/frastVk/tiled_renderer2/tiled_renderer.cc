@@ -1052,7 +1052,8 @@ void TiledRenderer::update(const RenderState& rs) {
 	rs.eyed(eyed.data());
 	tuc.eye = eyed.cast<float>();
 	tuc.wh = Vector2f { rs.camera->spec().w, rs.camera->spec().h };
-	tuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov * .5f);
+	// tuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov() * .5f);
+	tuc.two_tan_half_fov_y = rs.camera->spec().w / rs.camera->spec().fx();
 	tuc.sseThresholdOpen = 1.1;
 	tuc.sseThresholdClose = .45;
 	if (0) fmt::print(" - TileUpdateContext:"

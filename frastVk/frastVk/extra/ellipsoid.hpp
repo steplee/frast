@@ -88,8 +88,6 @@ inline void EarthEllipsoid::renderInPass(RenderState& rs, vk::CommandBuffer cmd)
 		Eigen::Map<RowMatrix4f> i_mvp { i_mvp_with_focal };
 		Eigen::Map<const RowMatrix4d> vi_d { rs.camera->viewInv() };
 		i_mvp = vi_d.cast<float>();
-		// i_mvp_with_focal[16] = .5 * rs.camera->spec().fx() / rs.camera->spec().w;
-		// i_mvp_with_focal[17] = .5 * rs.camera->spec().fy() / rs.camera->spec().h;
 		i_mvp_with_focal[16] = .5 * rs.camera->spec().w / rs.camera->spec().fx();
 		i_mvp_with_focal[17] = .5 * rs.camera->spec().h / rs.camera->spec().fy();
 

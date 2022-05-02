@@ -6,7 +6,8 @@ class FrameData;
 
 struct CameraSpec {
 	double w, h;
-	double hfov, vfov;
+	// double hfov, vfov;
+	double fx_, fy_;
 	// These may be set by the camera dynamically.
 	double near=1e-7, far=2.3;
 
@@ -17,6 +18,8 @@ struct CameraSpec {
 
 	float fx() const;
 	float fy() const;
+	float hfov() const;
+	float vfov() const;
 
 	void compute_projection(double* dest) const;
 };

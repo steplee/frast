@@ -82,7 +82,7 @@ void main() {
 		d = d - .997 + .1;
 		/* d = pow(d, .5); */
 		d = d > 5.0 ? (d*d) : d;
-		float o = exp(-(d)*75.) * 9.;
+		float o = exp(-(d)*.1-.80) * 6.;
 
 		/* outFragColor = vec4(0.,0.5,0.5,.75); */
 		float l = 0.0;

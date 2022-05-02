@@ -28,11 +28,15 @@ void FrustumSet::init() {
 			2,4+2,
 			3,4+3,
 
-			8,9
+			8,9,
+			8,10,
+			8,11,
+			8,12,
+			8,13
 		};
 		nInds = inds_.size();
 
-		verts.setAsVertexBuffer(10*nInSet*7 * 4, true, vk::BufferUsageFlagBits::eTransferDst);
+		verts.setAsVertexBuffer(14*nInSet*7 * 4, true, vk::BufferUsageFlagBits::eTransferDst);
 		inds.setAsIndexBuffer(inds_.size() * 2, false);
 		verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
@@ -119,18 +123,19 @@ void FrustumSet::init() {
 
 void FrustumSet::setColor(int n, const float color[4]) {
 	Eigen::Vector4f c { color[0], color[1], color[2], color[3] };
-	void* dbuf = (void*) verts.mem.mapMemory(10*4*7*n, 10*4*7, {});
-	Eigen::Map<RowMatrix<float,10,7>> vs { (float*) dbuf };
+	void* dbuf = (void*) verts.mem.mapMemory(14*4*7*n, 14*4*7, {});
+	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
 	vs.topRightCorner<8,4>().rowwise() = c.transpose();
-	Eigen::Vector4f c2 { color[0], color[1], color[2], color[3] * .3f };
-	vs.bottomRightCorner<2,4>().rowwise() = c2.transpose();
+	Eigen::Vector4f c2 { color[0], color[1], color[2], color[3] * .2f };
+	vs.bottomRightCorner<6,4>().rowwise() = c2.transpose();
 	verts.mem.unmapMemory();
 }
 
 void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
-	void* dbuf = (void*) verts.mem.mapMemory(10*4*7*n, 10*4*7, {});
+	void* dbuf = (void*) verts.mem.mapMemory(14*4*7*n, 14*4*7, {});
 	float z = -1.f, o = 1.f;
-	RowMatrix<float,10,3> new_vs; new_vs <<
+	const float ray_far = 2000.0 / 6378137.0;
+	RowMatrix<float,14,3> new_vs; new_vs <<
 			z,z,near,
 			o,z,near,
 			o,o,near,
@@ -142,12 +147,17 @@ void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
 			z,o,far,
 
 			0,0,0,
-			0,0, 16000.0 / 6378137.0;
-	new_vs.col(0) *= (fx / w);
-	new_vs.col(1) *= (fy / h);
+			0,0, ray_far,
+			z,z, ray_far,
+			o,z, ray_far,
+			o,o, ray_far,
+			z,o, ray_far;
+	new_vs.col(0) *= .5 * (w/fx);
+	new_vs.col(1) *= .5 * (h/fy);
 	new_vs.block<4,2>(0,0) *= near;
 	new_vs.block<4,2>(4,0) *= far;
-	Eigen::Map<RowMatrix<float,10,7>> vs { (float*) dbuf };
+	new_vs.block<4,2>(10,0) *= ray_far;
+	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
 	vs.leftCols(3) = new_vs;
 	verts.mem.unmapMemory();
 }
@@ -193,7 +203,7 @@ void FrustumSet::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
 		cmd.bindIndexBuffer(*inds.buffer, 0, vk::IndexType::eUint16);
 		// cmd.drawIndexed(nInds, nInSet, 0,0,0);
 		for (int i=0; i<nInSet; i++)
-			cmd.drawIndexed(nInds, 1, 0,i*10,i);
+			cmd.drawIndexed(nInds, 1, 0,i*14,i);
 	}
 
 }
