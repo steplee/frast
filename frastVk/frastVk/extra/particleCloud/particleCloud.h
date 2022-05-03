@@ -33,7 +33,7 @@ class ParticleCloudRenderer {
 		vk::CommandBuffer render(RenderState& rs, vk::Framebuffer outputFramebuffer);
 
 		// Should only be called in render thread!
-		void uploadParticles(const std::vector<float>& particles);
+		void uploadParticles(std::vector<float>& particles, bool normalizeMaxInplace=true);
 
 		inline void setRenderMode(ParticleRenderMode mode_) { mode = mode_; }
 

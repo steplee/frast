@@ -25,8 +25,7 @@ void main()
 	if (pushConstants.grayscale) final_color = color * texture(tex[v_tileId], v_uv).rrra;
 	else final_color = color * texture(tex[v_tileId], v_uv);
 
-	if (final_color.r + final_color.g + final_color.b < .3) final_color.a = 0.;
-	if (final_color.r < .9) final_color.r += .1;
+	if (final_color.r + final_color.g + final_color.b < .01) final_color.a = 0.;
 
 
 	//if (abs(.5 - v_uv.x) > .492 || abs(.5 - v_uv.y) > .492) final_color.b = 1.0;

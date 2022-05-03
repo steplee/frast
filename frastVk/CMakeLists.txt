@@ -47,6 +47,7 @@ add_library(frastVk
 
 	frastVk/extra/particleCloud/particleCloud.cc
 	frastVk/extra/frustum/frustum.cc
+	frastVk/extra/text/textSet.cc
 )
 
 

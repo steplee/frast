@@ -19,6 +19,7 @@ using namespace tr2;
 #include "extra/particleCloud/particleCloud.h"
 #include "extra/frustum/frustum.h"
 #include "extra/ellipsoid.hpp"
+#include "extra/text/textSet.h"
 
 struct GlobeApp : public VkApp {
 
@@ -27,6 +28,7 @@ struct GlobeApp : public VkApp {
 		std::shared_ptr<ParticleCloudRenderer> particleCloud;
 		std::shared_ptr<FrustumSet> frustumSet;
 		std::shared_ptr<EarthEllipsoid> earthEllipsoid;
+		std::shared_ptr<SimpleTextSet> textSet;
 
 
 	inline virtual void initVk() override {
@@ -82,7 +84,7 @@ struct GlobeApp : public VkApp {
 		RowMatrix3d P = RowMatrix3d::Identity() - t*t.transpose();
 		const int N = 1024*64;
 		for (int i=0; i<N; i++) {
-			Vector3d x = p + P * Vector3d::Random() * .1;
+			Vector3d x = p + P * Vector3d::Random() * .03;
 			particles4.push_back((float)x[0]);
 			particles4.push_back((float)x[1]);
 			particles4.push_back((float)x[2]);
@@ -115,10 +117,20 @@ struct GlobeApp : public VkApp {
 		earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
 		earthEllipsoid->init(0);
 
+		textSet = std::make_shared<SimpleTextSet>(this);
+
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
 		auto& fd = *rs.frameData;
+
+		RowMatrix4f txtMatrix;
+		txtMatrix <<
+			1,0,0,0,
+			0,1,0,0,
+			0,0,1,0,
+			0,0,0,1;
+		textSet->setText(0, "a random number " + std::to_string(rand()%999), txtMatrix.data());
 
 		// Test caster stuff.
 		
@@ -224,6 +236,7 @@ struct GlobeApp : public VkApp {
 
 		tiledRenderer->stepAndRenderInPass(renderState, frame_cmd);
 		if (frustumSet) frustumSet->renderInPass(rs, frame_cmd);
+		if (textSet) textSet->render(rs, frame_cmd);
 		frame_cmd.endRenderPass();
 		frame_cmd.end();
 
@@ -408,6 +421,7 @@ int main() {
 
 	GlobeApp app;
 	app.windowWidth = 1700;
+	app.windowWidth = 900;
 	app.windowHeight = 800;
 	app.headless = true;
 	app.headless = false;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fmt/color.h>
-#include "frastVk/shaders/compiled/all.hpp"
 
 // This is useful for easier experimentation in the frastVk source tree.
 // For experimentation out-of source tree, use loadShaderDynamic.
@@ -9,8 +8,18 @@
 // To support out-of source precompiled SPIRV, I should move all this code
 // to the generated .hpp file, and put everything behind a namespace unique to that hpp.
 //
-#define STATIC_SHADER 1
-// #define STATIC_SHADER 0
+// #define STATIC_SHADER 1
+#define STATIC_SHADER 0
+
+#if STATIC_SHADER
+#include "frastVk/shaders/compiled/all.hpp"
+#else
+#include <vector>
+namespace {
+std::vector<std::pair<std::string, std::string>> _compiledShaders;
+const int _NumShaders = 0;
+}
+#endif
 
 
 inline int32_t find_idx_of_shader(const std::string& name) {

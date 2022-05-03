@@ -33,6 +33,7 @@ struct PipelineBuilder {
 	vk::PipelineDepthStencilStateCreateInfo depthState;
 
 	bool additiveBlending = false;
+	bool replaceBlending = false;
 	bool depthTest = true, depthWrite = true;
 
 	virtual void init(

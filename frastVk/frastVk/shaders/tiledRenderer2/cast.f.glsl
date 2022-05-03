@@ -34,6 +34,8 @@ void main()
 	/* else final_color = color * texture(tex[v_tileId], v_uv); */
 	final_color = color * texture(tex[v_tileId], v_uv);
 
+	if (final_color.r + final_color.g + final_color.b < .01) final_color.a = 0.;
+
 	/* if (v_caster_uv.xy != vec2(0.)) { */
 
 	// Note: casted images are weighted 3x tile texture

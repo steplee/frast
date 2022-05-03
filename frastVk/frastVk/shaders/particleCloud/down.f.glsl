@@ -70,5 +70,5 @@ void main() {
 	vec4 c = vec4(0.);
 	vec2 duv = .0 * vec2(1.0, 1.0);
 	c += 1.0 * textureLod(tex, uv + duv * vec2(0.), 0);
-	outFragColor = clamp(c * 3.2, 0., 1.);
+	outFragColor = clamp(c * 2.2, 0., 1.);
 }

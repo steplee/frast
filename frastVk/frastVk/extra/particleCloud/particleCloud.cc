@@ -556,7 +556,7 @@ void ParticleCloudRenderer::setup_pipelines() {
 					sizeof(ParticleCloudPushConstants) });
 
 			PipelineBuilder builder;
-			builder.additiveBlending = true;
+			builder.additiveBlending = false;
 			builder.depthTest = false;
 			builder.depthWrite = false;
 			builder.init(
@@ -569,7 +569,12 @@ void ParticleCloudRenderer::setup_pipelines() {
 
 
 
-void ParticleCloudRenderer::uploadParticles(const std::vector<float>& particles) {
+void ParticleCloudRenderer::uploadParticles(std::vector<float>& particles, bool normalizeMaxInplace) {
+	float m = 1e-9;
+	if (normalizeMaxInplace) {
+		for (int i=3; i<particles.size(); i+=4) m = std::max(m, particles[i]);
+		for (int i=3; i<particles.size(); i+=4) particles[i] /= m;
+	}
 	app->uploader.uploadSync(particleBuffer, (void*)particles.data(), particles.size()*sizeof(float), 0);
 	numParticles = particles.size() / 4;
 }
@@ -598,7 +603,7 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 	}
 
 	else if (mode == ParticleRenderMode::eFiltered) return renderFiltered(rs, outputFramebuffer);
-	else return renderPoints(rs, outputFramebuffer);
+	else if (mode == ParticleRenderMode::ePoints) return renderPoints(rs, outputFramebuffer);
 }
 
 vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Framebuffer outputFramebuffer) {
@@ -656,8 +661,8 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 
 	// float dstep = .1f;
 	pushc.d = 1.0f;
-	pushc.d = .6f;
-	float d_gamma = .7f;
+	pushc.d = .3f;
+	float d_gamma = .8f;
 
 	// Do down filtering
 	int lvl_i = 0;
@@ -701,6 +706,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			pushc2 = pushc;
 			pushc2.s = 1.0f;
 			pushc2.w = pushc.s;
+			if (lvl_i == 0) pushc2.d = .9f;
 			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
 			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 			cmd.draw(6, 1, 0, 0);
@@ -748,6 +754,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	}
 
 	// pushc.d -= dstep * .5f;
+	pushc.d *= 1.5f;
 
 
 	// Do up filtering
@@ -856,7 +863,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		pushc.w = 1.0f;
 		pushc.h = h;
 		pushc.s = 1.0f;
-		pushc.d = .4f;
+		pushc.d = .6f;
 		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.draw(6, 1, 0, 0);
@@ -878,7 +885,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Frame
 	cmd.reset();
 	cmd.begin(beginInfo);
 
-	ParticleCloudPushConstants pushc { (float)w, (float)h, 1.0f };
+	ParticleCloudPushConstants pushc { (float)w, (float)h, 1.0f, 1.0f };
 
 	// Render particles
 	{
@@ -925,14 +932,20 @@ vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Frame
 		// cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *outputPipelineStuff.pipelineLayout, 0, {1,&*particleDescSet[rs.frameData->scIndx]}, nullptr);
-		pushc.w = w;
-		pushc.h = h;
-		pushc.s = 1.0f;
-		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
+
+			ParticleCloudPushConstants pushc2;
+			pushc2 = pushc;
+			pushc2.s = 1.0f;
+			pushc2.w = pushc.s;
+			pushc2.d = 1.0f;
+			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
+
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.draw(6, 1, 0, 0);
 		for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
 		cmd.endRenderPass();
+
+
 	}
 
 	cmd.end();

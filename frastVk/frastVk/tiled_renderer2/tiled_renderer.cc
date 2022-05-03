@@ -24,6 +24,11 @@ static AtomicTimer timer_tr_update("tr::update");
 #else
 #define dprint(...)
 #endif
+#if 0
+#define dprint0(...) fmt::print(__VA_ARGS__)
+#else
+#define dprint0(...)
+#endif
 
 
 namespace {
@@ -134,7 +139,7 @@ void TileDataLoader::internalLoop(
 			curAsks = std::move(this->asks);
 		}
 		if (curAsks.size())
-			fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
+			dprint0(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
 
 		for (; curAsks.size(); curAsks.pop_back()) {
 			Ask& ask = curAsks.back();
@@ -226,7 +231,7 @@ bool TileDataLoader::pushAsk(const Ask& ask) {
 bool TileDataLoader::loadRootTile(Tile* tile) {
 	for (int i=0; i<24; i++) {
 		if (colorDset->hasLevel(i)) {
-			fmt::print(" - [#loadRootTile] found level at {}\n", i);
+			dprint0(" - [#loadRootTile] found level at {}\n", i);
 			uint64_t lvlTlbr[4];
 			colorDset->determineLevelAABB(lvlTlbr, i);
 			uint64_t w = lvlTlbr[2] - lvlTlbr[0];
@@ -321,7 +326,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 	//assert(tile->childrenMissing == Tile::MissingStatus::UNKNOWN);
 	if (tile->childrenMissing == Tile::MissingStatus::UNKNOWN) {
 		if (childrenAreMissing(tile->bc)) {
-			fmt::print(" - tile {} {} {} is missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
+			dprint0(" - tile {} {} {} is missing children\n", tile->bc.z(), tile->bc.y(), tile->bc.x());
 			tile->childrenMissing = Tile::MissingStatus::MISSING;
 		}
 		else {
@@ -1073,7 +1078,7 @@ void TiledRenderer::update(const RenderState& rs) {
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
 		if (dataLoader.loadedResults.size())
-			fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results\n", dataLoader.loadedResults.size());
+			dprint0(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results\n", dataLoader.loadedResults.size());
 		for (; dataLoader.loadedResults.size(); dataLoader.loadedResults.pop_back()) {
 			auto &res = dataLoader.loadedResults.back();
 			Tile* parent = res.parent;
@@ -1137,7 +1142,7 @@ void TiledRenderer::setCasterInRenderThread(const CasterWaitingData& cwd) {
 	if (cwd.image.w > 0 and cwd.image.h > 0) {
 		// If texture is new size, must create it then write descSet
 		if (sharedTileData.casterImages[0].extent.width != cwd.image.w or sharedTileData.casterImages[0].extent.height != cwd.image.h) {
-			fmt::print(" - [setCaster] new image size {} {} {} old {} {}\n", cwd.image.w, cwd.image.h, cwd.image.channels(), sharedTileData.casterImages[0].extent.width, sharedTileData.casterImages[0].extent.height);
+			dprint0(" - [setCaster] new image size {} {} {} old {} {}\n", cwd.image.w, cwd.image.h, cwd.image.channels(), sharedTileData.casterImages[0].extent.width, sharedTileData.casterImages[0].extent.height);
 			if (cwd.image.format == Image::Format::GRAY)
 				sharedTileData.casterImages[0].createAsTexture(app->uploader, cwd.image.h, cwd.image.w, vk::Format::eR8Unorm, cwd.image.buffer);
 			else
@@ -1257,7 +1262,7 @@ void TiledRenderer::renderInPass(const RenderState& rs, vk::CommandBuffer& cmd) 
 	else tiless = "...";
 
 	if (frameCnt++ % 30 == 0)
-		fmt::print(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
+		dprint0(" - [#TR::render] rendering {} tiles (x{} inds) [{}]\n", trc.drawTileIds.size(), trc.numInds, tiless);
 
 	for (int i=0; i<trc.drawTileIds.size(); i++) {
 		cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*sharedTileData.vertsXYZs[trc.drawTileIds[i]].buffer}, {0u});

@@ -167,22 +167,30 @@ bool BaseVkApp::make_gpu_device() {
 	};
 	extraFeatures3.storageBuffer16BitAccess = true;
 	extraFeatures3.uniformAndStorageBuffer16BitAccess = true;
+	vk::PhysicalDevice8BitStorageFeatures extra3_2;
+	extra3_2.uniformAndStorageBuffer8BitAccess = true;
+	extraFeatures3.pNext = &extra3_2;
+
 	VkPhysicalDeviceFeatures2 extraFeatures4 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	extraFeatures4.features.shaderInt16 = true;
-	extraFeatures3.pNext = &extraFeatures4;
+	extra3_2.pNext = &extraFeatures4;
 
+	// Remove this, in favor of Vulkan12Features below
+	/*
 	VkPhysicalDeviceUniformBufferStandardLayoutFeatures bufLayoutFeature = {
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES
 	};
 	bufLayoutFeature.uniformBufferStandardLayout = true;
 	extraFeatures4.pNext = &bufLayoutFeature;
+	*/
 
 	VkPhysicalDeviceIndexTypeUint8FeaturesEXT extraFeatures5 = {
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT,
 		nullptr,
 		true
 	};
-	bufLayoutFeature.pNext = &extraFeatures5;
+	// bufLayoutFeature.pNext = &extraFeatures5;
+	extraFeatures4.pNext = &extraFeatures5;
 	//extraFeatures4.pNext = &extraFeatures5;
 
 	vk::PhysicalDeviceMultiDrawFeaturesEXT extraFeatures6;
@@ -192,6 +200,12 @@ bool BaseVkApp::make_gpu_device() {
 	vk::PhysicalDeviceRobustness2FeaturesEXT extraFeatures7;
     extraFeatures7.nullDescriptor = true;
 	extraFeatures6.pNext = &extraFeatures7;
+
+	vk::PhysicalDeviceVulkan12Features extraFeatures8;
+	extraFeatures8.shaderInt8 = true;
+	extraFeatures8.uniformBufferStandardLayout = true;
+	extraFeatures8.uniformAndStorageBuffer8BitAccess = true;
+	extraFeatures7.pNext = &extraFeatures8;
 
 
 	/*
@@ -736,6 +750,7 @@ void PipelineBuilder::init(
 		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eSrcAlpha;
 		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
 		this->colorBlendAttachment = colorBlendAttachment;
+	} else if (replaceBlending) {
 	} else {
 		vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
 		colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |

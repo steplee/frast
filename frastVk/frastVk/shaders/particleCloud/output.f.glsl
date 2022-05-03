@@ -28,13 +28,15 @@ void main() {
 	float a = pow(tt.a,2.);
 
 	i *= 1.;
-	i = sqrt(i);
+	/* i = sqrt(i); */
 	vec4 c = vec4(i*i*i,i*i*i*i,i*i, a);
 	c.r = pow(c.r,1.0);
-	c.g = pow(c.g,1.0);
+	c.g = pow(c.g,2.0);
+	/* c.rgb *= pushConstants.d * 2.; */
+	/* c.rgb *= pow(i,2.2); */
 	/* c.a = c.a * pushConstants.d; */
 	//c.g += pow(clamp(10. * (.3 - c.b), 0., 1.), 2.0) * a;
 	/* c.a = length(c.rgb); */
-	c.a *= pushConstants.d;
+	c.a *= sqrt(length(c.rgb) * .5) * pushConstants.d;
 	outFragColor = clamp(c * 1., 0.,1.);
 }

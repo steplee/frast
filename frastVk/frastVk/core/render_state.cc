@@ -178,6 +178,19 @@ void FlatEarthMovingCamera::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 		if (isDown and key == VKK_W) dacc(2) +=  1;
 		if (isDown and key == VKK_S) dacc(2) += -1;
 
+		if (isDown and key == VKK_I) {
+			Map<Matrix<double,3,1>> vel { vel_ };
+			Map<Matrix<double,3,1>> acc { acc_ };
+			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+			Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+			std::cout << " [FlatEarthMovingCamera::step()]\n";
+			std::cout << "      - vel " << vel.transpose() << "\n";
+			std::cout << "      - acc " << acc.transpose() << "\n";
+			std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << "\n";
+			std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << "\n";
+			std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
+		}
+
 		// Make accel happen local to frame
 		acc += viewInv.topLeftCorner<3,3>() * dacc;
 	}
@@ -190,14 +203,6 @@ void FlatEarthMovingCamera::step(double dt) {
 
 	static int __updates = 0;
 	__updates++;
-	if (__updates % 120 == 1) {
-	std::cout << " [FlatEarthMovingCamera::step()]\n";
-	std::cout << "      - vel " << vel.transpose() << "\n";
-	std::cout << "      - acc " << acc.transpose() << "\n";
-	std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << "\n";
-	std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << "\n";
-	std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
-	}
 
 	//constexpr float SPEED = 5.f;
 	double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
@@ -313,6 +318,19 @@ void SphericalEarthMovingCamera::handleKey(uint8_t key, uint8_t mod, bool isDown
 		if (isDown and key == VKK_W) dacc(2) +=  1;
 		if (isDown and key == VKK_S) dacc(2) += -1;
 
+		if (isDown and key == VKK_I) {
+			Map<Matrix<double,3,1>> vel { vel_ };
+			Map<Matrix<double,3,1>> acc { acc_ };
+			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+			Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+			std::cout << " [SphericalEarthMovingCamera::step()]\n";
+			std::cout << "      - vel " << vel.transpose() << "\n";
+			std::cout << "      - acc " << acc.transpose() << "\n";
+			std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << " r " << viewInv.topRightCorner<3,1>().norm() << "\n";
+			std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << " near " << spec_.near << " far " << spec_.far << "\n";
+			std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
+		}
+
 		// Make accel happen local to frame
 		acc += viewInv.topLeftCorner<3,3>() * dacc;
 	}
@@ -325,14 +343,6 @@ void SphericalEarthMovingCamera::step(double dt) {
 
 	static int __updates = 0;
 	__updates++;
-	if (__updates % 120 == 1) {
-	std::cout << " [SphericalEarthMovingCamera::step()]\n";
-	std::cout << "      - vel " << vel.transpose() << "\n";
-	std::cout << "      - acc " << acc.transpose() << "\n";
-	std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << " r " << viewInv.topRightCorner<3,1>().norm() << "\n";
-	std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << " near " << spec_.near << " far " << spec_.far << "\n";
-	std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
-	}
 
 	double r = viewInv.topRightCorner<3,1>().norm();
 	// double d = r - 1.0;
