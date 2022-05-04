@@ -8,8 +8,8 @@
 // To support out-of source precompiled SPIRV, I should move all this code
 // to the generated .hpp file, and put everything behind a namespace unique to that hpp.
 //
-// #define STATIC_SHADER 1
-#define STATIC_SHADER 0
+#define STATIC_SHADER 1
+// #define STATIC_SHADER 0
 
 #if STATIC_SHADER
 #include "frastVk/shaders/compiled/all.hpp"

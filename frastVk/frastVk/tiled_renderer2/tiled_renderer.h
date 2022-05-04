@@ -8,27 +8,11 @@
 #include "frastVk/core/render_state.h"
 #include "frastVk/core/app.h"
 #include "frastVk/utils/eigen.h"
+#include "frastVk/extra/caster/castable.h"
 
 namespace tr2 {
 	class TiledRenderer;
 };
-
-struct CasterWaitingData {
-	friend class tr2::TiledRenderer;
-	public:
-		inline void setMatrix1(float* m) { memcpy(casterMatrix1, m, sizeof(float)*16); haveMatrix1 = true; }
-		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
-		inline void setImage(const Image& image_) { image = image_; }
-		inline void setMask(const uint32_t mask_) { mask = mask_; }
-
-	private:
-		Image image;
-		float casterMatrix1[16];
-		float casterMatrix2[16];
-		uint32_t mask = 0;
-		bool haveMatrix1=false, haveMatrix2=false;
-};
-
 
 namespace tr2 {
 
@@ -52,12 +36,6 @@ struct TiledRendererCfg {
 	uint32_t channels = 3; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
 };
 
-// This is not allocated on the CPU, but is useful to access mapped data instead of the void*
-struct __attribute__((packed)) CasterBuffer {
-	float casterMatrix[2*16];
-	uint32_t casterMask;
-};
-
 class TiledRenderer;
 
 struct SharedTileData {
@@ -66,15 +44,6 @@ struct SharedTileData {
 	ResidentBuffer inds;
 	PipelineStuff pipelineStuff;
 	uint32_t numInds = 0;
-
-	uint32_t casterMask; // should match the gpu buffer variable.
-	bool casterTextureSet = false; // true after first time set
-	ResidentImage casterImages[1];
-	ResidentBuffer casterBuffer;
-	PipelineStuff casterPipelineStuff;
-	vk::raii::DescriptorPool casterDescPool = {nullptr};
-	vk::raii::DescriptorSetLayout casterDescSetLayout = {nullptr};
-	vk::raii::DescriptorSet casterDescSet = {nullptr};
 };
 
 struct PooledTileData {
@@ -161,7 +130,7 @@ struct __attribute__((packed, aligned(8))) TRPushConstants {
 };
 */
 
-struct TiledRenderer {
+struct TiledRenderer : public Castable {
 		TiledRenderer(TiledRendererCfg& cfg, BaseVkApp* app);
 
 		void update(const RenderState& rs);
@@ -174,7 +143,7 @@ struct TiledRenderer {
 
 		// This must be called from the render thread, hence the long name
 		// It is the responsibility of the app to get it to the correct thread
-		void setCasterInRenderThread(const CasterWaitingData& cwd);
+		// void setCasterInRenderThread(const CasterWaitingData& cwd);
 
 	private:
 		int frameCnt = 0;

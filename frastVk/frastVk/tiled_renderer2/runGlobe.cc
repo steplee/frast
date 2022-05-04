@@ -124,13 +124,22 @@ struct GlobeApp : public VkApp {
 	inline virtual void doRender(RenderState& rs) override {
 		auto& fd = *rs.frameData;
 
+		RowMatrix4f txtMvp = RowMatrix4f::Identity();
+		rs.mvpf(txtMvp.data());
+		textSet->setAreaAndSize(0.f,0.f, windowWidth, windowHeight, 1.f, txtMvp.data());
+
 		RowMatrix4f txtMatrix;
-		txtMatrix <<
-			1,0,0,0,
-			0,1,0,0,
-			0,0,1,0,
-			0,0,0,1;
-		textSet->setText(0, "a random number " + std::to_string(rand()%999), txtMatrix.data());
+		txtMatrix.topRightCorner<3,1>() <<  sin(fd.time)*.001 + 0.163815,-0.759765,0.633448;
+		txtMatrix.block<3,1>(0,2) = -txtMatrix.topRightCorner<3,1>().normalized();
+		txtMatrix.block<3,1>(0,0) = txtMatrix.block<3,1>(0,2).cross(Eigen::Vector3f::UnitZ()).normalized();
+		txtMatrix.block<3,1>(0,1) = txtMatrix.block<3,1>(0,2).cross(txtMatrix.block<3,1>(0,0)).normalized();
+		txtMatrix.topLeftCorner<3,3>() *= .0005;
+		// fmt::print(" - Text Matrix:\n{}\n", txtMatrix);
+		txtMatrix.row(3) << 0,0,0,1;
+		float color_[] = { 1.f, 1.f, 0.f, .5f};
+		textSet->setText(0, "a random number " + std::to_string(rand()%999), txtMatrix.data(), color_);
+		txtMatrix.topRightCorner<3,1>() <<  sin(fd.time)*.001 + 0.163815,-0.759765 ,0.633448 - .001;
+		textSet->setText(1, "a SeCoNd random number " + std::to_string(rand()%999), txtMatrix.data(), color_);
 
 		// Test caster stuff.
 		
@@ -193,7 +202,7 @@ struct GlobeApp : public VkApp {
 
 			cwd.setImage(casterImage);
 
-			tiledRenderer->setCasterInRenderThread(cwd);
+			tiledRenderer->setCasterInRenderThread(cwd,this);
 		}
 
 
@@ -421,7 +430,7 @@ int main() {
 
 	GlobeApp app;
 	app.windowWidth = 1700;
-	app.windowWidth = 900;
+	// app.windowWidth = 900;
 	app.windowHeight = 800;
 	app.headless = true;
 	app.headless = false;

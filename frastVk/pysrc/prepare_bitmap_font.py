@@ -11,6 +11,8 @@ def main():
     maps = []
 
     face = freetype.Face("/usr/share/fonts/truetype/nerd/Agave-Regular.ttf")
+    #face = freetype.Face("/usr/share/fonts/truetype/nerd/3270 Narrow Nerd Font Complete Mono.ttf")
+    #face = freetype.Face("/usr/share/fonts/truetype/ubuntu/Ubuntu-M.ttf")
     face.set_char_size(48*64)
 
     # First pass: find maximum size

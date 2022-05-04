@@ -14,8 +14,12 @@
 #include "frastVk/core/app.h"
 #include "frastVk/core/buffer_utils.h"
 #include "frastVk/core/render_state.h"
+#include "frastVk/extra/caster/castable.h"
 
 #include "utils/eigen.h"
+
+#include <frast/image.h>
+
 
 namespace rt {
 
@@ -38,8 +42,6 @@ constexpr static uint32_t NO_INDEX = 999999;
  *					- 2) Duplicating tile indices into each vertex (e.g. as the 4th byte of the 3-byte position)
  *					- 3) Doing dynamic and/or instanced rendering
  *				I will go with (1) now, which is really the worst solution. (3) Is the best, but I'll get to it later (TODO)
- *
- *
  *
  */
 
@@ -101,6 +103,7 @@ struct RtRenderContext {
 
 	vk::CommandBuffer& cmd;
 };
+
 
 struct NodeCoordinate {
 	static constexpr static uint32_t MAX_LEN = 26;
@@ -332,7 +335,8 @@ struct RtDataLoader {
 };
 
 
-class RtRenderer {
+class RtRenderer : public Castable
+{
 	public:
 
 		inline RtRenderer(RtCfg& cfg_, BaseVkApp* app_) : cfg(cfg_), pooledTileData(cfg), app(app_), dataLoader(app_,cfg,pooledTileData) {}
@@ -343,6 +347,8 @@ class RtRenderer {
 		void stepAndRender(RenderState& rs, vk::CommandBuffer&);
 
 		void init();
+
+		// inline void setCasterInRenderThread(CasterWaitingData& cwd) { Castable::setCasterInRenderThread(cwd,app); }
 
 	private:
 		RtCfg cfg;
@@ -361,6 +367,8 @@ class RtRenderer {
 		RtTile *root = nullptr;
 
 		RtDataLoader dataLoader;
+
+		void init_caster_stuff();
 
 
 };

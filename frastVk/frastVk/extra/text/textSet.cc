@@ -111,13 +111,28 @@ void SimpleTextSet::reset() {
 	for (int i=0; i<maxStrings; i++) stringLengths[i] = 0;
 }
 
-void SimpleTextSet::setText(int i, const std::string& text, const float matrix[16]) {
+void SimpleTextSet::setText(int i, const std::string& text, const float matrix[16], const float color[4]) {
 	stringLengths[i] = text.length();
 
-	TextBufferData* tbd = (TextBufferData*) ubo.mem.mapMemory(sizeof(TextBufferData)*i, sizeof(TextBufferData), {});
+	TextBufferData* tbd = (TextBufferData*) ubo.mem.mapMemory(sizeof(TextBufferHeader)+sizeof(TextBufferData)*i, sizeof(TextBufferData), {});
 	memcpy(tbd->matrix, matrix, 4*16);
+	for (int j=0; j<4; j++) tbd->color[j] = color[j];
 	for (int j=0; j<stringLengths[i]; j++)
 		tbd->chars[j] = _charIndices[text[j]];
 	ubo.mem.unmapMemory();
 
+}
+
+void SimpleTextSet::setAreaAndSize(float offx, float offy, float ww, float hh, float scale, const float mvp[16]) {
+	TextBufferHeader* tbh = (TextBufferHeader*) ubo.mem.mapMemory(0, sizeof(TextBufferHeader), {});
+	/*
+	tbh->offset[0] = offx;
+	tbh->offset[1] = offy;
+	tbh->windowSize[0] = ww;
+	tbh->windowSize[1] = hh;
+	*/
+	// tbh->size[0] = scale;
+	// tbh->size[1] = scale;
+	memcpy(tbh->matrix, mvp, 4*16);
+	ubo.mem.unmapMemory();
 }

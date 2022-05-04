@@ -17,17 +17,25 @@ class SimpleTextSet {
 		void render(RenderState& rs, vk::CommandBuffer &cmd);
 
 		void reset();
-		void setText(int i, const std::string& text, const float matrix[16]);
+		void setText(int i, const std::string& text, const float matrix[16], const float color[4]);
+		void setAreaAndSize(float offx, float offy, float ww, float hh, float scale, const float mvp[16]);
 
 	private:
 
 		BaseVkApp* app = nullptr;
 
-		static constexpr int maxLength = 132;
+		static constexpr int maxLength = 176;
 		static constexpr int maxStrings = 32;
 
+		struct __attribute__((packed)) TextBufferHeader {
+			// float offset[2];
+			// float windowSize[2];
+			float matrix[16];
+			// float size[2];
+		};
 		struct __attribute__((packed)) TextBufferData {
 			float matrix[16];
+			float color[4];
 			uint8_t chars[maxLength];
 		};
 		ResidentBuffer ubo;

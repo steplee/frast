@@ -72,17 +72,16 @@ void main() {
 	// If hit, shade.
 	if (pt[0] != 0. && pt[1] != 0.) {
 
-		float d = length(ro);
+		float d = length(ro-pt);
+		/* float d = length(ro) - .997; */
 		/* float o = 2. / (.1 + d - 1.); */
 		/* float o = 2. / (.001 + d - 1.); */
 		/* float o = 1. / (d - .5) * 45.; */
 		/* float o = 1.0 / (d); */
 		/* o = exp(-pow(d-.997,.125)) * 9.; */
 
-		d = d - .997 + .1;
-		/* d = pow(d, .5); */
 		d = d > 5.0 ? (d*d) : d;
-		float o = exp(-(d)*.1-.80) * 6.;
+		float o = exp(-(d)*13.5-1.30) * 25.;
 
 		/* outFragColor = vec4(0.,0.5,0.5,.75); */
 		float l = 0.0;
@@ -92,24 +91,29 @@ void main() {
 		/* l += pow(sin(x * 80.), 4.0); */
 
 
-		float f = 32.0;
+		float f = 12.0;
 		for (int i=-1; i<2; i++) {
 			float oo = o + i;
 			float io = floor(oo);
 			float mo = 1. - (oo - io);
 			float io1 = pow(2.0, io);
 			float io2 = pow(2.0, io+1.0);
-			l += mo*smoothstep(.003, .0, abs(fract(f*y*io1)-.5));
-			l += mo*smoothstep(.003, .0, abs(fract(f*x*io1)-.5));
-			l += (1.-mo)*smoothstep(.003, .0, abs(fract(f*y*io2)-.5));
-			l += (1.-mo)*smoothstep(.003, .0, abs(fract(f*x*io2)-.5));
+			/* l += mo*smoothstep(.01*mo, .0, abs(fract(f*y*io1)-.5)); */
+			/* l += mo*smoothstep(.01*mo, .0, abs(fract(f*x*io1)-.5)); */
+			/* l += (1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*y*io2)-.5)); */
+			/* l += (1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*x*io2)-.5)); */
+			l = max(l,mo*smoothstep(.01*mo, .0, abs(fract(f*y*io1)-.5)));
+			l = max(l,mo*smoothstep(.01*mo, .0, abs(fract(f*x*io1)-.5)));
+			l = max(l,(1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*y*io2)-.5)));
+			l = max(l,(1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*x*io2)-.5)));
 		}
 
+		l *= .5;
 		vec3 color = vec3(l);
-		color += .6;
+		color += .2;
 
-		color *= .3;
-		outFragColor = vec4(color, .75);
+		color *= .5;
+		outFragColor = vec4(color, 1.*length(color.rgb));
 
 		outDepth = length(pt - ro);
 	} else {

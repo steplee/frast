@@ -192,9 +192,6 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 
 }
 void RtTile::render(RtRenderContext& rtc) {
-	// TODO
-
-	// if ((state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
 	if ((state == State::INNER or state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
 
 		if (state == State::INNER) for (auto c : children) c->render(rtc);
@@ -775,49 +772,29 @@ void RtRenderer::update(RenderState& rs) {
 }
 
 void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
-	// vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+
+	PipelineStuff* thePipelineStuff = nullptr;
+
+	if (casterStuff.casterMask != 0) {
+		thePipelineStuff = &casterStuff.casterPipelineStuff;
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipelineLayout, 2, {1,&*casterStuff.casterDescSet}, nullptr);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *thePipelineStuff->pipeline);
+	} else {
+		thePipelineStuff = &pipelineStuff;
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipeline);
+	}
+
 	RtRenderContext rtc {
-		rs,
-		pooledTileData,
-		pipelineStuff,
-		{},
-		cmd
+			rs,
+			pooledTileData,
+			*thePipelineStuff,
+			{},
+			cmd
 	};
-	// rtc.drawTileIds.reserve(cfg.maxTiles);
-
-	/*
-	cmd.reset();
-	cmd.begin({});
-
-	vk::CommandBufferBeginInfo beginInfo { {}, {} };
-
-	vk::Rect2D aoi { { 0, 0 }, { app->windowWidth, app->windowHeight } };
-	vk::ClearValue clears_[2] = {
-		vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.05f,.1f,1.f } } }, // color
-		vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 1.f,1.f,1.f,1.f } } }  // depth
-	};
-
-	vk::RenderPassBeginInfo rpInfo {
-		*app->simpleRenderPass.pass,
-			*app->simpleRenderPass.framebuffers[rs.frameData->scIndx],
-			aoi,
-			{2, clears_}
-	};
-
-
-	cmd.reset();
-	cmd.begin(beginInfo);
-	cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-	*/
-
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
-
-
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipeline);
-	// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*vertsXYI.buffer}, {0u});
-	// cmd.bindIndexBuffer(*inds.buffer, {0u}, vk::IndexType::eUint8EXT);
-
 
 	// Load global data (camera and such)
 	RtGlobalData rtgd;
@@ -857,40 +834,6 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 	pooledTileData.globalBuffer.mem.unmapMemory();
 
 	if (root) root->render(rtc);
-
-	/*
-
-	// Load camera + tile index data
-	TRGlobalData trgd;
-	uint64_t size = 16*4 + rtc.drawTileIds.size() * sizeof(uint32_t); // Don't map/copy entire list of tile ids
-	rs.mvpf(trgd.mvp);
-	//fmt::print(" - [#render] copying {} bytes to global buffer.\n", size);
-	for (int i=0; i<rtc.drawTileIds.size(); i++) trgd.drawTileIds[i] = rtc.drawTileIds[i];
-	void* dbuf = (void*) globalBuffer.mem.mapMemory(0, size, {});
-	memcpy(dbuf, &trgd, size);
-	globalBuffer.mem.unmapMemory();
-
-	// TODO: Having two shaders probably more efficient
-	TiledRendererPushConstants pushc;
-	pushc.grayscale = true;
-	cmd.pushConstants(*sharedTileData.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const TiledRendererPushConstants>{1, &pushc});
-
-	// Now make draw call, with as many instances as tiles to draw
-	std::string tiless;
-	if (rtc.drawTileIds.size() < 12)
-		for (int i=0; i<rtc.drawTileIds.size(); i++) tiless += std::to_string(rtc.drawTileIds[i]) + (i<rtc.drawTileIds.size()-1?" ":"");
-	else tiless = "...";
-	dprint(" - [#RT::render] rendering {} tiles (x{} inds) [{}]\n", rtc.drawTileIds.size(), rtc.numInds, tiless);
-	//rtc.drawTileIds = {rtc.drawTileIds.back()};
-	cmd.drawIndexed(rtc.numInds, rtc.drawTileIds.size(), 0,0,0);
-	*/
-
-	/*
-	cmd.endRenderPass();
-	cmd.end();
-
-	return *cmd;
-	*/
 }
 
 void RtRenderer::init() {
@@ -1020,33 +963,13 @@ void RtRenderer::init() {
 		app->deviceGpu.updateDescriptorSets({1, writeDesc}, nullptr);
 	}
 
-	// Allocate command buffers
-	/*{
-		cmdPool = std::move(app->deviceGpu.createCommandPool(vk::CommandPoolCreateInfo{
-					vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-					app->queueFamilyGfxIdxs[0] }));
-		cmdBuffers = std::move(app->deviceGpu.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-					*cmdPool,
-					vk::CommandBufferLevel::ePrimary,
-					//(uint32_t)(app->scNumImages*levels) }));
-					(uint32_t)(app->scNumImages) }));
-	}*/
-
-
 	// Create pipeline
 	{
 		PipelineBuilder plBuilder;
 
-		// Old way
-		// std::string vsrcPath = "../src/shaders/rt/rt1.v.glsl";
-		// std::string fsrcPath = "../src/shaders/rt/rt1.f.glsl";
-		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
-		// New way
-		// createShaderFromSpirv(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, rt_rt1_v_glsl_len, rt_rt1_f_glsl_len, rt_rt1_v_glsl, rt_rt1_f_glsl);
 		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "rt/rt1");
 
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
-		//VertexInputDescription vertexInputDescription = mldMesh.getVertexDescription();
 		MeshDescription md;
 		md.posDims = 4;
 		md.rows = cfg.maxVerts;
@@ -1078,6 +1001,8 @@ void RtRenderer::init() {
 		pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
 
+	init_caster_stuff();
+
 	// Find root frast tile, then create the Tile backing it.
 	// Done on the current thread, so we synch load it
 	{
@@ -1085,5 +1010,52 @@ void RtRenderer::init() {
 		dataLoader.loadRootTile(root);
 	}
 }
+
+void RtRenderer::init_caster_stuff() {
+	//
+	// Caster stuff (1: descriptor set and layout, 2: pipeline stuff)
+	//
+
+	do_init_caster_stuff(app);
+
+	// Create pipeline stuff for caster
+	{
+		PipelineBuilder plBuilder;
+		loadShader(app->deviceGpu, casterStuff.casterPipelineStuff.vs, casterStuff.casterPipelineStuff.fs, "rt/cast");
+
+		casterStuff.casterPipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
+		MeshDescription md;
+		md.posDims = 4;
+		md.rows = cfg.maxVerts;
+		// md.cols = 3 + 2;
+		md.haveUvs = true;
+		md.haveNormals = true;
+		md.rowSize = 4*1 + 2*2 + 3*1 + 1;
+		md.indType = vk::IndexType::eUint16;
+		md.posType = MeshDescription::ScalarType::UInt8_scaled;
+		md.uvType = MeshDescription::ScalarType::UInt16_scaled;
+		md.normalType = MeshDescription::ScalarType::UInt8_scaled;
+		VertexInputDescription vertexInputDescription = md.getVertexDescription();
+		plBuilder.init(
+				vertexInputDescription,
+				vk::PrimitiveTopology::eTriangleStrip,
+				*casterStuff.casterPipelineStuff.vs, *casterStuff.casterPipelineStuff.fs);
+
+		// Add Push Constants & Set Layouts.
+		casterStuff.casterPipelineStuff.setLayouts.push_back(*globalDescSetLayout);
+		casterStuff.casterPipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
+
+		// For the caster matrices and metadata, we have a third set.
+		casterStuff.casterPipelineStuff.setLayouts.push_back(*casterStuff.casterDescSetLayout);
+
+		casterStuff.casterPipelineStuff.pushConstants.push_back(vk::PushConstantRange{
+				vk::ShaderStageFlagBits::eVertex,
+				0,
+				sizeof(RtPushConstants) });
+
+		casterStuff.casterPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
+	}
+}
+
 
 }

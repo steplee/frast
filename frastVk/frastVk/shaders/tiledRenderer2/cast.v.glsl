@@ -40,6 +40,9 @@ void main()
 	v_uv = aUv;
 	v_tileId = tileIndex;
 
+	//
+	// Caster stuff
+	//
 	// Project the vertex into the caster frustum.
 	// If it lies outside, make the uv = <0,0>
 	if ((casterData.casterMask & 1) != 0u) {

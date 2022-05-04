@@ -38,6 +38,9 @@ void main()
 
 	/* if (v_caster_uv.xy != vec2(0.)) { */
 
+	//
+	// Caster stuff
+	//
 	// Note: casted images are weighted 3x tile texture
 	vec2 uv_c1 = v_caster_uv.xy;
 	vec2 dd1 = abs(uv_c1 - .5);
