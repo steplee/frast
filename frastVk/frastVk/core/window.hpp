@@ -6,6 +6,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
 
+#include <fmt/core.h>
+
 #define XK_LATIN1
 #define XK_MISCELLANY
 #include <X11/keysymdef.h>
@@ -328,8 +330,8 @@ inline bool Window::pollWindowEvents() {
 									uint8_t key = xk2vkk(key0);
 									uint8_t mod = xk2mod(ev->state);
 
-
 									bool isPressed = (e->response_type & ~0x80) == XCB_KEY_PRESS;
+
 									//if (isPressed) printf(" - key0 (pressed ) %u %d at %u\n", key0, XK_q, ev->time);
 									//else printf(" - key0 (released) %u %d at %u\n", key0, XK_q, ev->time);
 									(this)->handleKey(key, mod, isPressed);

@@ -16,7 +16,7 @@
 #include "frastVk/core/render_state.h"
 #include "frastVk/extra/caster/castable.h"
 
-#include "utils/eigen.h"
+#include "frastVk/utils/eigen.h"
 
 #include <frast/image.h>
 

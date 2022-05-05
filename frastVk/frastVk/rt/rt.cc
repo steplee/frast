@@ -89,6 +89,7 @@ RtTile::RtTile() {}
 RtTile::~RtTile() {}
 
 // TODO: This is unacceptably slow. I think a better way is possible. Really want to avoid testing all 8 points...
+// WELL: If you pass the threshold, can check distances FIRST then check corners...
 float RtTile::computeSSE(const RtUpdateContext& tuc) {
 	Eigen::Matrix<float,8,4,Eigen::RowMajor> corners1;
 
@@ -108,7 +109,8 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 			 br{-std::numeric_limits<float>::max(),-std::numeric_limits<float>::max()};
 	int n_invalid = 0;
 	for (int i=0; i<8; i++) {
-		if (corners2(i,2) > 0 and corners2(i,2) < 1) {
+		// Note: Clip the far-plane at a relaxed 2.5 instead of 1, in-case the Camera class under-estimates the z_far value
+		if (corners2(i,2) > 0 and corners2(i,2) < 2.5) {
 			tl(0) = std::min(tl(0), corners2(i,0));
 			tl(1) = std::min(tl(1), corners2(i,1));
 			br(0) = std::max(br(0), corners2(i,0));
@@ -524,17 +526,38 @@ bool RtDataLoader::populateFromFiles() {
 	fs::path root { cfg.rootDir };
 	auto bulkDir = cfg.rootDir / fs::path{"bulk"};
 	auto nodeDir = cfg.rootDir / fs::path{"node"};
+	auto nodeListFile = cfg.rootDir / fs::path{"fullNodeList"};
 	int minimum_level = 99;
 	int maximum_level = 0;
+	// I don't actually use the bulk metadatas.
+	/*
 	for (const auto& entry : fs::directory_iterator{bulkDir}) {
 		existingBulks.insert(NodeCoordinate{entry.path().stem()});
 	}
-	for (const auto& entry : fs::directory_iterator{nodeDir}) {
-		std::string key = entry.path().stem();
-		if (key == "_") key = "";
-		existingNodes.insert(NodeCoordinate{key});
-		minimum_level = std::min(minimum_level,(int)key.length());
-		maximum_level = std::max(maximum_level,(int)key.length());
+	*/
+
+	// If the python script is new and computes the nodeListFile use it.
+	// Otherwise we have to iterate over directory contents (which is slow)
+	if (fs::exists(nodeListFile)) {
+		fmt::print(fmt::fg(fmt::color::steel_blue), " - [RtDataLoader] nodeListFile '{}' exists, using it.\n", nodeListFile);
+		std::ifstream is {nodeListFile};
+		while (is.good()) {
+			std::string key;
+			std::getline(is, key);
+			if (key.length() == 0) break; // NOTE: No level 0 root allowed, and no empty lines allowed!!!
+			existingNodes.insert(NodeCoordinate{key});
+			minimum_level = std::min(minimum_level,(int)key.length());
+			maximum_level = std::max(maximum_level,(int)key.length());
+		}
+	} else {
+		fmt::print(fmt::fg(fmt::color::steel_blue), " - [RtDataLoader] nodeListFile '{}' DOES NOT exist, looping slowly over entire node dir...\n", nodeListFile);
+		for (const auto& entry : fs::directory_iterator{nodeDir}) {
+			std::string key = entry.path().stem();
+			if (key == "_") key = "";
+			existingNodes.insert(NodeCoordinate{key});
+			minimum_level = std::min(minimum_level,(int)key.length());
+			maximum_level = std::max(maximum_level,(int)key.length());
+		}
 	}
 
 	for (auto n : existingNodes) {
@@ -813,6 +836,7 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 	// RowMatrix4d offsetMatrix = RowMatrix4d::Identity();
 	// offsetMatrix.topRightCorner<3,1>() = offset;
 
+	/*
 	rs.mstack.reset();
 	rs.mstack.push(rs.camera->proj());
 	// rs.mstack.push(offsetMatrix.data());
@@ -823,6 +847,15 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 	rs.mstack.push(mm);
 
 	rs.mvpf(rtgd.mvp);
+	*/
+	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
+	// Eigen::Map<const RowMatrix4d> proj_ { rs.camera->proj() };
+	// Eigen::Map<const RowMatrix4d> view_ { rs.camera->view() };
+	// RowMatrix4f new_mvp = (proj_ * view_ * shift_).cast<float>();
+	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
+	memcpy(rtgd.mvp, new_mvp.data(), 4*16);
+
 	rtgd.offset[0] = -offset(0);
 	rtgd.offset[1] = -offset(1);
 	rtgd.offset[2] = -offset(2);

@@ -26,6 +26,7 @@ struct RtApp : public VkApp {
 		*/
 
 		Eigen::Vector3d pos0 { .2,-1.0,.84};
+		pos0 *= .8;
 		Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
 		R0.row(2) = -pos0.normalized();
 		R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();

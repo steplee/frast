@@ -6,6 +6,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "decode/stb_image.h"
 
+#include "rt_convert.hpp"
+
 namespace rtpb = ::geo_globetrotter_proto_rocktree;
 
 namespace rt {
@@ -244,7 +246,13 @@ inline bool decode_node_to_tile(
 	if (out_index < dtd.meshes.size())
 		dtd.meshes.resize(out_index);
 
-	for (int i=0; i<16; i++) dtd.modelMat[i] = nd.matrix_globe_from_mesh(i);
+	Matrix4d globeFromMesh1;
+	for (int i=0; i<16; i++) globeFromMesh1(i) = nd.matrix_globe_from_mesh(i);
+	Matrix4d globeFromMesh2 = convert_authalic_to_geodetic(globeFromMesh1);
+
+	for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh2(i);
+	// for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh1(i);
+
 
 	// Signify that we don't have the data (it is in the bulk metadata)
 	dtd.metersPerTexel = -1;
