@@ -18,7 +18,8 @@ using namespace tr2;
 
 #include "extra/particleCloud/particleCloud.h"
 #include "extra/frustum/frustum.h"
-#include "extra/ellipsoid.hpp"
+#include "extra/primitives/earthEllipsoid.h"
+#include "extra/primitives/ellipsoid.h"
 #include "extra/text/textSet.h"
 
 struct GlobeApp : public VkApp {
@@ -28,6 +29,7 @@ struct GlobeApp : public VkApp {
 		std::shared_ptr<ParticleCloudRenderer> particleCloud;
 		std::shared_ptr<FrustumSet> frustumSet;
 		std::shared_ptr<EarthEllipsoid> earthEllipsoid;
+		std::shared_ptr<EllipsoidSet> ellpSet;
 		std::shared_ptr<SimpleTextSet> textSet;
 
 
@@ -36,7 +38,7 @@ struct GlobeApp : public VkApp {
 		initFinalImage();
 		//set position of camera offset by loaded mld ctr
 
-		CameraSpec spec { (float)windowWidth, (float)windowHeight, 45 * 3.141 / 180. };
+		CameraSpec spec { (float)windowWidth, (float)windowHeight, 25 * 3.141 / 180. };
 
 
 		if (0) {
@@ -116,6 +118,16 @@ struct GlobeApp : public VkApp {
 
 		earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
 		earthEllipsoid->init(0);
+
+		ellpSet = std::make_shared<EllipsoidSet>(this);
+		ellpSet->init(mainSubpass());
+		RowMatrix4f ellpMatrix (RowMatrix4f::Identity());
+		ellpMatrix.topLeftCorner<3,3>() *= 6357000. / (100. * .5);
+		// ellpMatrix(2,2) *= 2;
+		ellpMatrix.topRightCorner<3,1>() << 0.172367, -0.756938,  0.628275;
+		ellpMatrix.topRightCorner<3,1>() = 	-ellpMatrix.topLeftCorner<3,3>().transpose() * ellpMatrix.topRightCorner<3,1>();
+		float ellpColor[4] = {1.f,1.f,0.f,1.f};
+		ellpSet->set(0,ellpMatrix.data(),ellpColor);
 
 		textSet = std::make_shared<SimpleTextSet>(this);
 
@@ -245,6 +257,7 @@ struct GlobeApp : public VkApp {
 
 		tiledRenderer->stepAndRenderInPass(renderState, frame_cmd);
 		if (frustumSet) frustumSet->renderInPass(rs, frame_cmd);
+		if (ellpSet) ellpSet->renderInPass(rs, frame_cmd);
 		if (textSet) textSet->render(rs, frame_cmd);
 		frame_cmd.endRenderPass();
 		frame_cmd.end();

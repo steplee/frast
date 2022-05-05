@@ -272,7 +272,7 @@ inline bool Window::pollWindowEvents() {
 			case XCB_BUTTON_PRESS: {
 									nProcessed++;
 									   xcb_button_press_event_t *ev = (xcb_button_press_event_t *)e;
-									   print_modifiers(ev->state);
+									   // print_modifiers(ev->state);
 
 									bool isPress = (e->response_type & ~0x80) == XCB_BUTTON_PRESS;
 

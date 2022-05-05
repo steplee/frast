@@ -5,14 +5,15 @@ precision highp float;
 #extension GL_EXT_scalar_block_layout: enable
 
 layout (location=0) in vec2 v_uv;
+layout (location=1) in flat uint v_instance;
 
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 invViewProj;
-	vec2 focalLengths;
+	/* vec2 focalLengths; */
 } cameraData;
 
 layout (location = 0) out vec4 outFragColor;
-layout (location = 1) out float outDepth;
+layout (location = 1) out float outFragDepth;
 
 /*
         Vector3d ray     = R * Eigen::Map<const Vector3d>{focalPts + i * 3};
@@ -38,7 +39,8 @@ void main() {
 	vec2 uv = v_uv;
 	/* uv.y = 1.0 - uv.y; */
 	/* uv = (uv * 2 - 1.0) * .5; */
-	uv = (uv * 2 - 1.0) * cameraData.focalLengths;
+	/* uv = (uv * 2 - 1.0) * cameraData.focalLengths; */
+	uv = (uv * 2 - 1.0);
 
 
 	// Ray origin and direction
@@ -68,6 +70,8 @@ void main() {
 	} else {
 		pt = vec3(0.);
 	}
+
+	float outDepth;
 
 	// If hit, shade.
 	if (pt[0] != 0. && pt[1] != 0.) {
@@ -115,10 +119,14 @@ void main() {
 		color *= .5;
 		outFragColor = vec4(color, 1.*length(color.rgb));
 
-		outDepth = length(pt - ro);
+		/* outDepth = length(pt - ro); */
+		outDepth = .9999999;
 	} else {
 		outFragColor = vec4(0.,0.,0.,.0);
 		outDepth = 1.1;
 	}
+
+	outFragDepth = outDepth;
+	gl_FragDepth = outDepth;
 
 }

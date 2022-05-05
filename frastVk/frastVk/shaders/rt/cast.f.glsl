@@ -23,7 +23,7 @@ void main()
 	vec2 dd1 = abs(uv_c1 - .5);
 	float d1 = max(dd1.x , dd1.y);
 	if (d1 < .49999) {
-		vec4 c = texture(casterTex[0], uv_c1);
+		vec4 c = texture(casterTex[0], uv_c1) * vec4(0.7, 0.7, 1., 1.);
 		c *= 3.0 * clamp(2.0 - 4. * (d1), 0., 1.);
 		final_color += c;
 	}
@@ -33,7 +33,7 @@ void main()
 	float d2 = max(dd2.x , dd2.y);
 	/* if (v_caster_uv.zw != vec2(0.)) { */
 	if (d2 < .49999) {
-		vec4 c = texture(casterTex[0], uv_c2);
+		vec4 c = texture(casterTex[0], uv_c2) * vec4(0.7, 1., .7, 1.);
 		c *= 3.0 * clamp(2.0 - 4. * (d2), 0., 1.);
 		final_color += c;
 	}

@@ -49,6 +49,8 @@ add_library(frastVk
 	frastVk/extra/frustum/frustum.cc
 	frastVk/extra/text/textSet.cc
 	frastVk/extra/caster/castable.cc
+	frastVk/extra/primitives/earthEllipsoid.cc
+	frastVk/extra/primitives/ellipsoid.cc
 )
 
 

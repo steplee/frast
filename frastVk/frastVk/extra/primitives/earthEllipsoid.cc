@@ -1,29 +1,12 @@
-#pragma once
-
+#include "earthEllipsoid.h"
 #include "frastVk/core/load_shader.hpp"
+#include "frastVk/utils/eigen.h"
 
-struct EarthEllipsoid {
-
-	inline EarthEllipsoid(BaseVkApp* app) : app(app) { }
-
-		void renderInPass(RenderState& rs, vk::CommandBuffer cmd);
-		void init(uint32_t subpass);
-
-	private:
-
-		BaseVkApp* app;
-		vk::raii::DescriptorPool descPool = {nullptr};
-		vk::raii::DescriptorSetLayout globalDescSetLayout = {nullptr}; // holds camera etc
-		vk::raii::DescriptorSet globalDescSet = {nullptr};
-
-		PipelineStuff pipelineStuff;
-		ResidentBuffer globalBuffer;
-};
-
-inline void EarthEllipsoid::init(uint32_t subpass) {
+void EarthEllipsoid::init(uint32_t subpass) {
 
 	{
-		globalBuffer.setAsUniformBuffer(18 * 4, true);
+		// globalBuffer.setAsUniformBuffer(18 * 4, true);
+		globalBuffer.setAsUniformBuffer(16 * 4, true);
 		globalBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 	}
 
@@ -64,9 +47,6 @@ inline void EarthEllipsoid::init(uint32_t subpass) {
 
 	{
 		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
-		// std::string vsrcPath = "../frastVk/shaders/extra/fullScreenQuad.v.glsl";
-		// std::string fsrcPath = "../frastVk/shaders/extra/earth.f.glsl";
-		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
 		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "extra/fullScreenQuad", "extra/earth");
 
 		pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
@@ -81,18 +61,24 @@ inline void EarthEllipsoid::init(uint32_t subpass) {
 
 }
 
-inline void EarthEllipsoid::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
+void EarthEllipsoid::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
 
 	{
-		alignas(8) float i_mvp_with_focal[18];
+		// Instead of passing focal lengths, we can just multiply the rotation part of the inv-view matrix.
+		// alignas(8) float i_mvp_with_focal[18];
+		alignas(8) float i_mvp_with_focal[16];
 		Eigen::Map<RowMatrix4f> i_mvp { i_mvp_with_focal };
 		Eigen::Map<const RowMatrix4d> vi_d { rs.camera->viewInv() };
 		i_mvp = vi_d.cast<float>();
-		i_mvp_with_focal[16] = .5 * rs.camera->spec().w / rs.camera->spec().fx();
-		i_mvp_with_focal[17] = .5 * rs.camera->spec().h / rs.camera->spec().fy();
+		// i_mvp_with_focal[16] = .5 * rs.camera->spec().w / rs.camera->spec().fx();
+		// i_mvp_with_focal[17] = .5 * rs.camera->spec().h / rs.camera->spec().fy();
+		i_mvp.block<3,1>(0,0) *= .5 * rs.camera->spec().w / rs.camera->spec().fx();
+		i_mvp.block<3,1>(0,1) *= .5 * rs.camera->spec().h / rs.camera->spec().fy();
 
-		void* dbuf = (void*) globalBuffer.mem.mapMemory(0, 18*4, {});
-		memcpy(dbuf, i_mvp_with_focal, 18*4);
+		// void* dbuf = (void*) globalBuffer.mem.mapMemory(0, 18*4, {});
+		// memcpy(dbuf, i_mvp_with_focal, 18*4);
+		void* dbuf = (void*) globalBuffer.mem.mapMemory(0, 16*4, {});
+		memcpy(dbuf, i_mvp_with_focal, 16*4);
 		globalBuffer.mem.unmapMemory();
 	}
 
@@ -101,3 +87,4 @@ inline void EarthEllipsoid::renderInPass(RenderState& rs, vk::CommandBuffer cmd)
 		cmd.draw(6, 1, 0, 0);
 
 }
+
