@@ -7,7 +7,7 @@
 
 #include "frastVk/core/render_state.h"
 #include "frastVk/core/app.h"
-#include "frastVk/utils/eigen.h"
+// #include "frastVk/utils/eigen.h"
 #include "frastVk/extra/caster/castable.h"
 
 namespace tr2 {
@@ -33,7 +33,7 @@ struct TiledRendererCfg {
 	static constexpr uint32_t maxTiles = 256;
 	uint32_t vertsAlongEdge = 8;
 	uint32_t tileSize = 256;
-	uint32_t channels = 3; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
+	uint32_t channels = 4; // Must be 1, 3, or 4. If 3, then textures actually have 4 channels.
 };
 
 class TiledRenderer;

@@ -19,9 +19,11 @@ layout(set=2, binding=1) uniform sampler2D casterTex[1];
 //output write
 layout (location = 0) out vec4 outFragColor;
 
+/*
 layout (push_constant) uniform PushConstants {
 	bool grayscale;
 } pushConstants;
+*/
 
 void main()
 {

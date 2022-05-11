@@ -12,10 +12,11 @@ void main()
 {
 	/* outFragColor = v_color * texture(texs[v_tileIndex], v_uv); */
 
+	vec3 c = texture(texs[v_tileIndex], v_uv).rgb;
 	// Here, take v_color to encode axis and angle.
-	vec3 c = texture(texs[v_tileIndex], v_uv).rgb * 2. - 1.0;
-	vec3 axis = v_color.rgb;
-	float angle = v_color.a;
+	/* vec3 c = texture(texs[v_tileIndex], v_uv).rgb * 2. - 1.0; */
+	/* vec3 axis = v_color.rgb; */
+	/* float angle = v_color.a; */
 	/*
 	mat3 K = mat3(
 		0, -axis.z, axis.y,
@@ -23,8 +24,9 @@ void main()
 		-axis.y, axis.x, 0);
 	c += sin(angle) * K*c + (1-cos(angle))*K*K*c;
 	*/
-	c += sin(angle) * cross(axis,c) + (1-cos(angle))*cross(axis,cross(axis,c));
-	c = c * .5 + .5;
+
+	//c += sin(angle) * cross(axis,c) + (1-cos(angle))*cross(axis,cross(axis,c));
+	//c = c * .5 + .5;
 	outFragColor = vec4(c,1.0);
 
 }

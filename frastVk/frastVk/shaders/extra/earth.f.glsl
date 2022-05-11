@@ -76,8 +76,8 @@ void main() {
 	// If hit, shade.
 	if (pt[0] != 0. && pt[1] != 0.) {
 
-		float d = length(ro-pt);
-		/* float d = length(ro) - .997; */
+		/* float d = length(ro-pt); */
+		float d = length(ro) - .997;
 		/* float o = 2. / (.1 + d - 1.); */
 		/* float o = 2. / (.001 + d - 1.); */
 		/* float o = 1. / (d - .5) * 45.; */
@@ -95,21 +95,21 @@ void main() {
 		/* l += pow(sin(x * 80.), 4.0); */
 
 
-		float f = 12.0;
-		for (int i=-1; i<2; i++) {
-			float oo = o + i;
+		float f = 8.0;
+		for (int i=0; i<4; i++) {
+			float oo = o + i * .5;
 			float io = floor(oo);
-			float mo = 1. - (oo - io);
+			float mo = 1. - fract(oo);
 			float io1 = pow(2.0, io);
 			float io2 = pow(2.0, io+1.0);
 			/* l += mo*smoothstep(.01*mo, .0, abs(fract(f*y*io1)-.5)); */
 			/* l += mo*smoothstep(.01*mo, .0, abs(fract(f*x*io1)-.5)); */
 			/* l += (1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*y*io2)-.5)); */
 			/* l += (1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*x*io2)-.5)); */
-			l = max(l,mo*smoothstep(.01*mo, .0, abs(fract(f*y*io1)-.5)));
 			l = max(l,mo*smoothstep(.01*mo, .0, abs(fract(f*x*io1)-.5)));
-			l = max(l,(1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*y*io2)-.5)));
 			l = max(l,(1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*x*io2)-.5)));
+			l = max(l,mo*smoothstep(.01*mo, .0, abs(fract(f*y*io1)-.5)));
+			l = max(l,(1.-mo)*smoothstep(.01*(1.-mo), .0, abs(fract(f*y*io2)-.5)));
 		}
 
 		l *= .5;

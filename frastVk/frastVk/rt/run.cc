@@ -1,3 +1,4 @@
+#include "frastVk/utils/eigen.h"
 
 #include "core/app.h"
 

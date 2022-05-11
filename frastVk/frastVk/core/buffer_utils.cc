@@ -336,6 +336,7 @@ void ResidentMesh::createAndUpload(Uploader& uploader) {
 void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = vk::Format::eD32Sfloat;
+	if (viewFormat == vk::Format::eUndefined) viewFormat = format;
 	usageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 	aspectFlags = vk::ImageAspectFlagBits::eDepth;
 	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
@@ -344,6 +345,7 @@ void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w) {
 void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
+	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
 	usageFlags = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | extraFlags;
 	aspectFlags = vk::ImageAspectFlagBits::eColor;
 	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
@@ -364,6 +366,7 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
+	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
 	usageFlags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
 	aspectFlags = vk::ImageAspectFlagBits::eColor;
 	memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
@@ -420,7 +423,8 @@ void ResidentImage::create_(Uploader& uploader) {
 	vk::ImageViewCreateInfo viewInfo = {};
 	viewInfo.viewType = vk::ImageViewType::e2D;
 	viewInfo.image = *image;
-	viewInfo.format = format;
+	viewInfo.format = viewFormat;
+	// viewInfo.format = format == vk::Format::eR8Uint ? vk::Format::eR8G8B8A8Uint : format;
 	viewInfo.subresourceRange.baseMipLevel = 0;
 	viewInfo.subresourceRange.levelCount = 1;
 	viewInfo.subresourceRange.baseArrayLayer = 0;

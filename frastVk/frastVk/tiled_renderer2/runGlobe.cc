@@ -1,3 +1,4 @@
+#include "frastVk/utils/eigen.h"
 
 #include "core/app.h"
 
@@ -74,6 +75,8 @@ struct GlobeApp : public VkApp {
 		//clipmap->init();
 
 		// TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
+		// TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/srtm/usa.11.ft");
+		// TiledRendererCfg cfg ("/data/khop/whole.ft", "/data/elevation/srtm/usa.11.ft");
 		TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
@@ -139,6 +142,7 @@ struct GlobeApp : public VkApp {
 		RowMatrix4f txtMvp = RowMatrix4f::Identity();
 		rs.mvpf(txtMvp.data());
 		textSet->setAreaAndSize(0.f,0.f, windowWidth, windowHeight, 1.f, txtMvp.data());
+
 
 		RowMatrix4f txtMatrix;
 		txtMatrix.topRightCorner<3,1>() <<  sin(fd.time)*.001 + 0.163815,-0.759765,0.633448;

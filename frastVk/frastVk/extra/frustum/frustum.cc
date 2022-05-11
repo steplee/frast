@@ -1,3 +1,5 @@
+#include "frastVk/utils/eigen.h"
+
 #include "frustum.h"
 #include <fmt/color.h>
 
@@ -127,14 +129,19 @@ void FrustumSet::setColor(int n, const float color[4]) {
 	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
 	vs.topRightCorner<8,4>().rowwise() = c.transpose();
 	Eigen::Vector4f c2 { color[0], color[1], color[2], color[3] * .2f };
-	vs.bottomRightCorner<6,4>().rowwise() = c2.transpose();
+	vs.block<1,4>(8,3).rowwise() = c2.transpose();
+	Eigen::Vector4f c3 { color[0], color[1], color[2], color[3] * .01f };
+	vs.bottomRightCorner<5,4>().rowwise() = c3.transpose();
 	verts.mem.unmapMemory();
 }
 
 void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
 	void* dbuf = (void*) verts.mem.mapMemory(14*4*7*n, 14*4*7, {});
 	float z = -1.f, o = 1.f;
-	const float ray_far = 2000.0 / 6378137.0;
+	// const float ray_far = 19000.0 / 6378137.0;
+	Eigen::Map<RowMatrix4d> model { modelMatrices.data() + n * 16 };
+	float ray_far = model.topRightCorner<3,1>().norm() - .9985;
+	ray_far = std::min(std::max(ray_far, 100.f / 6378137.0f), 100000.f / 6378137.0f);
 	RowMatrix<float,14,3> new_vs; new_vs <<
 			z,z,near,
 			o,z,near,

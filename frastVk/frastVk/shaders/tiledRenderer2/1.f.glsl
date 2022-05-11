@@ -10,9 +10,11 @@ layout(set = 1, binding = 0) uniform sampler2D tex[128];
 //output write
 layout (location = 0) out vec4 outFragColor;
 
+/*
 layout (push_constant) uniform PushConstants {
 	bool grayscale;
 } pushConstants;
+*/
 
 void main()
 {
@@ -22,8 +24,9 @@ void main()
 	vec4 color = v_color;
 
 	vec4 final_color;
-	if (pushConstants.grayscale) final_color = color * texture(tex[v_tileId], v_uv).rrra;
-	else final_color = color * texture(tex[v_tileId], v_uv);
+	/* if (pushConstants.grayscale) final_color = color * texture(tex[v_tileId], v_uv).rrra; */
+	/* else final_color = color * texture(tex[v_tileId], v_uv); */
+	final_color = color * texture(tex[v_tileId], v_uv);
 
 	if (final_color.r + final_color.g + final_color.b < .01) final_color.a = 0.;
 

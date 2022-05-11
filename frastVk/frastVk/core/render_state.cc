@@ -360,9 +360,29 @@ void SphericalEarthMovingCamera::step(double dt) {
 	//if (vel.squaredNorm() < 1e-18) vel.setZero();
 	acc.setZero();
 
+	Vector3d pos = viewInv.topRightCorner<3,1>();
+	Vector3d n = pos.normalized();
+	quat = AngleAxisd(dquat_[0]*dt, n)
+				// * AngleAxisd( dquat_[1]*dt, Vector3d::UnitZ().cross(n).normalized())
+				// * AngleAxisd( dquat_[1]*dt, Vector3d::UnitZ().cross(n).normalized())
+				// * AngleAxisd( dquat_[1]*dt, viewInv.block<1,3>(2,0).normalized())
+				* AngleAxisd(         0*dt, Vector3d::UnitZ()) * quat
+				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX());
+	/*
 	quat = quat * AngleAxisd(-dquat_[0]*dt, Vector3d::UnitY())
 				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX())
 				* AngleAxisd(         0*dt, Vector3d::UnitZ());
+				*/
+
+	// Make X axis normal to world
+	if (pos.norm() < 1.2) {
+		float speed = std::min(std::max(.1f - ((float)pos.norm() - 1.2f), 0.f), .1f);
+		auto R = quat.toRotationMatrix();
+		double angle = R.col(0).dot(n);
+		quat = quat * AngleAxisd(angle*speed, n.normalized());
+	}
+
+
 	for (int i=0; i<4; i++) quat_[i] = quat.coeffs()(i);
 	dquat_[0] = dquat_[1] = dquat_[2] = 0;
 

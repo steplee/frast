@@ -209,6 +209,7 @@ class VkApp : public BaseVkApp {
 		// VkApp provides standard starter function that further calls doRender()
 		virtual void render();
 		virtual void doRender(RenderState& rs) =0;
+		inline virtual void postRender() {}
 		inline virtual void handleCompletedHeadlessRender(RenderState& rs) {};
 
 		inline virtual uint32_t mainSubpass() const override { return 1; }

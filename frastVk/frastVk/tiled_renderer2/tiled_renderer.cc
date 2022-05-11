@@ -1,3 +1,5 @@
+#include "frastVk/utils/eigen.h"
+
 #define USE_TIMER
 #include <chrono>
 #include <frast/utils/timer.hpp>
@@ -104,7 +106,7 @@ void TileDataLoader::internalLoop(
 
 	// Load datasets
 	DatasetReaderOptions dopts1, dopts2;
-	//dopts1.allowInflate = true;
+	dopts1.allowInflate = false;
 	dopts2.allowInflate = true;
 	colorDset = new DatasetReader(colorDsetPath, dopts1);
 	elevDset  = new DatasetReader(elevDsetPath,  dopts2);
@@ -119,7 +121,7 @@ void TileDataLoader::internalLoop(
 	myUploader = std::move(Uploader(app, *myUploadQueue));
 
 	colorFormat = Image::Format::RGBA;
-	if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) colorFormat = Image::Format::GRAY;
+	// if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) colorFormat = Image::Format::GRAY;
 	assert(cfg.tileSize == colorDset->tileSize());
 	colorBuf = Image { (int)colorDset->tileSize(), (int)colorDset->tileSize(), colorFormat };
 	elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
@@ -258,21 +260,19 @@ bool TileDataLoader::loadRootTile(Tile* tile) {
 }
 
 bool TileDataLoader::loadTile(Tile* tile) {
-	//uint32_t id[1];
-	//tile->idx = id[0];
 
 	if (loadColor(tile)) {
-
-		uint64_t tlbr[4] = { tile->bc.x(), tile->bc.y(), tile->bc.x()+1lu, tile->bc.y()+1lu };
-		if (colorBuf.channels() == 1) {
+		/*if (colorBuf.channels() == 1) {
 			memset(colorBuf.buffer, 0, colorBuf.size());
-		} else {
+		} else*/ {
 			// set zero, but don't touch alpha
+			tile->childrenMissing = Tile::MissingStatus::NOT_MISSING;
 			for (int i=0; i<colorBuf.h; i++)
 			for (int j=0; j<colorBuf.w; j++) {
-				colorBuf.buffer[j*colorBuf.w*4+0] = 0;
-				colorBuf.buffer[j*colorBuf.w*4+1] = 0;
-				colorBuf.buffer[j*colorBuf.w*4+2] = 0;
+				colorBuf.buffer[i*colorBuf.w*4+j*4+0] = 0;
+				colorBuf.buffer[i*colorBuf.w*4+j*4+1] = 0;
+				colorBuf.buffer[i*colorBuf.w*4+j*4+2] = 0;
+				// colorBuf.buffer[i*colorBuf.w*4+j*4+3] = 255;
 			}
 		}
 		auto& tex = pooledTileData.texs[tile->idx];
@@ -317,7 +317,7 @@ bool TileDataLoader::loadColor(Tile* tile) {
 	//int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	uint64_t tlbr[4] = { tile->bc.x(), tile->bc.y(), tile->bc.x()+1lu, tile->bc.y()+1lu };
 	int n_missing = colorDset->fetchBlocks(colorBuf, tile->bc.z(), tlbr, color_txn);
-	dprint(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
+	// fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
 	if (n_missing > 0) return true;
 	// app->uploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*4, 0);
 	myUploader.uploadSync(tex, colorBuf.buffer, cfg.tileSize*cfg.tileSize*colorBuf.channels(), 0);
@@ -357,7 +357,8 @@ bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 				(uint32_t)(tile->bc.y()),
 				(uint32_t)(tile->bc.x()),
 				z,y,x);
-	} else {
+	}
+	{
 		//uint32_t y_off = (tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge;
 		// uint32_t y_off = cfg.vertsAlongEdge - 1 - ((tile->bc.y() / lvlOffset) % cfg.vertsAlongEdge);
 		// uint32_t x_off = (tile->bc.x() / lvlOffset) % cfg.vertsAlongEdge;
@@ -374,23 +375,39 @@ bool TileDataLoader::loadElevAndMeta(Tile* tile) {
 		float oy = (ty * lvlScale * 1. - 1.);
 		// ox=oy=-1;
 		// lvlScale = 2;
-		for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
-		for (int32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
-				int32_t ii = ((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx;
-				// int32_t ii = ((yy)*cfg.vertsAlongEdge)+xx;
 
-				float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
-				float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
-				float xxx = (xxx_ * lvlScale) + ox;
-				float yyy = ((1. - yyy_) * lvlScale) + oy;
-				vertData[ii*5+0] = xxx;
-				vertData[ii*5+1] = yyy;
-				vertData[ii*5+2] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
-				// vertData[ii*5+2] = 0;
-				vertData[ii*5+3] = xxx_;
-				vertData[ii*5+4] = yyy_;
-				// altBuffer.alt[((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
-		}
+		if (n_missing) {
+			for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
+				for (int32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
+					int32_t ii = ((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx;
+					// int32_t ii = ((yy)*cfg.vertsAlongEdge)+xx;
+
+					float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
+					float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
+					float xxx = (xxx_ * lvlScale) + ox;
+					float yyy = ((1. - yyy_) * lvlScale) + oy;
+					vertData[ii*5+0] = xxx;
+					vertData[ii*5+1] = yyy;
+					vertData[ii*5+2] = 0;
+					vertData[ii*5+3] = xxx_;
+					vertData[ii*5+4] = yyy_;
+				}
+		} else
+			for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
+				for (int32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
+					int32_t ii = ((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx;
+					// int32_t ii = ((yy)*cfg.vertsAlongEdge)+xx;
+
+					float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
+					float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
+					float xxx = (xxx_ * lvlScale) + ox;
+					float yyy = ((1. - yyy_) * lvlScale) + oy;
+					vertData[ii*5+0] = xxx;
+					vertData[ii*5+1] = yyy;
+					vertData[ii*5+2] = (data[(yy+y_off)*elevBuf.w+xx+x_off] / 8.0) / WebMercatorMapScale;
+					vertData[ii*5+3] = xxx_;
+					vertData[ii*5+4] = yyy_;
+				}
 
 		unit_wm_to_ecef(vertData.data(), vertData.size()/5, vertData.data(), 5);
 		// std::vector<double> tmp1, tmp2;
@@ -764,9 +781,14 @@ void TiledRenderer::init() {
 		uint8_t *emptyImage = (uint8_t*)malloc(cfg.tileSize*cfg.tileSize*4);
 		memset(emptyImage, 100, cfg.tileSize*cfg.tileSize*4);
 		for (int i=0; i<cfg.maxTiles; i++) {
-			if (dataLoader.colorFormat == Image::Format::GRAY)
-				pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8Unorm, emptyImage);
-			else
+			if (dataLoader.colorFormat == Image::Format::GRAY) {
+				// If grayscale, don't interpret as just red, but as rgb
+				// Well: This dose not work. Really seems like you must modify the shader
+				// pooledTileData.texs[i].viewFormat = vk::Format::eR8G8B8A8Unorm;
+				// pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8Unorm, emptyImage);
+				pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8G8B8A8Unorm, emptyImage);
+				assert(false);
+			} else
 				pooledTileData.texs[i].createAsTexture(app->uploader, cfg.tileSize, cfg.tileSize, vk::Format::eR8G8B8A8Unorm, emptyImage);
 		}
 		free(emptyImage);
@@ -898,10 +920,12 @@ void TiledRenderer::init() {
 		sharedTileData.pipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
 
 
+		/*
 		sharedTileData.pipelineStuff.pushConstants.push_back(vk::PushConstantRange{
 				vk::ShaderStageFlagBits::eFragment,
 				0,
 				sizeof(TiledRendererPushConstants) });
+		*/
 
 		sharedTileData.pipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
@@ -942,10 +966,12 @@ void TiledRenderer::init() {
 		// For the caster matrices and metadata, we have a third set.
 		casterStuff.casterPipelineStuff.setLayouts.push_back(*casterStuff.casterDescSetLayout);
 
+		/*
 		casterStuff.casterPipelineStuff.pushConstants.push_back(vk::PushConstantRange{
 				vk::ShaderStageFlagBits::eFragment,
 				0,
 				sizeof(TiledRendererPushConstants) });
+		*/
 
 		casterStuff.casterPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
@@ -1119,10 +1145,12 @@ void TiledRenderer::renderInPass(const RenderState& rs, vk::CommandBuffer& cmd) 
 	globalBuffer.mem.unmapMemory();
 
 	// TODO: Having two shaders probably more efficient
+	/*
 	TiledRendererPushConstants pushc;
 	// pushc.grayscale = true;
 	pushc.grayscale = false;
 	cmd.pushConstants(*thePipelineStuff->pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const TiledRendererPushConstants>{1, &pushc});
+	*/
 
 	// Now make draw call, with as many instances as tiles to draw
 	std::string tiless;

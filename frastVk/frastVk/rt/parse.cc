@@ -1,3 +1,5 @@
+#include "frastVk/utils/eigen.h"
+
 #include <iostream>
 
 #include "rt.h"

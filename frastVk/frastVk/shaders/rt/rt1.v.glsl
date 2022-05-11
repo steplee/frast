@@ -81,12 +81,9 @@ void main()
 	/* c.r = abs(sin(flvl*.7)); */
 	/* c.g = abs(sin((flvl+2.6)*1.2)); */
 	/* c.b = abs(sin((flvl+9.8)*.51)); */
-	vec3 axis = normalize(vec3(sin(flvl*6.5), sin(3.0+flvl*9.2), sin(19.3+flvl*3.3)));
-	float angle = sin(flvl*.97) * .7;
-	// We can't do rotation here, we must sample texture first!
-	// so store axis and angle in vec4 v_color
-	/* c.rgb += sin(angle) * cross(axis,c.rgb) + (1-cos(angle))*cross(axis,cross(axis,c.rgb)); */
-	c = vec4(axis,angle);
+	/* vec3 axis = normalize(vec3(sin(flvl*6.5), sin(3.0+flvl*9.2), sin(19.3+flvl*3.3))); */
+	/* float angle = sin(flvl*.97) * .7; */
+	/* c = vec4(axis,angle); */
 
 	/* float foct = float(aPosition.w); */
 	/* c.r *= abs(sin(foct*7.7)); */

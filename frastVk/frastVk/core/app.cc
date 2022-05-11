@@ -1157,6 +1157,8 @@ void VkApp::render() {
 		};
 		queueGfx.presentKHR(presentInfo);
 	}
+
+	postRender();
 }
 
 bool VkApp::isDone() {

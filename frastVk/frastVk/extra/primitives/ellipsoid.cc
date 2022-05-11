@@ -68,6 +68,7 @@ void EllipsoidSet::init(uint32_t subpass) {
 		pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 
 		PipelineBuilder builder;
+		builder.depthWrite = false;
 		builder.init(
 				{},
 				vk::PrimitiveTopology::eTriangleList,

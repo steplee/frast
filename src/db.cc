@@ -16,6 +16,9 @@
 #include <iomanip>
 #include <cmath>
 
+#include <fmt/color.h>
+#include <fmt/core.h>
+
 //#define DEBUG_RASTERIO
 #ifdef DEBUG_RASTERIO
 #include <opencv2/imgcodecs.hpp>
@@ -1509,9 +1512,9 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 				else if (channels() == 3) memcpyStridedOutputFlatInput<uint16_t,3>(dst, src, sw, tileSize(), tileSize());
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint16_t,4>(dst, src, sw, tileSize(), tileSize());
 			} else {
-				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
+				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*out.channels()) + xi*(tileSize()*out.channels());
 				if (out.channels() == 4 and channels() == 1) memcpyStridedOutputFlatInputReplicateRgbPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
-				if (out.channels() == 4 and channels() == 3) memcpyStridedOutputFlatInputPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				else if (out.channels() == 4 and channels() == 3) memcpyStridedOutputFlatInputPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 1) memcpyStridedOutputFlatInput<uint8_t,1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
@@ -1545,8 +1548,10 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 }
 
 
+static constexpr int BAD_FLOOR_VALUE = -10;
 static int floor_log2_i_(float x) {
-	assert(x >= 0);
+	// assert(x >= 0);
+	if (x <= 0) return BAD_FLOOR_VALUE;
 
 	// Could also use floating point log2.
 	// Could also convert x to an int and use intrinsics.
@@ -1562,6 +1567,7 @@ static int floor_log2_i_(float x) {
 	return i-2;
 }
 
+/*
 uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]) {
 	assert(false); // deprecated
 
@@ -1596,6 +1602,7 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 
 	return lvl;
 }
+*/
 
 uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint32_t outCapacity, int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
 	double boxW = bboxWm[2] - bboxWm[0];
@@ -1616,6 +1623,11 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 	// (1)
 	float x = (edgeLen / static_cast<float>(std::min(imgH,imgW))) * (tileSize());
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
+	if (lvl_ == BAD_FLOOR_VALUE) {
+		printf(" - BAD FLOOR VALUE : Given bboxWm %lfw %lfh, edge %f, tileSize() %d, selecting level %d\n", bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],edgeLen,tileSize(),lvl_);
+		// fmt::print(fmt::fg(fmt::color::red), " - BAD FLOOR VALUE : Given bboxWm {}w {}h, edge {}, tileSize() {}, selecting level {}\n", bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],edgeLen,tileSize(),lvl_);
+		return BAD_LEVEL_CHOSEN;
+	}
 	//printf(" - Given bboxWm %lfw %lfh, tileSize() %d, selecting level %d with cell size %f\n",
 			//bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],tileSize(),lvl_,WebMercatorCellSizesf[lvl_]);
 

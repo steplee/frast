@@ -175,6 +175,7 @@ struct ResidentImage {
 
 	// Image details
 	vk::Format format;
+	vk::Format viewFormat = vk::Format::eUndefined;
 	vk::ImageUsageFlags usageFlags;
 	vk::Extent3D extent;
 	// Memory details

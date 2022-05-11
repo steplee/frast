@@ -1,3 +1,5 @@
+#include "frastVk/utils/eigen.h"
+
 #include "rt.h"
 #include <fmt/color.h>
 #include <fmt/ostream.h>
