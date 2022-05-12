@@ -65,7 +65,7 @@ target_link_libraries(frastVk
 	${VULKAN_LIBS}
 	dl
 	# ${XCB_LIBRARIES}
-	glfw
+	glfw3 X11
 	pthread
 	stdc++fs
 	protobuf
