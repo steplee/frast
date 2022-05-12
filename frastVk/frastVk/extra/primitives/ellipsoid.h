@@ -11,7 +11,7 @@ struct EllipsoidSet {
 		float color[4];
 	};
 
-		constexpr static int maxEllipsoids = 4;
+		constexpr static int maxEllipsoids = 8;
 
 		inline EllipsoidSet(BaseVkApp* app) : app(app) { }
 

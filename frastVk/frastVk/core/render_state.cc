@@ -155,30 +155,35 @@ void FlatEarthMovingCamera::recompute_view() {
 	view.topRightCorner<3,1>() = -(viewInv.topLeftCorner<3,3>().transpose() * viewInv.topRightCorner<3,1>());
 }
 
-void FlatEarthMovingCamera::handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) {
-	mouseDown = isPressing;
+// IO.
+void FlatEarthMovingCamera::handleMousePress(int button, int action, int mods) {
+	leftMouseDown = button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS;
+	rightMouseDown = button == GLFW_MOUSE_BUTTON_RIGHT and action == GLFW_PRESS;
 }
-void FlatEarthMovingCamera::handleMouseMotion(int x, int y, uint8_t mod) {
+void FlatEarthMovingCamera::handleMouseMotion(double x, double y) {
 	Map<Matrix<double,3,1>> dquat { dquat_ };
-	if (mouseDown and (lastX !=0 or lastY !=0)) {
+	if (leftMouseDown and (lastX !=0 or lastY !=0)) {
 		dquat(0) += (x - lastX) * .1f;
 		dquat(1) += (y - lastY) * .1f;
 	}
 	lastX = x;
 	lastY = y;
 }
-void FlatEarthMovingCamera::handleKey(uint8_t key, uint8_t mod, bool isDown) {
-	if (isDown) {
+void FlatEarthMovingCamera::handleKey(int key, int scancode, int action, int mods) {
+	bool isDown = action == GLFW_PRESS or action == GLFW_REPEAT;
+	if (isDown or action==GLFW_REPEAT) {
 		Map<Matrix<double,3,1>> acc { acc_ };
 		Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 
 		Vector3d dacc { Vector3d::Zero() };
-		if (isDown and key == VKK_A) dacc(0) += -1;
-		if (isDown and key == VKK_D) dacc(0) +=  1;
-		if (isDown and key == VKK_W) dacc(2) +=  1;
-		if (isDown and key == VKK_S) dacc(2) += -1;
+		if (isDown and key == GLFW_KEY_A) dacc(0) += -1;
+		if (isDown and key == GLFW_KEY_D) dacc(0) +=  1;
+		if (isDown and key == GLFW_KEY_W) dacc(2) +=  1;
+		if (isDown and key == GLFW_KEY_S) dacc(2) += -1;
+		if (isDown and key == GLFW_KEY_F) dacc(1) +=  1;
+		if (isDown and key == GLFW_KEY_E) dacc(1) += -1;
 
-		if (isDown and key == VKK_I) {
+		if (isDown and key == GLFW_KEY_I) {
 			Map<Matrix<double,3,1>> vel { vel_ };
 			Map<Matrix<double,3,1>> acc { acc_ };
 			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
@@ -295,39 +300,44 @@ void SphericalEarthMovingCamera::recompute_view() {
 	view.topRightCorner<3,1>() = -(viewInv.topLeftCorner<3,3>().transpose() * viewInv.topRightCorner<3,1>());
 }
 
-void SphericalEarthMovingCamera::handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) {
-	mouseDown = isPressing;
+// IO
+void SphericalEarthMovingCamera::handleMousePress(int button, int action, int mods) {
+	leftMouseDown = button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS;
+	rightMouseDown = button == GLFW_MOUSE_BUTTON_RIGHT and action == GLFW_PRESS;
 }
-void SphericalEarthMovingCamera::handleMouseMotion(int x, int y, uint8_t mod) {
+void SphericalEarthMovingCamera::handleMouseMotion(double x, double y) {
 	Map<Matrix<double,3,1>> dquat { dquat_ };
-	if (mouseDown and (lastX !=0 or lastY !=0)) {
+	if (leftMouseDown and (lastX !=0 or lastY !=0)) {
 		dquat(0) += (x - lastX) * .1f;
 		dquat(1) += (y - lastY) * .1f;
 	}
 	lastX = x;
 	lastY = y;
 }
-void SphericalEarthMovingCamera::handleKey(uint8_t key, uint8_t mod, bool isDown) {
+void SphericalEarthMovingCamera::handleKey(int key, int scancode, int action, int mods) {
+	bool isDown = action == GLFW_PRESS or action == GLFW_REPEAT;
 	if (isDown) {
 		Map<Matrix<double,3,1>> acc { acc_ };
 		Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 
 		Vector3d dacc { Vector3d::Zero() };
-		if (isDown and key == VKK_A) dacc(0) += -1;
-		if (isDown and key == VKK_D) dacc(0) +=  1;
-		if (isDown and key == VKK_W) dacc(2) +=  1;
-		if (isDown and key == VKK_S) dacc(2) += -1;
+		if (isDown and key == GLFW_KEY_A) dacc(0) += -1;
+		if (isDown and key == GLFW_KEY_D) dacc(0) +=  1;
+		if (isDown and key == GLFW_KEY_W) dacc(2) +=  1;
+		if (isDown and key == GLFW_KEY_S) dacc(2) += -1;
+		if (isDown and key == GLFW_KEY_F) dacc(1) +=  1;
+		if (isDown and key == GLFW_KEY_E) dacc(1) += -1;
 
-		if (isDown and key == VKK_I) {
+		if (isDown and key == GLFW_KEY_I) {
 			Map<Matrix<double,3,1>> vel { vel_ };
 			Map<Matrix<double,3,1>> acc { acc_ };
 			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 			Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
-			std::cout << " [SphericalEarthMovingCamera::step()]\n";
+			std::cout << " [FlatEarthMovingCamera::step()]\n";
 			std::cout << "      - vel " << vel.transpose() << "\n";
 			std::cout << "      - acc " << acc.transpose() << "\n";
-			std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << " r " << viewInv.topRightCorner<3,1>().norm() << "\n";
-			std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << " near " << spec_.near << " far " << spec_.far << "\n";
+			std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << "\n";
+			std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << "\n";
 			std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
 		}
 

@@ -7,7 +7,8 @@
 
 
 #include "frastVk/core/buffer_utils.h"
-#include "frastVk/core/window.hpp"
+// #include "frastVk/core/window.hpp"
+#include "frastVk/core/window.h"
 #include "frastVk/core/render_state.h"
 
 struct ResidentMesh;
@@ -130,7 +131,9 @@ struct AbstractSwapchain {
 struct BaseVkApp : public Window {
 
 	BaseVkApp();
+	virtual ~BaseVkApp();
 	virtual void initVk();
+
 
 	bool headless = false;
 
@@ -216,7 +219,8 @@ class VkApp : public BaseVkApp {
 
 		bool isDone();
 
-		virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+		// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+		virtual void handleKey(int key, int scancode, int action, int mods) override;
 
 		ResidentMesh simpleMesh;
 

@@ -34,6 +34,7 @@ struct GlobeApp : public VkApp {
 		std::shared_ptr<SimpleTextSet> textSet;
 
 
+
 	inline virtual void initVk() override {
 		VkApp::initVk();
 		initFinalImage();
@@ -68,7 +69,7 @@ struct GlobeApp : public VkApp {
 			camera->setRotMatrix(R0.data());
 		}
 
-		ioUsers.push_back(camera);
+		ioUsers.push_back(camera.get());
 		renderState.camera = camera;
 
 		//clipmap = std::make_shared<ClipMapRenderer1>(this);

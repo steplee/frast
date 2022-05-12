@@ -1,6 +1,7 @@
 #include "app.h"
 
-#include <vulkan/vulkan_xcb.h>
+// #include <vulkan/vulkan_xcb.h>
+
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -72,14 +73,23 @@ bool BaseVkApp::make_instance() {
 #endif
 	};
 	std::vector<char*>  extensions = {
-		VK_KHR_SURFACE_EXTENSION_NAME,
-		VK_KHR_XCB_SURFACE_EXTENSION_NAME
+		// VK_KHR_SURFACE_EXTENSION_NAME
+		//,VK_KHR_XCB_SURFACE_EXTENSION_NAME
 		//,VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME 
 #ifdef VULKAN_DEBUG
-		,VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+		VK_EXT_DEBUG_UTILS_EXTENSION_NAME
 		,VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 #endif
 	};
+
+	std::vector<std::string> extraExtensions = getWindowExtensions();
+	// fmt::print(" - Extra window exensions: ");
+	// for (auto s : extraExtensions) fmt::print("{}, ", s);
+	// fmt::print("\n");
+	for (auto &extraExtension : extraExtensions) extensions.push_back((char*)extraExtension.c_str());
+	fmt::print(" - Instance Extensions: ");
+	for (auto s : extensions) fmt::print("{}, ", s);
+	fmt::print("\n");
 
 	vk::InstanceCreateInfo info {
 			{},
@@ -305,6 +315,7 @@ bool BaseVkApp::make_headless_swapchain() {
 }
 
 bool BaseVkApp::make_surface() {
+	/*
 	vk::XcbSurfaceCreateInfoKHR s_ci = {
 		{},
 		xcbConn,
@@ -312,7 +323,18 @@ bool BaseVkApp::make_surface() {
 	};
 
 	surface = std::move(vk::raii::SurfaceKHR{instance, s_ci});
+	*/
+
+	VkSurfaceKHR surface_;
+	auto res = glfwCreateWindowSurface(*instance, glfwWindow, NULL, &surface_);
+	fmt::print(" - glfwCreateWindowSurface res: {}\n", res);
+	surface = std::move(vk::raii::SurfaceKHR{instance, surface_});
+	// surface = std::move(vk::raii::SurfaceKHR{surface_});
 	return false;
+}
+
+BaseVkApp::~BaseVkApp() {
+	// vkDestroySurfaceKHR(surface);
 }
 
 bool BaseVkApp::make_swapchain() {
@@ -1165,6 +1187,7 @@ bool VkApp::isDone() {
 	return isDone_;
 }
 
+/*
 void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 	if (!isDown and key == VKK_Q) {
 		isDone_ = true;
@@ -1173,7 +1196,10 @@ void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 		//frameDatas.clear();
 		//deviceGpu.waitIdle();
 	}
-
+}
+*/
+void VkApp::handleKey(int key, int scancode, int action, int mods) {
+	if (key == GLFW_KEY_Q and action == GLFW_PRESS) isDone_ = true;
 }
 
 

@@ -36,7 +36,7 @@ struct RtApp : public VkApp {
 		camera->setPosition(pos0.data());
 		camera->setRotMatrix(R0.data());
 
-		ioUsers.push_back(camera);
+		ioUsers.push_back(camera.get());
 		renderState.camera = camera;
 
 

@@ -20,7 +20,7 @@ add_definitions(-DCOMPRESS_TERRAIN=1)
 add_definitions(-DUSE_TURBOJPEG=1)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(XCB REQUIRED xcb xcb-keysyms)
+# pkg_check_modules(XCB REQUIRED xcb xcb-keysyms)
 #find_package(Vulkan REQUIRED)
 set(VULKAN_LIBS vulkan)
 
@@ -35,6 +35,7 @@ add_library(frastVk
 	frastVk/core/app.cc
 	frastVk/core/buffer_utils.cc
 	frastVk/core/render_state.cc
+	frastVk/core/window.cc
 
 	# frastVk/clipmap1/clipmap1.cc
 	# frastVk/clipmap1/clipmap1_load.cc
@@ -63,7 +64,8 @@ target_link_libraries(frastVk
 
 	${VULKAN_LIBS}
 	dl
-	${XCB_LIBRARIES}
+	# ${XCB_LIBRARIES}
+	glfw
 	pthread
 	stdc++fs
 	protobuf

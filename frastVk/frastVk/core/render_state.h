@@ -1,6 +1,7 @@
 #pragma once
 
-#include "frastVk/core/window.hpp"
+// #include "frastVk/core/window.hpp"
+#include "frastVk/core/window.h"
 
 class FrameData;
 
@@ -55,6 +56,10 @@ struct Camera : public UsesIO {
 			spec_.compute_projection(proj_);
 		}
 
+		virtual void handleKey(int key, int scancode, int action, int mods) =0;
+		virtual void handleMousePress(int button, int action, int mods) =0;
+		virtual void handleMouseMotion(double x, double y) =0;
+
 
 	protected:
 		CameraSpec spec_;
@@ -75,9 +80,12 @@ struct FlatEarthMovingCamera : public Camera {
 	
 
 	virtual void step(double dt);
-	virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
-	virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
-	virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
+	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+	virtual void handleKey(int key, int scancode, int action, int mods) override;
+	virtual void handleMousePress(int button, int action, int mods) override;
+	virtual void handleMouseMotion(double x, double y) override;
 
 	protected:
 		void recompute_view();
@@ -87,7 +95,7 @@ struct FlatEarthMovingCamera : public Camera {
 		alignas(16) double acc_[3] = {0};
 		alignas(16) double quat_[4];
 		alignas(16) double dquat_[3] = {0};
-		bool mouseDown = false;
+		bool leftMouseDown = false, rightMouseDown = false;
 		double lastX=0, lastY=0;
 };
 
@@ -102,9 +110,12 @@ struct SphericalEarthMovingCamera : public Camera {
 	
 
 	virtual void step(double dt);
-	virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
-	virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
-	virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
+	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+	virtual void handleKey(int key, int scancode, int action, int mods) override;
+	virtual void handleMousePress(int button, int action, int mods) override;
+	virtual void handleMouseMotion(double x, double y) override;
 
 	protected:
 		void maybe_set_near_far();
@@ -115,7 +126,7 @@ struct SphericalEarthMovingCamera : public Camera {
 		alignas(16) double acc_[3] = {0};
 		alignas(16) double quat_[4];
 		alignas(16) double dquat_[3] = {0};
-		bool mouseDown = false;
+		bool leftMouseDown = false, rightMouseDown = false;
 		double lastX=0, lastY=0;
 
 		double last_proj_r2 = 0;
