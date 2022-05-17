@@ -228,10 +228,11 @@ def perturb_pose(p,q, posAmp=10, oriAmp=.1):
     return p1, q1, rvec
 
 def lookAtR(eye, ctr, up):
-    f = normalize1(ctr - eye)
+    # f = normalize1(ctr - eye)
+    f = normalize1(eye - ctr)
     r = normalize1(np.cross(up, f))
     u = normalize1(np.cross(f,r))
-    return np.stack((r,u,f)).reshape(3,3)
+    return np.stack((r,u,f)).reshape(3,3).T
 
 
 def quat_to_z_axis(q):

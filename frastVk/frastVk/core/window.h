@@ -10,10 +10,12 @@
 // #include <memory>
 // #include <mutex>
 
+// Callbacks should return false to signal that the event should propagate.
+// If it returns true, the event will not propagate
 struct UsesIO {
-	inline virtual void handleKey(int key, int scancode, int action, int mods) {}
-	inline virtual void handleMousePress(int button, int action, int mods) {}
-	inline virtual void handleMouseMotion(double x, double y) {}
+	inline virtual bool handleKey(int key, int scancode, int action, int mods) { return false; }
+	inline virtual bool handleMousePress(int button, int action, int mods) { return false; }
+	inline virtual bool handleMouseMotion(double x, double y) { return false; }
 	//inline virtual void handleMouseNotify(int x, int y, bool isEntering) {}
 };
 
@@ -23,16 +25,16 @@ class Window : public UsesIO {
 		Window(int h, int w, bool headless);
 		Window();
 		~Window();
-		void destroyWindow();
+		virtual void destroyWindow();
 		bool pollWindowEvents();
 		std::vector<UsesIO*> ioUsers;
 		std::string title;
 
 		void setupWindow();
 
-		inline virtual void handleKey(int key, int scancode, int action, int mods) override {}
-		inline virtual void handleMousePress(int button, int action, int mods) override {}
-		inline virtual void handleMouseMotion(double x, double y) override {}
+		inline virtual bool handleKey(int key, int scancode, int action, int mods) override { return false; }
+		inline virtual bool handleMousePress(int button, int action, int mods) override { return false; }
+		inline virtual bool handleMouseMotion(double x, double y) override { return false; }
 		//inline virtual void handleMouseNotify(int x, int y, bool isEntering) {}
 
 		uint32_t windowHeight, windowWidth;

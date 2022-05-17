@@ -1,17 +1,34 @@
 #include "window.h"
 #include <iostream>
 #include <fmt/core.h>
+#include <mutex>
 
 static bool __didInit = false;
+static int windowCnt = 0;
+static std::mutex __window_mtx;
+// extern std::mutex __window_mtx;
+
+static void glfw_error_callback(int error, const char* description)
+{
+    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
+}
+
+static void __doInit() {
+}
 
 void Window::setupWindow() {
 
-	static int windowCnt = 0;
-    if (!__didInit)
+	__window_mtx.lock();
+    if (!__didInit) {
+		glfwSetErrorCallback(glfw_error_callback);
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW." << std::endl;
             glfwTerminate();
-        } else __didInit = true;
+        }
+	}
+	windowCnt++;
+	__didInit = true;
+	__window_mtx.unlock();
 
 	bool egl = false;
     if (egl) glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
@@ -24,7 +41,7 @@ void Window::setupWindow() {
         glfwTerminate();
     }
 
-    glfwMakeContextCurrent(glfwWindow);
+    // glfwMakeContextCurrent(glfwWindow);
 	int ww, hh;
     glfwGetWindowSize(glfwWindow, &ww, &hh);
 	windowWidth = ww;
@@ -65,26 +82,37 @@ void Window::_reshapeFunc(GLFWwindow* glfwWindow, int w, int h) {
 }
 void Window::_keyboardFunc(GLFWwindow* glfwWindow, int key, int scancode, int action, int mods) {
     Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
-	theWindow->handleKey(key, scancode, action, mods);
-	for (auto l : theWindow->ioUsers) l->handleKey(key, scancode, action, mods);
+	bool stop = theWindow->handleKey(key, scancode, action, mods);
+	for (auto l : theWindow->ioUsers) {
+		if (stop) break;
+		stop = l->handleKey(key, scancode, action, mods);
+	}
 }
 void Window::_clickFunc(GLFWwindow* glfwWindow, int button, int action, int mods) {
     Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
-	theWindow->handleMousePress(button, action, mods);
-	for (auto l : theWindow->ioUsers) l->handleMousePress(button, action, mods);
+	bool stop = theWindow->handleMousePress(button, action, mods);
+	for (auto l : theWindow->ioUsers) {
+		if (stop) break;
+		stop = l->handleMousePress(button, action, mods);
+	}
 }
 void Window::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
     Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
-	theWindow->handleMouseMotion(xpos,ypos);
-	for (auto l : theWindow->ioUsers) l->handleMouseMotion(xpos,ypos);
+	bool stop = theWindow->handleMouseMotion(xpos,ypos);
+	for (auto l : theWindow->ioUsers) {
+		if (stop) break;
+		stop = l->handleMouseMotion(xpos,ypos);
+	}
 }
 
 std::vector<std::string> Window::getWindowExtensions() {
+	__window_mtx.lock();
     if (!__didInit)
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW." << std::endl;
             glfwTerminate();
         } else __didInit = true;
+	__window_mtx.unlock();
 
 	std::vector<std::string> out;
 	uint32_t count;

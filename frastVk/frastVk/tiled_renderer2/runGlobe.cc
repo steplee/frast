@@ -1,6 +1,7 @@
 #include "frastVk/utils/eigen.h"
 
 #include "core/app.h"
+#include "core/imgui_app.h"
 
 #include "clipmap1/clipmap1.h"
 
@@ -23,7 +24,7 @@ using namespace tr2;
 #include "extra/primitives/ellipsoid.h"
 #include "extra/text/textSet.h"
 
-struct GlobeApp : public VkApp {
+struct GlobeApp : public ImguiApp {
 
 		std::shared_ptr<ClipMapRenderer1> clipmap;
 		std::shared_ptr<TiledRenderer> tiledRenderer;
@@ -33,10 +34,15 @@ struct GlobeApp : public VkApp {
 		std::shared_ptr<EllipsoidSet> ellpSet;
 		std::shared_ptr<SimpleTextSet> textSet;
 
+		inline virtual bool handleKey(int key, int scancode, int action, int mods) {
+			if (key == GLFW_KEY_M and action == GLFW_PRESS) showMenu = !showMenu;
+			return ImguiApp::handleKey(key,scancode,action,mods);
+		}
+
 
 
 	inline virtual void initVk() override {
-		VkApp::initVk();
+		ImguiApp::initVk();
 		initFinalImage();
 		//set position of camera offset by loaded mld ctr
 
@@ -70,7 +76,7 @@ struct GlobeApp : public VkApp {
 		}
 
 		ioUsers.push_back(camera.get());
-		renderState.camera = camera;
+		renderState.camera = camera.get();
 
 		//clipmap = std::make_shared<ClipMapRenderer1>(this);
 		//clipmap->init();
@@ -137,7 +143,7 @@ struct GlobeApp : public VkApp {
 
 	}
 
-	inline virtual void doRender(RenderState& rs) override {
+	inline virtual std::vector<vk::CommandBuffer> doRender(RenderState& rs) override {
 		auto& fd = *rs.frameData;
 
 		RowMatrix4f txtMvp = RowMatrix4f::Identity();
@@ -225,8 +231,8 @@ struct GlobeApp : public VkApp {
 
 		// If we use a frustum, it must be rendered in a pass, so we can use the simpleRenderPass from VkApp.
 		vk::CommandBuffer frame_cmd = *fd.cmd;
-		frame_cmd.reset();
-		frame_cmd.begin(vk::CommandBufferBeginInfo{});
+		// frame_cmd.reset();
+		// frame_cmd.begin(vk::CommandBufferBeginInfo{});
 
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
 		vk::ClearValue clears_[2] = {
@@ -242,7 +248,7 @@ struct GlobeApp : public VkApp {
 		// Note: Can roll back to just one subpass, I thought there was a dependency issue -- it was just a depth-test issue.
 		frame_cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		if (earthEllipsoid) earthEllipsoid->renderInPass(rs, frame_cmd);
-		frame_cmd.nextSubpass(vk::SubpassContents::eInline);
+		// frame_cmd.nextSubpass(vk::SubpassContents::eInline);
 
 		/*
 		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
@@ -265,7 +271,7 @@ struct GlobeApp : public VkApp {
 		if (ellpSet) ellpSet->renderInPass(rs, frame_cmd);
 		if (textSet) textSet->render(rs, frame_cmd);
 		frame_cmd.endRenderPass();
-		frame_cmd.end();
+		// frame_cmd.end();
 
 
 		std::vector<vk::CommandBuffer> cmds = {
@@ -273,6 +279,8 @@ struct GlobeApp : public VkApp {
 		};
 		cmds.push_back( particleCloud->render(renderState, *simpleRenderPass.framebuffers[renderState.frameData->scIndx]) );
 
+
+		/*
 		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
 
 		if (headless) {
@@ -305,6 +313,8 @@ struct GlobeApp : public VkApp {
 			};
 			queueGfx.submit(submitInfo, *fd.frameDoneFence);
 		}
+		*/
+		return cmds;
 	}
 
 	inline ~GlobeApp() {
@@ -316,8 +326,13 @@ struct GlobeApp : public VkApp {
 	void initFinalImage() {
 		if (headless) finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
 	}
-	inline virtual void handleCompletedHeadlessRender(RenderState& rs) override {
-		auto &fd = *rs.frameData;
+	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
+		// if (rand() % 2 == 0) {
+		if (false) {
+			// Signify that future render calls needn't block on the scAcquireSema semaphore.
+			fd.useAcquireSema = false;
+			return;
+		} else fd.useAcquireSema = true;
 		auto& copyCmd = sc.headlessCopyCmds[fd.scIndx];
 
 		/*
@@ -403,6 +418,7 @@ struct GlobeApp : public VkApp {
 					// {}
 					{1u, &*fd.scAcquireSema} // signal sema
 			};
+			fmt::print(" - submit copyImage wait on {}\n", (void*)&*fd.renderCompleteSema);
 			queueGfx.submit(submitInfo, {*sc.headlessCopyDoneFences[fd.scIndx]});
 
 		} else {
@@ -448,16 +464,15 @@ int main() {
 
 	GlobeApp app;
 	app.windowWidth = 1700;
+	// app.windowWidth = 1000;
 	// app.windowWidth = 900;
 	app.windowHeight = 800;
-	app.headless = true;
+	// app.headless = true;
 	app.headless = false;
 
 	app.initVk();
 
 	while (not app.isDone()) {
-		if (not app.headless)
-			bool proc = app.pollWindowEvents();
 		//if (proc) app.render();
 		app.render();
 		//usleep(33'000);

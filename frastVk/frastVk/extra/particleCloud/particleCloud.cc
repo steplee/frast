@@ -67,7 +67,7 @@ void ParticleCloudRenderer::setup_fbos() {
 		vk::AttachmentReference depthAttachmentRef { 1, vk::ImageLayout::eDepthStencilAttachmentOptimal };
 
 		std::vector<vk::SubpassDescription> subpasses {
-			{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
+			// { {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
 			{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
 		};
 		vk::SubpassDependency depthDependency { VK_SUBPASS_EXTERNAL, 0,
@@ -81,11 +81,11 @@ void ParticleCloudRenderer::setup_fbos() {
 			vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
 			{}, vk::AccessFlagBits::eDepthStencilAttachmentWrite, {} },
 		// 0-1
-		{
+		/*{
 			0, 1, vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
 			vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
 			vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-			vk::DependencyFlagBits::eDeviceGroup }
+			vk::DependencyFlagBits::eDeviceGroup }*/
 	};
 
 		vk::AttachmentDescription atts[2] = { colorAttachment, depthAttachment };
@@ -710,7 +710,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
 			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 			cmd.draw(6, 1, 0, 0);
-			for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+			// for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
 			cmd.endRenderPass();
 		}
 
@@ -802,7 +802,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 			cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc2});
 			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 			cmd.draw(6, 1, 0, 0);
-			for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+			// for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
 			cmd.endRenderPass();
 		}
 
@@ -867,7 +867,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 		cmd.pushConstants(*outputPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const ParticleCloudPushConstants>{1, &pushc});
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.draw(6, 1, 0, 0);
-		for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+		// for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
 		cmd.endRenderPass();
 	}
 
@@ -942,7 +942,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Frame
 
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.draw(6, 1, 0, 0);
-		for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
+		// for (int i=0; i<app->mainSubpass(); i++) cmd.nextSubpass(vk::SubpassContents::eInline);
 		cmd.endRenderPass();
 
 

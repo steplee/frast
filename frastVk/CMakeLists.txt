@@ -30,6 +30,23 @@ if (VULKAN_DEBUG)
 	list(APPEND VULKAN_LIBS VkLayer_khronos_validation VkLayer_utils)
 endif()
 
+set(IMGUI_SOURCES "")
+option(USE_IMGUI "Use ImGUI" ON)
+add_definitions(-DUSE_IMGUI=1)
+if (USE_IMGUI)
+  list(APPEND IMGUI_SOURCES
+		frastVk/core/imgui_app.cc
+
+	    frastVk/core/imgui/imgui.cpp
+	    frastVk/core/imgui/imgui_demo.cpp
+	    frastVk/core/imgui/imgui_draw.cpp
+	    frastVk/core/imgui/imgui_tables.cpp
+	    frastVk/core/imgui/imgui_widgets.cpp
+	    frastVk/core/imgui/backends/imgui_impl_vulkan.cpp
+	    frastVk/core/imgui/backends/imgui_impl_glfw.cpp
+    )
+endif()
+
 add_library(frastVk
 	SHARED
 	frastVk/core/app.cc
@@ -52,6 +69,8 @@ add_library(frastVk
 	frastVk/extra/caster/castable.cc
 	frastVk/extra/primitives/earthEllipsoid.cc
 	frastVk/extra/primitives/ellipsoid.cc
+
+  ${IMGUI_SOURCES}
 )
 
 
