@@ -2,8 +2,14 @@ cmake_minimum_required(VERSION 3.18)
 
 project(frastVk)
 
-set(CMAKE_CXX_STANDARD 17)
+EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
+if (${ARCHITECTURE} STREQUAL "x86_64")
+	set (IS_ARM FALSE)
+else()
+	set (IS_ARM TRUE)
+endif()
 
+set(CMAKE_CXX_STANDARD 17)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frastVk)
@@ -14,7 +20,12 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/copiedHeaders/eigen3)
 add_definitions(-DVK_USE_PLATFORM_XCB_KHR=1)
 #add_definitions(-DVULKAN_HPP_NO_CONSTRUCTORS=1)
 #list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fPIC ")
-list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fPIC -fopenmp ")
+if (IS_ARM)
+	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fPIC -fopenmp ")
+	link_directories(/usr/lib/aarch64-linux-gnu)
+else()
+	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fmarch=native -fPIC -fopenmp ")
+endif()
 
 add_definitions(-DCOMPRESS_TERRAIN=1)
 add_definitions(-DUSE_TURBOJPEG=1)
@@ -29,6 +40,11 @@ if (VULKAN_DEBUG)
 	add_definitions(-DVULKAN_DEBUG=1)
 	list(APPEND VULKAN_LIBS VkLayer_khronos_validation VkLayer_utils)
 endif()
+
+add_custom_command(
+	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/rt/protos/rocktree.pb.cc
+	COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/frastVk/rt/protos)
 
 add_library(frastVk
 	SHARED
