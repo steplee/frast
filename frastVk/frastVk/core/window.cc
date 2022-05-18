@@ -106,6 +106,11 @@ void Window::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
 }
 
 std::vector<std::string> Window::getWindowExtensions() {
+
+	if (headless) {
+		return { VK_KHR_SURFACE_EXTENSION_NAME };
+	}
+
 	__window_mtx.lock();
     if (!__didInit)
         if (!glfwInit()) {

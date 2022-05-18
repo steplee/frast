@@ -439,7 +439,7 @@ struct GlobeApp : public ImguiApp {
 
 		deviceGpu.waitForFences({*sc.headlessCopyDoneFences[fd.scIndx]}, true, 999999999999);
 		deviceGpu.resetFences({*sc.headlessCopyDoneFences[fd.scIndx]});
-		if (0) {
+		if (1) {
 			uint8_t* dbuf = (uint8_t*) finalImage.mem.mapMemory(0, windowHeight*windowWidth*4, {});
 			uint8_t* buf = (uint8_t*) malloc(windowWidth*windowHeight*3);
 			for (int y=0; y<windowHeight; y++)
@@ -460,7 +460,8 @@ struct GlobeApp : public ImguiApp {
 };
 
 
-int main() {
+int main(int argc, char** argv) {
+
 
 	GlobeApp app;
 	app.windowWidth = 1700;
@@ -469,6 +470,7 @@ int main() {
 	app.windowHeight = 800;
 	// app.headless = true;
 	app.headless = false;
+	if (argc == 2) app.headless = true;
 
 	app.initVk();
 

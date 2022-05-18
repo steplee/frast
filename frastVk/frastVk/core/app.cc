@@ -187,13 +187,16 @@ bool BaseVkApp::make_gpu_device() {
 	};
 	extraFeatures3.storageBuffer16BitAccess = true;
 	extraFeatures3.uniformAndStorageBuffer16BitAccess = true;
+	/*
 	vk::PhysicalDevice8BitStorageFeatures extra3_2;
 	extra3_2.uniformAndStorageBuffer8BitAccess = true;
 	extraFeatures3.pNext = &extra3_2;
+	*/
 
 	VkPhysicalDeviceFeatures2 extraFeatures4 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	extraFeatures4.features.shaderInt16 = true;
-	extra3_2.pNext = &extraFeatures4;
+	// extra3_2.pNext = &extraFeatures4;
+	extraFeatures3.pNext = &extraFeatures4;
 
 	// Remove this, in favor of Vulkan12Features below
 	/*
@@ -225,6 +228,7 @@ bool BaseVkApp::make_gpu_device() {
 	extraFeatures8.shaderInt8 = true;
 	extraFeatures8.uniformBufferStandardLayout = true;
 	extraFeatures8.uniformAndStorageBuffer8BitAccess = true;
+	extraFeatures8.storageBuffer8BitAccess = true;
 	extraFeatures7.pNext = &extraFeatures8;
 
 
@@ -487,6 +491,10 @@ bool BaseVkApp::make_frames() {
 	// If headless we should jumpstart the frame semaphores
 	if (headless)
 		for (int i=0; i<frameOverlap; i++) {
+			deviceGpu.resetFences({*frameDatas[i].frameDoneFence});
+			frameDatas[i].cmd.reset();
+			frameDatas[i].cmd.begin({});
+			frameDatas[i].cmd.end();
 			vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
 			vk::SubmitInfo submitInfo {
 				0,0,

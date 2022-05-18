@@ -420,18 +420,25 @@ void ResidentImage::create_(Uploader& uploader) {
 	image.bindMemory(*mem, 0);
 
 	// ImageView
-	vk::ImageViewCreateInfo viewInfo = {};
-	viewInfo.viewType = vk::ImageViewType::e2D;
-	viewInfo.image = *image;
-	viewInfo.format = viewFormat;
-	// viewInfo.format = format == vk::Format::eR8Uint ? vk::Format::eR8G8B8A8Uint : format;
-	viewInfo.subresourceRange.baseMipLevel = 0;
-	viewInfo.subresourceRange.levelCount = 1;
-	viewInfo.subresourceRange.baseArrayLayer = 0;
-	viewInfo.subresourceRange.layerCount = 1;
-	viewInfo.subresourceRange.aspectMask = aspectFlags;
+	// Only create if usageFlags is compatible
+	if (
+			(usageFlags &  vk::ImageUsageFlagBits::eSampled) or
+			(usageFlags &  vk::ImageUsageFlagBits::eColorAttachment) or
+			(usageFlags &  vk::ImageUsageFlagBits::eDepthStencilAttachment) or
+			(usageFlags &  vk::ImageUsageFlagBits::eStorage)) {
+		vk::ImageViewCreateInfo viewInfo = {};
+		viewInfo.viewType = vk::ImageViewType::e2D;
+		viewInfo.image = *image;
+		viewInfo.format = viewFormat;
+		// viewInfo.format = format == vk::Format::eR8Uint ? vk::Format::eR8G8B8A8Uint : format;
+		viewInfo.subresourceRange.baseMipLevel = 0;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = 0;
+		viewInfo.subresourceRange.layerCount = 1;
+		viewInfo.subresourceRange.aspectMask = aspectFlags;
 
-	view = std::move(d.createImageView(viewInfo));
+		view = std::move(d.createImageView(viewInfo));
+	}
 
 	//return false;
 }
