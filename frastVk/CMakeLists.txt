@@ -24,7 +24,7 @@ if (IS_ARM)
 	link_directories(/usr/lib/aarch64-linux-gnu)
 	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersArm)
 else()
-	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fmarch=native -fPIC -fopenmp ")
+	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -march=native -fPIC -fopenmp ")
 	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64)
 endif()
 
@@ -47,7 +47,9 @@ endif()
 
 add_custom_command(
 	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/rt/protos/rocktree.pb.cc
-	COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
+  #COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
+  COMMAND cp ${PROJECT_SOURCE_DIR}/protos/* .
+  COMMAND protoc rocktree.proto --cpp_out=.
 	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/frastVk/rt/protos)
 
 set(IMGUI_SOURCES "")
