@@ -465,12 +465,14 @@ int main(int argc, char** argv) {
 
 	GlobeApp app;
 	app.windowWidth = 1700;
-	// app.windowWidth = 1000;
-	// app.windowWidth = 900;
 	app.windowHeight = 800;
-	// app.headless = true;
 	app.headless = false;
-	if (argc == 2) app.headless = true;
+
+	if (argc == 2) {
+		app.windowWidth = 512;
+		app.windowHeight = 512;
+		app.headless = true;
+	}
 
 	app.initVk();
 

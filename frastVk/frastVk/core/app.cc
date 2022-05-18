@@ -69,8 +69,9 @@ bool BaseVkApp::make_instance() {
 			VK_MAKE_VERSION(1, 0, 0),
 			"vulkanAppEngine",
 			VK_MAKE_VERSION(1, 0, 0),
-			//VK_MAKE_VERSION(1, 2, 0) };
-			VK_MAKE_VERSION(2, 0, 3) };
+			// VK_MAKE_VERSION(1, 2, 0) };
+			// VK_MAKE_VERSION(2, 0, 3) };
+			VK_HEADER_VERSION_COMPLETE };
 
 	std::vector<char*> layers_ = {
 #ifdef VULKAN_DEBUG
