@@ -13,8 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frastVk)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/copiedHeaders/vulkanHeadersCopy)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/copiedHeaders/eigen3)
+
 
 # Careful: with precompiled headers, definitions are finicky
 add_definitions(-DVK_USE_PLATFORM_XCB_KHR=1)
@@ -23,9 +22,14 @@ add_definitions(-DVK_USE_PLATFORM_XCB_KHR=1)
 if (IS_ARM)
 	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fPIC -fopenmp ")
 	link_directories(/usr/lib/aarch64-linux-gnu)
+	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersArm)
 else()
 	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fmarch=native -fPIC -fopenmp ")
+	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64)
 endif()
+
+include_directories(${COPIED_HEADERS_DIR}/vulkanHeadersCopy)
+include_directories(${COPIED_HEADERS_DIR}/eigen3)
 
 add_definitions(-DCOMPRESS_TERRAIN=1)
 add_definitions(-DUSE_TURBOJPEG=1)
@@ -45,6 +49,23 @@ add_custom_command(
 	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/rt/protos/rocktree.pb.cc
 	COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
 	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/frastVk/rt/protos)
+
+set(IMGUI_SOURCES "")
+option(USE_IMGUI "Use ImGUI" ON)
+add_definitions(-DUSE_IMGUI=1)
+if (USE_IMGUI)
+  list(APPEND IMGUI_SOURCES
+		frastVk/core/imgui_app.cc
+
+	    frastVk/core/imgui/imgui.cpp
+	    frastVk/core/imgui/imgui_demo.cpp
+	    frastVk/core/imgui/imgui_draw.cpp
+	    frastVk/core/imgui/imgui_tables.cpp
+	    frastVk/core/imgui/imgui_widgets.cpp
+	    frastVk/core/imgui/backends/imgui_impl_vulkan.cpp
+	    frastVk/core/imgui/backends/imgui_impl_glfw.cpp
+    )
+endif()
 
 add_library(frastVk
 	SHARED
@@ -68,6 +89,8 @@ add_library(frastVk
 	frastVk/extra/caster/castable.cc
 	frastVk/extra/primitives/earthEllipsoid.cc
 	frastVk/extra/primitives/ellipsoid.cc
+
+  ${IMGUI_SOURCES}
 )
 
 
@@ -89,17 +112,17 @@ target_link_libraries(frastVk
 
 # In a simple test, this results in over a 5x compile speedup.
 target_precompile_headers(frastVk PUBLIC
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_raii.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_enums.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_handles.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_structs.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_hash.hpp
-	copiedHeaders/vulkanHeadersCopy/vulkan/vulkan_funcs.hpp
-	copiedHeaders/eigen3/Eigen/Core
-	copiedHeaders/eigen3/Eigen/Dense
-	copiedHeaders/eigen3/Eigen/Geometry
-	copiedHeaders/eigen3/Eigen/StdVector
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_raii.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_enums.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_handles.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_structs.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_hash.hpp
+	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_funcs.hpp
+	${COPIED_HEADERS_DIR}/eigen3/Eigen/Core
+	${COPIED_HEADERS_DIR}/eigen3/Eigen/Dense
+	${COPIED_HEADERS_DIR}/eigen3/Eigen/Geometry
+	${COPIED_HEADERS_DIR}/eigen3/Eigen/StdVector
 	)
 
 

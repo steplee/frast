@@ -44,6 +44,16 @@ uint32_t AbstractSwapchain::acquireNextImage(vk::raii::Device& device, vk::Semap
 	}
 }
 
+void AbstractSwapchain::clear() {
+	sc = nullptr;
+	headlessImages.clear();
+	headlessImages.clear();
+	headlessMemory.clear();
+	headlessCopyCmds.clear();
+	headlessCopyDoneSemas.clear();
+	headlessCopyDoneFences.clear();
+}
+
 /* ===================================================
  *
  *
@@ -334,6 +344,7 @@ bool BaseVkApp::make_surface() {
 }
 
 BaseVkApp::~BaseVkApp() {
+	sc.clear();
 	// vkDestroySurfaceKHR(surface);
 }
 
@@ -403,6 +414,11 @@ bool BaseVkApp::make_swapchain() {
 	}
 	scSurfaceFormat = vk::SurfaceFormatKHR { surfFormat };
 
+	// See https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
+	// presentMode = vk::PresentModeKHR::eFifo;
+	// presentMode = vk::PresentModeKHR::eImmediate;
+	presentMode = vk::PresentModeKHR::eFifoRelaxed;
+
 	vk::SwapchainCreateInfoKHR sc_ci_ {
 		{},
 		*surface,
@@ -417,10 +433,7 @@ bool BaseVkApp::make_swapchain() {
 		nullptr,
 		vk::SurfaceTransformFlagBitsKHR::eIdentity,
 		vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		// See https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html
-		// vk::PresentModeKHR::eFifo,
-		// vk::PresentModeKHR::eImmediate,
-		vk::PresentModeKHR::eFifoRelaxed,
+		presentMode,
 		VK_TRUE, nullptr
 	};
 	scNumImages = 3;
@@ -470,6 +483,22 @@ bool BaseVkApp::make_frames() {
 		frameDatas.back().cmd = std::move(commandBuffers[i]);
 		// frameDatas.back().scIndx = i; // This is actually done in acquireFrame()!
 	}
+
+	// If headless we should jumpstart the frame semaphores
+	if (headless)
+		for (int i=0; i<frameOverlap; i++) {
+			vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
+			vk::SubmitInfo submitInfo {
+				0,0,
+					&waitMask,
+					(uint32_t)1, &*frameDatas[i].cmd,
+					1, &*frameDatas[i].scAcquireSema // signal sema
+			};
+			// fmt::print(" - submit render wait on {}\n", (void*)&*frameDatas[i].scAcquireSema);
+			queueGfx.submit(submitInfo, *frameDatas[i].frameDoneFence);
+			deviceGpu.waitForFences({*frameDatas[i].frameDoneFence}, true, 999999999);
+			deviceGpu.resetFences({*frameDatas[i].frameDoneFence});
+		}
 
 	return false;
 }
@@ -558,7 +587,7 @@ bool BaseVkApp::make_basic_render_stuff() {
 
 	std::vector<vk::SubpassDescription> subpasses {
 		{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
-		{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef }
+		// { {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef }
 	};
 
 
@@ -570,7 +599,7 @@ bool BaseVkApp::make_basic_render_stuff() {
                          VULKAN_HPP_NAMESPACE::AccessFlags        srcAccessMask_   = {},
                          VULKAN_HPP_NAMESPACE::AccessFlags        dstAccessMask_   = {},
                          VULKAN_HPP_NAMESPACE::DependencyFlags    dependencyFlags_ = {} ) VULKAN_HPP_NOEXCEPT*/
-	vk::SubpassDependency dependencies[2] = {
+	std::vector<vk::SubpassDependency> dependencies = {
 		// Depth
 		{
 			VK_SUBPASS_EXTERNAL, 0,
@@ -581,6 +610,7 @@ bool BaseVkApp::make_basic_render_stuff() {
 			{}
 		},
 		// 0-1
+		/*
 		{
 			0, 1,
 			vk::PipelineStageFlagBits::eAllGraphics,
@@ -589,6 +619,7 @@ bool BaseVkApp::make_basic_render_stuff() {
 			vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
 			vk::DependencyFlagBits::eDeviceGroup
 		}
+		*/
 	};
 
 
@@ -599,7 +630,7 @@ bool BaseVkApp::make_basic_render_stuff() {
 		// { 1, &subpass0 },
 		subpasses,
 		// { 1,dependencies }
-		{ 2u, dependencies }
+		{ dependencies }
 	};
 	simpleRenderPass.pass = std::move(deviceGpu.createRenderPass(rpInfo));
 
@@ -666,6 +697,38 @@ void BaseVkApp::initVk() {
 	make_frames();
 
 	make_basic_render_stuff();
+}
+
+void BaseVkApp::executeCommandsThenPresent(std::vector<vk::CommandBuffer>& cmds, RenderState& rs) {
+	auto& fd = *rs.frameData;
+	vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
+	vk::Semaphore semas[1] = { *fd.scAcquireSema };
+	uint32_t nsema = 1;
+	if (headless and not fd.useAcquireSema) nsema = 0;
+	// if (headless) nsema = 0;
+	vk::SubmitInfo submitInfo {
+		nsema, semas, // wait sema
+			&waitMask,
+			//1, &(*commandBuffers[fd.scIndx]),
+			(uint32_t)cmds.size(), cmds.data(),
+			1, &*fd.renderCompleteSema // signal sema
+	};
+	// fmt::print(" - submit render wait on {}\n", (void*)&*fd.scAcquireSema);
+	queueGfx.submit(submitInfo, *fd.frameDoneFence);
+	// TODO dsiable
+	deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
+
+	if (headless) {
+		// Copy output and what not
+		handleCompletedHeadlessRender(renderState, fd);
+	} else {
+		vk::PresentInfoKHR presentInfo {
+			1, &*fd.renderCompleteSema, // wait sema
+				1, &(*sc.sc),
+				&fd.scIndx, nullptr
+		};
+		queueGfx.presentKHR(presentInfo);
+	}
 }
 
 /* ===================================================
@@ -875,6 +938,10 @@ bool PipelineStuff::build(PipelineBuilder& builder, vk::raii::Device& device, co
 
 float BaseVkApp::time() {
 	return getSeconds() - time0;
+}
+
+bool BaseVkApp::isDone() {
+	return isDone_;
 }
 
 FrameData& BaseVkApp::acquireFrame() {
@@ -1126,6 +1193,9 @@ void VkApp::initDescriptors() {
 }
 
 void VkApp::render() {
+	if (not headless) bool proc = pollWindowEvents();
+
+
 	if (isDone() or frameDatas.size() == 0) {
 		//printf(" - [render] frameDatas empty, skipping.\n");
 		return;
@@ -1151,12 +1221,16 @@ void VkApp::render() {
 	*/
 
 	FrameData& fd = acquireFrame();
+
+	auto& cmd = fd.cmd;
+	vk::CommandBufferBeginInfo beginInfo { {}, {} };
+	cmd.reset();
+	cmd.begin(beginInfo);
+
 	// camera->step(fd.dt);
 	// camera->step(1.0 / 60.0);
 	if (fpsMeter > .0000001)
 		camera->step(1.0 / fpsMeter);
-
-	vk::raii::CommandBuffer &cmd = fd.cmd;
 
 	// Update Camera Buffer
 	if (1) {
@@ -1166,26 +1240,16 @@ void VkApp::render() {
 		// camBuffer.mem.unmapMemory();
 	}
 
-	doRender(renderState);
+	auto cmds = doRender(renderState);
+	cmd.end();
 
-	if (headless) {
-		// Copy output and what not
-		handleCompletedHeadlessRender(renderState);
-	} else {
-		vk::PresentInfoKHR presentInfo {
-			1, &*fd.renderCompleteSema, // wait sema
-				1, &(*sc.sc),
-				&fd.scIndx, nullptr
-		};
-		queueGfx.presentKHR(presentInfo);
-	}
+
+	executeCommandsThenPresent(cmds, renderState);
+
 
 	postRender();
 }
 
-bool VkApp::isDone() {
-	return isDone_;
-}
 
 /*
 void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
@@ -1198,8 +1262,9 @@ void VkApp::handleKey(uint8_t key, uint8_t mod, bool isDown) {
 	}
 }
 */
-void VkApp::handleKey(int key, int scancode, int action, int mods) {
+bool VkApp::handleKey(int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_Q and action == GLFW_PRESS) isDone_ = true;
+	return false;
 }
 
 

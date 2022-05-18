@@ -2,6 +2,8 @@
 #include "image.h"
 #include "utils/solve.hpp"
 #include "utils/memcpy_utils.hpp"
+       #include <sys/stat.h>
+
 
 #include <cassert>
 #include <string>
@@ -72,8 +74,19 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 		throw std::runtime_error(std::string{"mdb_env_create failed with "} + mdb_strerror(err));
 	}
 
-	mdb_env_set_mapsize(env, dopts.mapSize);
-	printf(" - Setting mapSize (initial  ) to %lu\n", dopts.mapSize);
+	if (readOnly) {
+
+		struct stat statbuf;
+		int res = stat(path.c_str(), &statbuf);
+
+		uint64_t fileSize = statbuf.st_size;
+		fileSize = fileSize * 2;
+		printf(" - (    readonly) Setting mapSize (fileSiz  ) to %lu\n", fileSize);
+		mdb_env_set_mapsize(env, fileSize);
+	} else {
+		printf(" - (not readonly) Setting mapSize (initial  ) to %lu\n", dopts.mapSize);
+		mdb_env_set_mapsize(env, dopts.mapSize);
+	}
 
 	mdb_env_set_maxdbs(env, MAX_LVLS+1);
 
@@ -129,8 +142,11 @@ void Dataset::open_all_dbs() {
 		decode_meta_(txn);
 	}
 
+	// Disableing this: causes crash on Jetson with too much taken mem, no time to change code + recompress data
+	/*
 	mdb_env_set_mapsize(env, meta.fixedSizeMeta.mapSize);
 	printf(" - Setting mapSize (from meta) to %lu\n", meta.fixedSizeMeta.mapSize);
+	*/
 
 	for (int i=0; i<MAX_LVLS; i++) {
 		std::string name = std::string{"lvl"} + std::to_string(i);

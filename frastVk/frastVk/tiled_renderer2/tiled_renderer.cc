@@ -698,7 +698,7 @@ float Tile::computeSSE(const TileUpdateContext& tuc) {
 	// fmt::print(" -  with {} -> {}\n", Vector2f{-1,-1}.transpose(), Vector2f{1,1}.transpose());
 	if (n_invalid == 4 or not projection_xsects_ndc_box(tl,br)) return 0;
 
-	float tileGeoError = 2.f / (255.0f * (1 << bc.z()));
+	float tileGeoError = 4.f / (255.0f * (1 << bc.z()));
 	float dist = (tuc.eye.transpose() - corners.colwise().mean()).norm();
 	return tileGeoError * tuc.wh(1) / (dist * tuc.two_tan_half_fov_y);
 }

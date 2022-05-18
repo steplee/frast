@@ -37,14 +37,15 @@ struct RtApp : public VkApp {
 		camera->setRotMatrix(R0.data());
 
 		ioUsers.push_back(camera.get());
-		renderState.camera = camera;
+		renderState.camera = camera.get();
 
 
 		// RtCfg cfg { "/data/gearth/dc2/" };
 		// RtCfg cfg { "/data/gearth/dc3/" };
 		// RtCfg cfg { "/data/gearth/nyc/" };
 		// RtCfg cfg { "/data/gearth/tampa/" };
-		RtCfg cfg { "/data/gearth/many3/" };
+		// RtCfg cfg { "/data/gearth/many3/" };
+		RtCfg cfg { "/data/gearth/many3_wgs/" };
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();
@@ -115,14 +116,14 @@ struct RtApp : public VkApp {
 			rtr->setCasterInRenderThread(cwd,this);
 	}
 
-	inline virtual void doRender(RenderState& rs) override {
+	inline virtual std::vector<vk::CommandBuffer> doRender(RenderState& rs) override {
 
 
 		auto cmd = *rs.frameData->cmd;
 
 		setCasterFakeData(rs);
 
-		vk::CommandBufferBeginInfo beginInfo { {}, {} };
+
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
 		vk::ClearValue clears_[2] = {
 			vk::ClearValue { vk::ClearColorValue { std::array<float,4>{ 0.f,0.05f,.1f,1.f } } }, // color
@@ -132,10 +133,8 @@ struct RtApp : public VkApp {
 			*simpleRenderPass.pass, *simpleRenderPass.framebuffers[rs.frameData->scIndx],
 				aoi, {2, clears_}
 		};
-		cmd.reset();
-		cmd.begin(beginInfo);
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-		cmd.nextSubpass(vk::SubpassContents::eInline);
+		// cmd.nextSubpass(vk::SubpassContents::eInline);
 
 
 		// Render scene
@@ -145,22 +144,9 @@ struct RtApp : public VkApp {
 		};
 
 		cmd.endRenderPass();
-		cmd.end();
+		// cmd.end();
 
-		auto& fd = *rs.frameData;
-		vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
-		vk::SubmitInfo submitInfo {
-			1, &(*fd.scAcquireSema), // wait sema
-			&waitMask,
-			//1, &(*commandBuffers[fd.scIndx]),
-			(uint32_t)cmds.size(), cmds.data(),
-			1, &*fd.renderCompleteSema // signal sema
-		};
-		queueGfx.submit(submitInfo, *fd.frameDoneFence);
-
-
-		// TODO dsiable
-		deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
+		return cmds;
 	}
 
 	inline ~RtApp() {
@@ -179,8 +165,7 @@ int main() {
 	app.initVk();
 
 	while (not app.isDone()) {
-		if (not app.headless)
-			bool proc = app.pollWindowEvents();
+		// if (not app.headless) bool proc = app.pollWindowEvents();
 		//if (proc) app.render();
 		app.render();
 		//usleep(33'000);

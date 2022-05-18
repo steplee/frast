@@ -56,9 +56,9 @@ struct Camera : public UsesIO {
 			spec_.compute_projection(proj_);
 		}
 
-		virtual void handleKey(int key, int scancode, int action, int mods) =0;
-		virtual void handleMousePress(int button, int action, int mods) =0;
-		virtual void handleMouseMotion(double x, double y) =0;
+		virtual bool handleKey(int key, int scancode, int action, int mods) =0;
+		virtual bool handleMousePress(int button, int action, int mods) =0;
+		virtual bool handleMouseMotion(double x, double y) =0;
 
 
 	protected:
@@ -83,9 +83,9 @@ struct FlatEarthMovingCamera : public Camera {
 	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
 	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
 	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
-	virtual void handleKey(int key, int scancode, int action, int mods) override;
-	virtual void handleMousePress(int button, int action, int mods) override;
-	virtual void handleMouseMotion(double x, double y) override;
+	virtual bool handleKey(int key, int scancode, int action, int mods) override;
+	virtual bool handleMousePress(int button, int action, int mods) override;
+	virtual bool handleMouseMotion(double x, double y) override;
 
 	protected:
 		void recompute_view();
@@ -113,9 +113,9 @@ struct SphericalEarthMovingCamera : public Camera {
 	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
 	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
 	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
-	virtual void handleKey(int key, int scancode, int action, int mods) override;
-	virtual void handleMousePress(int button, int action, int mods) override;
-	virtual void handleMouseMotion(double x, double y) override;
+	virtual bool handleKey(int key, int scancode, int action, int mods) override;
+	virtual bool handleMousePress(int button, int action, int mods) override;
+	virtual bool handleMouseMotion(double x, double y) override;
 
 	protected:
 		void maybe_set_near_far();
@@ -150,10 +150,10 @@ class RenderState {
 	public:
 		RenderState(const RenderState&) = delete;
 		inline RenderState() : camera(nullptr) {}
-		inline RenderState(std::shared_ptr<Camera> cam) : camera(cam) {}
+		inline RenderState(Camera* cam) : camera(cam) {}
 		
 		MatrixStack mstack;
-		std::shared_ptr<Camera> camera;
+		Camera* camera;
 		FrameData* frameData = nullptr;
 
 		// Push proj & view matrix.

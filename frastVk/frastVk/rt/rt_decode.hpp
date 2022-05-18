@@ -248,10 +248,14 @@ inline bool decode_node_to_tile(
 
 	Matrix4d globeFromMesh1;
 	for (int i=0; i<16; i++) globeFromMesh1(i) = nd.matrix_globe_from_mesh(i);
-	Matrix4d globeFromMesh2 = convert_authalic_to_geodetic(globeFromMesh1);
 
-	for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh2(i);
-	// for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh1(i);
+	if (0) {
+		Matrix4d globeFromMesh2 = convert_authalic_to_geodetic(globeFromMesh1);
+		for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh2(i);
+	} else {
+		for (int i=0; i<16; i++) dtd.modelMat[i] = globeFromMesh1(i);
+		// fmt::print(" - ModelMat:\n{}\n", globeFromMesh1);
+	}
 
 
 	// Signify that we don't have the data (it is in the bulk metadata)

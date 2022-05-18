@@ -86,6 +86,7 @@ struct FrameData {
 	uint32_t scIndx=0;
 	float time=0, dt=0;
 	int n = 0;
+	bool useAcquireSema = true;
 };
 
 // A wrapper around vk::raii::SwapchainKHR or a simple custom implementation
@@ -100,6 +101,7 @@ struct AbstractSwapchain {
 	std::vector<vk::raii::Semaphore> headlessCopyDoneSemas;
 	std::vector<vk::raii::Fence> headlessCopyDoneFences;
 
+	void clear();
 
 	inline std::vector<vk::Image> getImages() {
 		if (!headlessImages.size()) {
@@ -156,6 +158,7 @@ struct BaseVkApp : public Window {
 	AbstractSwapchain sc;
 
 	vk::SurfaceFormatKHR scSurfaceFormat;
+	vk::PresentModeKHR presentMode;
 	std::vector<vk::raii::ImageView> scImageViews;
 	int scNumImages = 0;
 	int frameOverlap = 0;
@@ -176,6 +179,8 @@ struct BaseVkApp : public Window {
 
 	inline virtual uint32_t mainSubpass() const { return 0; }
 
+		bool isDone();
+
 	protected:
 		bool require_16bit_shader_types = true;
 		bool make_instance();
@@ -192,12 +197,22 @@ struct BaseVkApp : public Window {
 
 		float time();
 		std::vector<FrameData> frameDatas;
+
+		virtual void executeCommandsThenPresent(std::vector<vk::CommandBuffer>& cmds, RenderState& rs);
+
+		/*
+		 * Note: The impl MUST either submit a command buffer that signals scAcquireSema,
+		 *       OR MUST set fd.useAcquireSema = false; */
+		inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) { fd.useAcquireSema = false; };
+
 	private:
 		int renders = 0;
 		float time0 = 0;
 		float lastTime = 0;
 	protected:
 		float fpsMeter = 0;
+		RenderState renderState;
+		bool isDone_ = false;
 
 };
 
@@ -211,16 +226,14 @@ class VkApp : public BaseVkApp {
 
 		// VkApp provides standard starter function that further calls doRender()
 		virtual void render();
-		virtual void doRender(RenderState& rs) =0;
+		virtual std::vector<vk::CommandBuffer> doRender(RenderState& rs) =0;
 		inline virtual void postRender() {}
-		inline virtual void handleCompletedHeadlessRender(RenderState& rs) {};
 
-		inline virtual uint32_t mainSubpass() const override { return 1; }
+		inline virtual uint32_t mainSubpass() const override { return 0; }
 
-		bool isDone();
 
-		// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
-		virtual void handleKey(int key, int scancode, int action, int mods) override;
+		// virtual bool handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+		virtual bool handleKey(int key, int scancode, int action, int mods) override;
 
 		ResidentMesh simpleMesh;
 
@@ -229,7 +242,6 @@ class VkApp : public BaseVkApp {
 		vk::raii::DescriptorSet globalDescSet { nullptr };
 
 	public:
-		bool isDone_ = false;
 
 		PipelineStuff simplePipelineStuff;
 		bool createSimplePipeline(PipelineStuff& out, vk::RenderPass pass);
@@ -246,7 +258,6 @@ class VkApp : public BaseVkApp {
 
 		ResidentBuffer camBuffer;
 		std::shared_ptr<Camera> camera = nullptr;
-		RenderState renderState;
 
 
 };
