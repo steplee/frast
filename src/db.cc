@@ -97,7 +97,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	//if (not readOnly) flags |= MDB_NORDAHEAD;
 	mode_t fileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 	if (auto err = mdb_env_open(env, path.c_str(), flags, fileMode)) {
-		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err));
+		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err) + " for " + path);
 	}
 
 	memset(&meta, 0, sizeof(DatasetMeta));

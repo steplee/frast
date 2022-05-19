@@ -94,9 +94,9 @@ bool BaseVkApp::make_instance() {
 	};
 
 	std::vector<std::string> extraExtensions = getWindowExtensions();
-	// fmt::print(" - Extra window exensions: ");
-	// for (auto s : extraExtensions) fmt::print("{}, ", s);
-	// fmt::print("\n");
+	fmt::print(" - Extra window exensions: ");
+	for (auto s : extraExtensions) fmt::print("{}, ", s);
+	fmt::print("\n");
 	for (auto &extraExtension : extraExtensions) extensions.push_back((char*)extraExtension.c_str());
 	fmt::print(" - Instance Extensions: ");
 	for (auto s : extensions) fmt::print("{}, ", s);
