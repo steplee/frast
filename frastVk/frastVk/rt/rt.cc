@@ -135,6 +135,8 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 	this->mask = 0;
 	if (parent) parent->mask |= 1 << (nc.key[nc.level()-1] - '0');
 
+	bool canOpen = rtuc.dataLoader.allowOpenAsks();
+
 	if (state == State::LOADING
 		or state == State::LOADING_INNER
 		or state == State::OPENING
@@ -150,7 +152,8 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 		// If parent is nullptr, this node is the virtual root. So never close it.
 		if (children.size() > 0 and parent) {
 			bool okay_to_close = true;
-			for (auto c : children) if (c->state != State::LEAF or not c->want_to_close) okay_to_close = false;
+			// for (auto c : children) if ((c->state != State::LEAF and c->state != State::LOADING) or not c->want_to_close) okay_to_close = false;
+			for (auto c : children) if ((c->state != State::LEAF) or not c->want_to_close) okay_to_close = false;
 			if (okay_to_close) {
 				// Check to make sure we don't immediately want to re-open, which will repeat oscillating.
 				lastSSE = computeSSE(rtuc);
@@ -174,13 +177,14 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 			want_to_close = true;
 		} else
 			want_to_close = false;
-		if (lastSSE >= rtuc.sseThresholdOpen and childrenMissing == MissingStatus::NOT_MISSING) {
+		if (canOpen and lastSSE >= rtuc.sseThresholdOpen and childrenMissing == MissingStatus::NOT_MISSING) {
 			state = State::OPENING;
 			RtDataLoader::Ask ask;
 			for (int8_t i=0; i<8; i++) {
 				NodeCoordinate nnc(nc, '0'+i); // TODO Make this much more efficient. Store in each tile up-to 8 iterators pointing to node coordinate hash-set/tree.
 				if (rtuc.dataLoader.tileExists(nnc)) {
 					ask.tiles.push_back(new RtTile());
+					ask.tiles.back()->state = State::LOADING;
 					ask.tiles.back()->nc = nnc;
 				}
 			}
@@ -344,9 +348,16 @@ bool RtDataLoader::pushAsk(const Ask& ask) {
 	// fmt::print(" - withdrew {} {} {} {}\n",ids[0],ids[1],ids[2],ids[3]);
 	*/
 
+	std::lock_guard<std::mutex> lck(mtx);
 	asks.push_back(ask);
 
 	return false;
+}
+
+bool RtDataLoader::allowOpenAsks() {
+	std::lock_guard<std::mutex> lck(mtx);
+	// return pooledTileData.available.size() > RtCfg::tilesDedicatedToClosing * 2;
+	return (available.size() - asks.size()) > RtCfg::tilesDedicatedToClosing + 8;
 }
 
 // Check if all child are not available. Return true if and only if all are not. Can be used from any thread.
@@ -362,6 +373,7 @@ bool RtDataLoader::childrenAreMissing(const NodeCoordinate& nc) {
 
 void RtDataLoader::init() {
 	internalThread = std::thread(&RtDataLoader::internalLoop, this);
+	assert(RtCfg::maxTiles > RtCfg::tilesDedicatedToClosing * 2);
 }
 
 
@@ -578,9 +590,12 @@ void RtDataLoader::internalLoop() {
 
 	populateFromFiles();
 
+	bool lastIterHadTryAgain = false;
+
 	while (not shouldStop) {
 		std::vector<Ask> curAsks;
 		std::vector<Ask> nxtAsks;
+		lastIterHadTryAgain = false;
 		{
 			std::lock_guard<std::mutex> lck(mtx);
 			//std::swap(curAsks, this->asks);
@@ -605,6 +620,7 @@ void RtDataLoader::internalLoop() {
 					continue;
 				} else if (stat == LoadStatus::eTryAgain) {
 					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] not allowed to fail loading parent with eTryAgain (tree is dead-locked) ({})\n", nc.key);
+					lastIterHadTryAgain = true;
 					continue;
 				} else if (stat == LoadStatus::eSuccess) {
 					res.isClose = true;
@@ -613,7 +629,7 @@ void RtDataLoader::internalLoop() {
 					res.parent = ask.parent;
 				}
 			}
-			else {
+			else if (not lastIterHadTryAgain) {
 				assert(ask.parent && "a quad Ask must have a parent");
 				NodeCoordinate parent_nc = ask.parent->nc;
 				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading {} children (parent {})\n", ask.tiles.size(), parent_nc.key);
@@ -629,7 +645,8 @@ void RtDataLoader::internalLoop() {
 					} else if (stat == LoadStatus::eTryAgain) {
 						const NodeCoordinate nc = ask.tiles[i]->nc;
 						fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] failed open with eTryAgain, will try later ({})\n", nc.key);
-						nxtAsks.push_back(std::move(ask));
+						lastIterHadTryAgain = true;
+						// nxtAsks.push_back(std::move(ask));
 						failed = true;
 					} else if (stat == LoadStatus::eSuccess) {
 					}
@@ -640,7 +657,13 @@ void RtDataLoader::internalLoop() {
 					// res.tiles = std::move(ask.tiles);
 					res.tiles = (ask.tiles);
 					res.parent = ask.parent;
-				} else continue;
+				} else {
+					nxtAsks.push_back(std::move(ask));
+					continue;
+				}
+			} else {
+					nxtAsks.push_back(std::move(ask));
+					continue;
 			}
 
 			// Lock; push

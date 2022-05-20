@@ -54,7 +54,7 @@ struct RtCfg {
 	static constexpr uint32_t maxTiles = 512;
 	// Don't allow opening upto 8 children if we are close to hitting max tiles.
 	// Helps to prevent situation where we are deadlocked, not being to make any changes to tree.
-	static constexpr uint32_t tilesDedicatedToClosing = 12;
+	static constexpr uint32_t tilesDedicatedToClosing = 32;
 	// static constexpr uint32_t maxVerts = 2048;
 	static constexpr uint32_t maxVerts = (1<<13);
 	// static constexpr uint32_t maxInds = 8192;
@@ -306,6 +306,10 @@ struct RtDataLoader {
 		void init();
 		void shutdown();
 
+		// See if we should allow pushAsk with open queries. This is false
+		// if near maxTiles.
+		bool allowOpenAsks();
+
 	public:
 		RtCfg& cfg;
 		std::vector<Result> loadedResults;
@@ -332,6 +336,7 @@ struct RtDataLoader {
 		std::thread internalThread;
 		void internalLoop();
 		bool shouldStop = false;
+
 };
 
 

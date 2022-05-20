@@ -121,7 +121,7 @@ struct RtApp : public VkApp {
 
 		auto cmd = *rs.frameData->cmd;
 
-		setCasterFakeData(rs);
+		// setCasterFakeData(rs);
 
 
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
@@ -161,6 +161,8 @@ int main() {
 	RtApp app;
 	app.windowWidth = 1000;
 	app.windowHeight = 800;
+	app.windowWidth = app.windowHeight = 512;
+	app.windowWidth = app.windowHeight = 1024;
 
 	app.initVk();
 

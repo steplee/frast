@@ -2,6 +2,8 @@
 
 
 void Castable::do_init_caster_stuff(BaseVkApp* app) {
+	casterStuff.casterMask = 0;
+
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
 			vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
 			vk::DescriptorPoolSize { vk::DescriptorType::eCombinedImageSampler, 2 },
