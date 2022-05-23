@@ -256,7 +256,7 @@ struct GlobeApp : public ImguiApp {
 				{},{},
 				{}, {},
 				{}, {},
-				*sc.headlessImages[fd.scIndx],
+				*srcImg,
 				vk::ImageSubresourceRange { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
 			}};
 		if (earthEllipsoid) frame_cmd.pipelineBarrier(
@@ -322,123 +322,22 @@ struct GlobeApp : public ImguiApp {
 			deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
 	}
 
-	ResidentImage finalImage;
+	ResidentImage finalImage, finalImageDepth;
 	void initFinalImage() {
 		if (headless) finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
+		if (headless) finalImageDepth.createAsDepthBuffer(uploader, windowHeight, windowWidth, true, vk::ImageUsageFlagBits::eTransferDst);
 	}
 	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
-		// if (rand() % 2 == 0) {
-		if (false) {
-			// Signify that future render calls needn't block on the scAcquireSema semaphore.
-			fd.useAcquireSema = false;
-			return;
-		} else fd.useAcquireSema = true;
-		auto& copyCmd = sc.headlessCopyCmds[fd.scIndx];
+		auto &srcImg = *sc.headlessImages[fd.scIndx];
+		auto &depthImg = *simpleRenderPass.depthImages[fd.scIndx].image;
+		auto& copyCmd = *sc.headlessCopyCmds[fd.scIndx];
+		auto& fence = *sc.headlessCopyDoneFences[fd.scIndx];
+		vk::Extent3D ex = vk::Extent3D{windowWidth,windowHeight,1};
+		vk::Offset3D off{};
 
-		/*
-    VULKAN_HPP_CONSTEXPR ImageSubresourceLayers( VULKAN_HPP_NAMESPACE::ImageAspectFlags aspectMask_     = {},
-                                                 uint32_t                               mipLevel_       = {},
-                                                 uint32_t                               baseArrayLayer_ = {},
-                                                 uint32_t layerCount_ = {} ) VULKAN_HPP_NOEXCEPT
-    VULKAN_HPP_CONSTEXPR ImageCopy( VULKAN_HPP_NAMESPACE::ImageSubresourceLayers srcSubresource_ = {},
-                                    VULKAN_HPP_NAMESPACE::Offset3D               srcOffset_      = {},
-                                    VULKAN_HPP_NAMESPACE::ImageSubresourceLayers dstSubresource_ = {},
-                                    VULKAN_HPP_NAMESPACE::Offset3D               dstOffset_      = {},
-                                    VULKAN_HPP_NAMESPACE::Extent3D               extent_ = {} ) VULKAN_HPP_NOEXCEPT
-	*/
+		finalImage.copyFrom(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+		finalImageDepth.copyFrom(copyCmd, depthImg, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
 
-	vk::ImageCopy region {
-		vk::ImageSubresourceLayers { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
-		vk::Offset3D{},
-		vk::ImageSubresourceLayers { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
-		vk::Offset3D{},
-		vk::Extent3D{windowWidth,windowHeight,1}
-	};
-
-		copyCmd.begin({});
-
-		/*
-      ImageMemoryBarrier( VULKAN_HPP_NAMESPACE::AccessFlags srcAccessMask_ = {},
-                          VULKAN_HPP_NAMESPACE::AccessFlags dstAccessMask_ = {},
-                          VULKAN_HPP_NAMESPACE::ImageLayout oldLayout_ = VULKAN_HPP_NAMESPACE::ImageLayout::eUndefined,
-                          VULKAN_HPP_NAMESPACE::ImageLayout newLayout_ = VULKAN_HPP_NAMESPACE::ImageLayout::eUndefined,
-                          uint32_t                          srcQueueFamilyIndex_        = {},
-                          uint32_t                          dstQueueFamilyIndex_        = {},
-                          VULKAN_HPP_NAMESPACE::Image       image_                      = {},
-                          VULKAN_HPP_NAMESPACE::ImageSubresourceRange subresourceRange_ = {} ) VULKAN_HPP_NOEXCEPT
-
-    VULKAN_HPP_CONSTEXPR ImageSubresourceRange( VULKAN_HPP_NAMESPACE::ImageAspectFlags aspectMask_     = {},
-                                                uint32_t                               baseMipLevel_   = {},
-                                                uint32_t                               levelCount_     = {},
-                                                uint32_t                               baseArrayLayer_ = {},
-                                                uint32_t layerCount_ = {} ) VULKAN_HPP_NOEXCEPT
-    VULKAN_HPP_INLINE void CommandBuffer::pipelineBarrier(
-      VULKAN_HPP_NAMESPACE::PipelineStageFlags                            srcStageMask,
-      VULKAN_HPP_NAMESPACE::PipelineStageFlags                            dstStageMask,
-      VULKAN_HPP_NAMESPACE::DependencyFlags                               dependencyFlags,
-      ArrayProxy<const VULKAN_HPP_NAMESPACE::MemoryBarrier> const &       memoryBarriers,
-      ArrayProxy<const VULKAN_HPP_NAMESPACE::BufferMemoryBarrier> const & bufferMemoryBarriers,
-      ArrayProxy<const VULKAN_HPP_NAMESPACE::ImageMemoryBarrier> const & imageMemoryBarriers ) const VULKAN_HPP_NOEXCEPT*/
-		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
-			vk::ImageMemoryBarrier {
-				{},{},
-				{}, vk::ImageLayout::eTransferSrcOptimal,
-				{}, {},
-				*sc.headlessImages[fd.scIndx],
-				vk::ImageSubresourceRange { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-			},
-			vk::ImageMemoryBarrier {
-				{},{},
-				{}, vk::ImageLayout::eTransferDstOptimal,
-				{}, {},
-				*finalImage.image,
-				vk::ImageSubresourceRange { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-			}
-		};
-		copyCmd.pipelineBarrier(
-				vk::PipelineStageFlagBits::eAllGraphics,
-				vk::PipelineStageFlagBits::eAllGraphics,
-				vk::DependencyFlagBits::eDeviceGroup,
-				{}, {}, imgBarriers);
-
-
-
-		copyCmd.copyImage(*sc.headlessImages[fd.scIndx], vk::ImageLayout::eTransferSrcOptimal, *finalImage.image, vk::ImageLayout::eTransferDstOptimal, {1,&region});
-		copyCmd.end();
-
-		// if (fd.n == 0) {
-		if (true) {
-			vk::PipelineStageFlags waitMasks[1] = {vk::PipelineStageFlagBits::eAllGraphics};
-			const vk::Semaphore semas[1] = {(*fd.renderCompleteSema)};
-			vk::SubmitInfo submitInfo {
-				// {1u, &(*fd.renderCompleteSema)}, // wait sema
-				{1u, semas}, // wait sema
-					{1u, waitMasks},
-					{1u, &*copyCmd},
-					// {}
-					{1u, &*fd.scAcquireSema} // signal sema
-			};
-			fmt::print(" - submit copyImage wait on {}\n", (void*)&*fd.renderCompleteSema);
-			queueGfx.submit(submitInfo, {*sc.headlessCopyDoneFences[fd.scIndx]});
-
-		} else {
-
-			// vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllGraphics;
-			const vk::Semaphore semas[2] = {(*fd.renderCompleteSema), (*sc.headlessCopyDoneSemas[0])};
-			vk::PipelineStageFlags waitMasks[2] = {vk::PipelineStageFlagBits::eAllGraphics,vk::PipelineStageFlagBits::eAllGraphics};
-			vk::SubmitInfo submitInfo {
-				// {1u, &(*fd.renderCompleteSema)}, // wait sema
-				{2u, semas}, // wait sema
-					{2u, waitMasks},
-					{1u, &*copyCmd},
-					{1u, &*fd.scAcquireSema} // signal sema
-			};
-			queueGfx.submit(submitInfo, {*sc.headlessCopyDoneFences[fd.scIndx]});
-		}
-
-
-		deviceGpu.waitForFences({*sc.headlessCopyDoneFences[fd.scIndx]}, true, 999999999999);
-		deviceGpu.resetFences({*sc.headlessCopyDoneFences[fd.scIndx]});
 		if (1) {
 			uint8_t* dbuf = (uint8_t*) finalImage.mem.mapMemory(0, windowHeight*windowWidth*4, {});
 			uint8_t* buf = (uint8_t*) malloc(windowWidth*windowHeight*3);
@@ -454,8 +353,22 @@ struct GlobeApp : public ImguiApp {
 			close(fd_);
 			free(buf);
 		}
-		// memcpy(dbuf, renderState.mvp(), 16*4);
 
+		if (1) {
+			float* dbuf = (float*) finalImageDepth.mem.mapMemory(0, windowHeight*windowWidth*4, {});
+			float* buf = (float*) malloc(windowWidth*windowHeight*4);
+			for (int y=0; y<windowHeight; y++)
+				for (int x=0; x<windowWidth; x++)
+						buf[y*windowWidth+x] = dbuf[y*windowWidth+x];
+			finalImageDepth.mem.unmapMemory();
+
+			auto fd_ = open("tstDepth.bmp", O_RDWR | O_TRUNC | O_CREAT, S_IRWXU);
+			write(fd_, buf, windowWidth*windowHeight*4);
+			close(fd_);
+			free(buf);
+		}
+
+		fmt::print(" - done frame.\n");
 	}
 };
 

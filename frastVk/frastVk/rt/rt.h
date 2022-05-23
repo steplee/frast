@@ -51,10 +51,11 @@ constexpr static uint32_t NO_INDEX = 999999;
 struct RtCfg {
 	std::string rootDir;
 
-	static constexpr uint32_t maxTiles = 512;
+	// This must match the number of array elements in the shaders.
+	static constexpr uint32_t maxTiles = 800;
 	// Don't allow opening upto 8 children if we are close to hitting max tiles.
 	// Helps to prevent situation where we are deadlocked, not being to make any changes to tree.
-	static constexpr uint32_t tilesDedicatedToClosing = 32;
+	static constexpr uint32_t tilesDedicatedToClosing = 16;
 	// static constexpr uint32_t maxVerts = 2048;
 	static constexpr uint32_t maxVerts = (1<<13);
 	// static constexpr uint32_t maxInds = 8192;
@@ -63,6 +64,10 @@ struct RtCfg {
 	static constexpr uint32_t vertBufferSize() { return maxVerts * 3; }
 	// static constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Unorm;
 	static constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Unorm;
+
+	float sseThresholdOpen = 1.99;
+	float sseThresholdClose = .9;
+	bool dbg = false;
 };
 
 struct __attribute__((packed)) RtGlobalData {
@@ -87,6 +92,7 @@ struct RtUpdateContext {
 
 	// Camera/Screen info
 	RowMatrix4f mvp;
+	Vector3f zplus;
 	Vector3f eye;
 	Vector2f wh;
 	float two_tan_half_fov_y;
@@ -103,6 +109,7 @@ struct RtRenderContext {
 
 	vk::CommandBuffer& cmd;
 };
+
 
 
 struct NodeCoordinate {
@@ -202,6 +209,7 @@ class RtTile {
 
 	void update(const RtUpdateContext& cam, RtTile* parent);
 	void render(RtRenderContext& trc);
+	void renderDbg(RtRenderContext& trc);
 
 	// Unload the tile if loaded, then return to pool.
 	bool unload(PooledTileData& ptd, BaseVkApp* app);
@@ -320,6 +328,7 @@ struct RtDataLoader {
 
 		vk::raii::Queue myUploadQueue  = { nullptr };
 		Uploader myUploader;
+		uint64_t sleepMicros = 63'000;
 
 	private:
 		LoadStatus loadTile(RtTile* tile, bool isClose);
@@ -337,6 +346,7 @@ struct RtDataLoader {
 		void internalLoop();
 		bool shouldStop = false;
 
+
 };
 
 
@@ -350,15 +360,22 @@ class RtRenderer : public Castable
 		void update(RenderState& rs);
 		void render(RenderState& rs, vk::CommandBuffer&);
 		void stepAndRender(RenderState& rs, vk::CommandBuffer&);
+		inline void setDataLoaderSleepMicros(int64_t t) { dataLoader.sleepMicros = t; }
 
 		void init();
+
+		bool allowUpdate = true;
 
 		// inline void setCasterInRenderThread(CasterWaitingData& cwd) { Castable::setCasterInRenderThread(cwd,app); }
 
 	private:
 		RtCfg cfg;
 		BaseVkApp* app;
+
 		PipelineStuff pipelineStuff;
+
+		// Debug render wireframe bboxes of active tiles
+		PipelineStuff dbgPipelineStuff;
 
 
 		vk::raii::DescriptorPool descPool = {nullptr};

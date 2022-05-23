@@ -19,6 +19,13 @@ layout(set=2, binding=1) uniform sampler2D casterTex[1];
 //output write
 layout (location = 0) out vec4 outFragColor;
 
+layout(std430, set=2, binding=0) uniform CasterData {
+	mat4 casterMatrix[2];
+	vec4 color1;
+	vec4 color2;
+	uint casterMask;
+} casterData;
+
 /*
 layout (push_constant) uniform PushConstants {
 	bool grayscale;
@@ -48,7 +55,7 @@ void main()
 	vec2 dd1 = abs(uv_c1 - .5);
 	float d1 = max(dd1.x , dd1.y);
 	if (d1 < .4999) {
-		vec4 c = texture(casterTex[0], uv_c1) * vec4(0.7, 0.7, 1., 1.);
+		vec4 c = texture(casterTex[0], uv_c1) * casterData.color1;
 		/* final_color = (final_color * (1-c.a)) + (c.a) * vec4(c.rgb,1.0); */
 		c *= 3.0 * clamp(2.0 - 4. * (d1), 0., 1.);
 		final_color += c;
@@ -59,7 +66,7 @@ void main()
 	float d2 = max(dd2.x , dd2.y);
 	/* if (v_caster_uv.zw != vec2(0.)) { */
 	if (d2 < .4999) {
-		vec4 c = texture(casterTex[0], uv_c2) * vec4(0.7, 1., .7, 1.);
+		vec4 c = texture(casterTex[0], uv_c2) * casterData.color2;
 		/* final_color = (final_color * (1-c.a)) + (c.a) * vec4(c.rgb,1.0); */
 		c *= 3.0 * clamp(2.0 - 4. * (d2), 0., 1.);
 		final_color += c;

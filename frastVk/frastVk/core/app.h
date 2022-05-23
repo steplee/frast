@@ -89,6 +89,14 @@ struct FrameData {
 	bool useAcquireSema = true;
 };
 
+struct RenderContext {
+	ResidentImage* colorImage = nullptr;
+	ResidentImage* depthImage = nullptr;
+	double* mvp = 0;
+	uint32_t colorAoi[4] = {0}; // xy, wh
+	uint32_t depthAoi[4] = {0}; // xy, wh
+};
+
 // A wrapper around vk::raii::SwapchainKHR or a simple custom implementation
 // for the headless case.
 struct AbstractSwapchain {
@@ -179,7 +187,9 @@ struct BaseVkApp : public Window {
 
 	inline virtual uint32_t mainSubpass() const { return 0; }
 
-		bool isDone();
+	bool isDone();
+
+	bool getDepthImage(ResidentImage& out, const FrameData& fd, const RenderState& rs);
 
 	protected:
 		bool require_16bit_shader_types = true;
@@ -204,6 +214,10 @@ struct BaseVkApp : public Window {
 		 * Note: The impl MUST either submit a command buffer that signals scAcquireSema,
 		 *       OR MUST set fd.useAcquireSema = false; */
 		inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) { fd.useAcquireSema = false; };
+
+		std::vector<vk::raii::CommandBuffer> depthCopyCmds;
+		std::vector<vk::raii::Fence> depthCopyDoneFences;
+		// std::vector<vk::raii::Semaphore> depthCopyDoneSemas;
 
 	private:
 		int renders = 0;

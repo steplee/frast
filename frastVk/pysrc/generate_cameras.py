@@ -25,7 +25,7 @@ def writeKml(fp, entries):
         fx,fy = entry.cameraIntrin[2], entry.cameraIntrin[3]
         u,v = 2 * fx / w, 2 * fy / w
         u,v = 1/u, 1/v
-        print(' - u,v', u,v)
+        # print(' - u,v', u,v)
         near = 30
         far = 450
         '''
@@ -96,15 +96,15 @@ class TileData:
         mesh = nd.meshes[0]
         verts = decode_verts(mesh.vertices)
         M = np.array((nd.matrix_globe_from_mesh)).reshape(4,4).T
-        print(M)
-        print(verts.min(0), verts.max(0), len(verts))
+        # print(M)
+        # print(verts.min(0), verts.max(0), len(verts))
         verts = verts.astype(np.float64) @ M[:3,:3].T + M[:3,3]
 
         # self.middle_ = M[:3,:3].T @ (127.5,127.5,127.5) + M[:3,3]
         self.middle_ = verts.mean(0)
 
         self.LTP_ = lookAtR(self.middle_, np.zeros(3), np.array((0,0,1.)))
-        print(' - tile middle', self.middle_)
+        # print(' - tile middle', self.middle_)
         # print(' - tile LTP matrix:\n', self.LTP_)
 
         verts_ltp = verts @ self.LTP_
@@ -113,9 +113,9 @@ class TileData:
         # verts_ltp_cntrd = verts_ltp - self.middle_
         # print(' - verts_ltp:\n',verts_ltp)
         # print(' - verts_ltp_cntrd:\n',verts_ltp_cntrd)
-        print(' - verts_ltp_cntrd size',verts_ltp_cntrd.max(0) - verts_ltp_cntrd.min(0))
+        # print(' - verts_ltp_cntrd size',verts_ltp_cntrd.max(0) - verts_ltp_cntrd.min(0))
         self.extent_ = (verts_ltp_cntrd[:,:2].max(0) - verts_ltp_cntrd[:,:2].min(0)).max() * .707
-        print(' - have extent', self.extent_, self.extent(), 'KEY', key, 'LVL', len(key))
+        # print(' - have extent', self.extent_, self.extent(), 'KEY', key, 'LVL', len(key))
         #extent messed up
 
         # some_geodetics = np.stack((geodetic_to_ecef(*c) for c in verts[::4]))
@@ -132,8 +132,7 @@ class Generator():
 
         nodeFiles = []
         print(' - populating nodeFiles')
-        for f in os.listdir(os.path.join(args.srcDir, 'node')):
-            nodeFiles.append(os.path.join(args.srcDir,'node',f))
+        #for f in os.listdir(os.path.join(args.srcDir, 'node')): nodeFiles.append(os.path.join(args.srcDir,'node',f))
 
         lvlsByName = {}
         print(' - finding lvlsByName')
@@ -167,7 +166,8 @@ class Generator():
             for lvl,arr in sorted(lvls.items(),key=lambda x:x[0]):
                 print('\t\t lvl {}: {} nodes'.format(lvl,len(arr)))
 
-        self.nodeFiles, self.lvlsByName = nodeFiles, lvlsByName
+        self.nodeFiles = nodeFiles
+        self.lvlsByName = lvlsByName
         self.args = args
         self.wh = args.wh
 
@@ -191,7 +191,10 @@ class Generator():
                 break
             except FileNotFoundError:
                 print(' - failed on', tile)
-        altTileMeanAlt = altTileData.meanAlt()
+
+        # altTileMeanAlt = altTileData.meanAlt()
+        #altTileMeanAlt = tileData.meanAlt()
+        altTileMeanAlt = 0
 
         hfov = np.deg2rad(np.random.sample() * 50 + 30) # Between 50 and 80
         fx = fy = self.wh / (2. * np.tan(hfov * .5))
@@ -205,18 +208,18 @@ class Generator():
         RR[2,2] = -1
         LTP = tileData.ltp()
         R = LTP @ RR
-        print(' - Anchor:',anchor,'\n - R:\n', R)
+        # print(' - Anchor:',anchor,'\n - R:\n', R)
 
-        aglAlt = (np.random.sample() * .4 + .8) * extent / np.tan(hfov * .5)
-        z = altTileMeanAlt + aglAlt
-        print(' - Chosen z ', z, 'agl alt', aglAlt, 'extent', extent, 'angleDiv', np.tan(hfov*.5))
+        aglAlt = 1. * (np.random.sample() * .4 + .8) * extent / np.tan(hfov * .5)
+        z = altTileMeanAlt + aglAlt + 50
+        print(' - Chosen z ', z, 'agl alt', aglAlt, 'meanAlt', altTileMeanAlt, 'extent', extent, 'angleDiv', np.tan(hfov*.5))
         xy = np.random.sample(2) * extent * .7
         local_p = np.array((*xy,z))
 
-        print(' - anchor', anchor)
-        print(' - n_anchor', normalize1(anchor))
-        print(' - extent', extent, 'lvl', len(tile))
-        print(' - R\n', R)
+        # print(' - anchor', anchor)
+        # print(' - n_anchor', normalize1(anchor))
+        # print(' - extent', extent, 'lvl', len(tile))
+        # print(' - R\n', R)
 
         #R = R @ quat_to_matrix(quat_exp(generate_random_rvec(3.141, axisWeight=(1e-5,1e-5,1))))
         p = anchor + LTP @ (local_p)
@@ -230,7 +233,7 @@ class Generator():
             chaos = 1 + i
             rvec = generate_random_rvec(.1 * chaos)
             dp = (np.random.normal(size=3) * .2).clip(-1,1) * extent * chaos
-            print(' - dp', dp)
+            # print(' - dp', dp)
 
             Rn = R @ quat_to_matrix(quat_exp(rvec))
             pn = anchor + LTP @ (local_p + dp)
@@ -239,6 +242,20 @@ class Generator():
             # print(' - Relative Pose:\n', np.linalg.inv(add_row(perturbed_pose)) @ base_pose4)
             res.logDiffs.append(np.concatenate((dp,rvec)))
             res.cameraIntrin = [self.wh,self.wh, fx,fy, cx,cy]
+
+        scaler = np.eye(3)
+        R1         = 6378137.0
+        R2         = 6356752.314245179
+        scaler[0,0] = 1./R1
+        scaler[1,1] = 1./R1
+        scaler[2,2] = 1./R1
+        #res.base = scaler @ res.base
+        #for i in range(len(res.perturbedPoses)): res.perturbedPoses[i] = scaler @ res.perturbedPoses[i]
+        #res.base[:3,3] = scaler @ res.base[:3,3]
+        #for i in range(len(res.perturbedPoses)): res.perturbedPoses[i][:3,3] = scaler @ res.perturbedPoses[i][:3,3]
+        res.base[:3,3] = res.base[:3,3] @ scaler
+        for i in range(len(res.perturbedPoses)): res.perturbedPoses[i][:3,3] = res.perturbedPoses[i][:3,3] @ scaler
+        for i in range(len(res.logDiffs)): res.logDiffs[i][:3] = scaler @ res.logDiffs[i][:3]
         return res
 
 
@@ -248,7 +265,7 @@ class Generator():
             ent = self.generate_one()
             entries.append(ent)
 
-        d = {'entries': [ent.pre_serialize() for ent in entries]}
+        d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries]}
         try: os.makedirs(self.args.outDir)
         except: pass
         with open(os.path.join(self.args.outDir, 'entries.json'), 'w') as fp:
@@ -277,7 +294,7 @@ def main():
     parser.add_argument('--N', default=1000, type=int)
     parser.add_argument('--minAlt', default=40, type=float)
     parser.add_argument('--maxAlt', default=1500, type=float)
-    parser.add_argument('--minLvl', default=14, type=int)
+    parser.add_argument('--minLvl', default=18, type=int)
     parser.add_argument('--maxLvl', default=22, type=int)
     parser.add_argument('--altLevel', default=13, type=int)
     parser.add_argument('--wh', default=512, type=int)

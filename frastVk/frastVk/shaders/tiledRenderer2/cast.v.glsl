@@ -23,6 +23,8 @@ layout(std430, set=0, binding=0) uniform CameraData {
 
 layout(std430, set=2, binding=0) uniform CasterData {
 	mat4 casterMatrix[2];
+	vec4 color1;
+	vec4 color2;
 	uint casterMask;
 } casterData;
 

@@ -18,6 +18,11 @@ It offers tools to convert from a GDAL supported format to an internal one (usin
   - Clang
 
 
+# FrastVk Notes:
+  - There is a big issue with my tree implementation for both `tiled_renderer2` and `rt`. It requires all children to close before closing the parent. This means that while rendering a deep level, a bunch out-of-frame but still high-res tiles must be resident.
+  - The rocktree data includes an octant mask to help with, but I currently don't use it. Basically the vertices are organized in a way that allows rendering e.g. 3/8 tiles and not requiring having the sibiling still loaded. The parent can be partially rendered with the other 5/8 parts. This is a better approach.
+
+
 ### TODO
   - ~~Fix the bilinear interpolation in convertGdal.cc. It works when the number of sample points is large (128), but it should work for a very small grid too (like 4x4).~~
      - This was fixed by writing my own interpolation, see `my_remapRemap`

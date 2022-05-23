@@ -7,6 +7,8 @@
 // This is not allocated on the CPU, but is useful to access mapped data instead of the void*
 struct __attribute__((packed)) CasterBuffer {
 	float casterMatrix[2*16];
+	float color1[4];
+	float color2[4];
 	uint32_t casterMask;
 };
 
@@ -24,13 +26,18 @@ struct CasterWaitingData {
 		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
 		inline void setImage(const Image& image_) { image = image_; }
 		inline void setMask(const uint32_t mask_) { mask = mask_; }
+		inline void setColor1(float* c) { memcpy(color1, c, 4*4); haveColor1 = true; }
+		inline void setColor2(float* c) { memcpy(color2, c, 4*4); haveColor2 = true; }
 
 	private:
 		Image image;
 		float casterMatrix1[16];
 		float casterMatrix2[16];
+		float color1[16];
+		float color2[16];
 		uint32_t mask = 0;
 		bool haveMatrix1=false, haveMatrix2=false;
+		bool haveColor1=false, haveColor2=false;
 };
 
 struct CasterStuff {
@@ -60,7 +67,7 @@ struct CasterStuff {
 
 class Castable {
 	public:
-		void setCasterInRenderThread(const CasterWaitingData& cwd, BaseVkApp* app);
+		void setCasterInRenderThread(CasterWaitingData& cwd, BaseVkApp* app);
 		void do_init_caster_stuff(BaseVkApp* app);
 
 	protected:

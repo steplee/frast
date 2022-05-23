@@ -333,13 +333,20 @@ void ResidentMesh::createAndUpload(Uploader& uploader) {
  * =================================================== */
 
 
-void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w) {
+void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w, bool cpuVisible, vk::ImageUsageFlagBits extraFlags) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
-	format = vk::Format::eD32Sfloat;
-	if (viewFormat == vk::Format::eUndefined) viewFormat = format;
-	usageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 	aspectFlags = vk::ImageAspectFlagBits::eDepth;
-	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+	if (cpuVisible) {
+		usageFlags = extraFlags;
+		format = vk::Format::eD32Sfloat;
+		memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
+		if (viewFormat == vk::Format::eUndefined) viewFormat = vk::Format::eD32Sfloat;
+	} else {
+		usageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment | extraFlags | vk::ImageUsageFlagBits::eTransferSrc;
+		format = vk::Format::eD32Sfloat;
+		memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+		if (viewFormat == vk::Format::eUndefined) viewFormat = format;
+	}
 	create_(uploader);
 }
 void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
@@ -441,6 +448,62 @@ void ResidentImage::create_(Uploader& uploader) {
 	}
 
 	//return false;
+}
+
+bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+		vk::ImageCopy region {
+			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				vk::Offset3D{},
+				vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				off,
+				ex,
+		};
+
+		copyCmd.begin(vk::CommandBufferBeginInfo{});
+
+		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
+			vk::ImageMemoryBarrier {
+				{},{},
+				{}, vk::ImageLayout::eTransferSrcOptimal,
+				{}, {},
+				srcImg,
+				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}
+			},
+			vk::ImageMemoryBarrier {
+				{},{},
+				{}, vk::ImageLayout::eTransferDstOptimal,
+				{}, {},
+				*this->image,
+				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}
+			}
+		};
+		copyCmd.pipelineBarrier(
+				vk::PipelineStageFlagBits::eAllGraphics,
+				vk::PipelineStageFlagBits::eAllGraphics,
+				vk::DependencyFlagBits::eDeviceGroup,
+				{}, {}, imgBarriers);
+
+		copyCmd.copyImage(srcImg, vk::ImageLayout::eTransferSrcOptimal, *this->image, vk::ImageLayout::eTransferDstOptimal, {1,&region});
+		copyCmd.end();
+
+		vk::PipelineStageFlags waitMasks[1] = {vk::PipelineStageFlagBits::eAllGraphics};
+		uint32_t wait_semas = waitSema == nullptr ? 0 : 1;
+		uint32_t signal_semas = signalSema == nullptr ? 0 : 1;
+		vk::SubmitInfo submitInfo {
+				{wait_semas, waitSema}, // wait sema
+				{wait_semas, waitMasks},
+				{1u, &copyCmd},
+				{signal_semas, signalSema} // signal sema
+		};
+		uint32_t nfence = fence == nullptr ? 0 : 1;
+		if (nfence) {
+			q.submit(submitInfo, *fence);
+			d.waitForFences({nfence, fence}, true, 999999999999);
+			d.resetFences({nfence, fence});
+		} else
+			q.submit(submitInfo);
+
+		return false;
 }
 
 

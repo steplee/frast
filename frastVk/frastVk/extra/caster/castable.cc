@@ -18,8 +18,12 @@ void Castable::do_init_caster_stuff(BaseVkApp* app) {
 		casterStuff.casterBuffer.setAsUniformBuffer(sizeof(CasterBuffer), true);
 		casterStuff.casterBuffer.create(app->deviceGpu,*app->pdeviceGpu,app->queueFamilyGfxIdxs);
 		// Initialize caster buffer as all zeros
-		void* dbuf = (void*) casterStuff.casterBuffer.mem.mapMemory(0, sizeof(CasterBuffer), {});
+		CasterBuffer* dbuf = (CasterBuffer*) casterStuff.casterBuffer.mem.mapMemory(0, sizeof(CasterBuffer), {});
 		memset(dbuf, 0, sizeof(CasterBuffer));
+		float c2[4] = {0.7, 1., .7, 1.};
+		float c1[4] = {0.7, .7, 1., 1.};
+		memcpy(dbuf->color1, c1, 4*4);
+		memcpy(dbuf->color2, c2, 4*4);
 		casterStuff.casterBuffer.mem.unmapMemory();
 
 		// Setup bindings. There is one for the casterData, and one for the casterImages.
@@ -28,7 +32,7 @@ void Castable::do_init_caster_stuff(BaseVkApp* app) {
 			// casterData
 			bindings.push_back({
 					0, vk::DescriptorType::eUniformBuffer,
-					1, vk::ShaderStageFlagBits::eVertex });
+					1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment });
 			// casterImages binding
 			bindings.push_back({
 					1, vk::DescriptorType::eCombinedImageSampler,
@@ -74,7 +78,7 @@ void Castable::do_init_caster_stuff(BaseVkApp* app) {
 		}
 }
 
-void Castable::setCasterInRenderThread(const CasterWaitingData& cwd, BaseVkApp* app) {
+void Castable::setCasterInRenderThread(CasterWaitingData& cwd, BaseVkApp* app) {
 	// Update cpu mask
 	casterStuff.casterMask = cwd.mask;
 
@@ -115,6 +119,12 @@ void Castable::setCasterInRenderThread(const CasterWaitingData& cwd, BaseVkApp* 
 		cameraBuffer->casterMask = cwd.mask;
 		if (cwd.haveMatrix1) memcpy(cameraBuffer->casterMatrix   , cwd.casterMatrix1, sizeof(float)*16);
 		if (cwd.haveMatrix2) memcpy(cameraBuffer->casterMatrix+16, cwd.casterMatrix2, sizeof(float)*16);
+		if (cwd.haveColor1) memcpy(cameraBuffer->color1   , cwd.color1, sizeof(float)*4);
+		if (cwd.haveColor2) memcpy(cameraBuffer->color2, cwd.color2, sizeof(float)*4);
 		casterStuff.casterBuffer.mem.unmapMemory();
+		cwd.haveMatrix1 = false;
+		cwd.haveMatrix2 = false;
+		cwd.haveColor1 = false;
+		cwd.haveColor2 = false;
 	}
 }

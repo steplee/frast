@@ -101,10 +101,12 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 		int yi = (i/2) % 2;
 		int zi = (i/4) % 2;
 		corners1.block<1,3>(i,0) << corners(xi,0), corners(yi,1), corners(zi,2);
+		// corners1.block<1,3>(i,0) << xi*255., yi*255., zi*255.;
 	}
 
 	corners1.rightCols<1>().setConstant(1.f);
-	Eigen::Matrix<float,8,3,Eigen::RowMajor> corners2 = (corners1 * tuc.mvp.transpose()).rowwise().hnormalized();
+	Eigen::Matrix<float,8,4,Eigen::RowMajor> corners12 = (corners1 * tuc.mvp.transpose());
+	Eigen::Matrix<float,8,3,Eigen::RowMajor> corners2 = corners12.rowwise().hnormalized();
 	//if (not projection_xsects_ndc_box(corners2.block<1,2>(0,0).transpose(), corners2.block<1,2>(1,0).transpose()))
 
 	Vector2f tl{std::numeric_limits<float>::max(),std::numeric_limits<float>::max()},
@@ -112,7 +114,8 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 	int n_invalid = 0;
 	for (int i=0; i<8; i++) {
 		// Note: Clip the far-plane at a relaxed 2.5 instead of 1, in-case the Camera class under-estimates the z_far value
-		if (corners2(i,2) > 0 and corners2(i,2) < 2.5) {
+		// NOTE: We must also check ORIGINAL w coordinate before pdivide
+		if (corners12(i,3) > 0 and corners2(i,2) > 0.00001 and corners2(i,2) < 2.5) {
 			tl(0) = std::min(tl(0), corners2(i,0));
 			tl(1) = std::min(tl(1), corners2(i,1));
 			br(0) = std::max(br(0), corners2(i,0));
@@ -120,18 +123,34 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 		} else n_invalid++;
 	}
 
-	if (n_invalid == 8 or not projection_xsects_ndc_box(tl,br)) {
+	if (n_invalid == 8) {
 		// fmt::print(" - [#computeSSE] n_invalid is 8, returning 0 sse.\n");
-		return 0;
+		return .0;
+	}
+	if (not projection_xsects_ndc_box(tl,br)) {
+		// fmt::print(" - [#computeSSE] {}/{} not in frame, returning 0 sse.\n", nc.key, nc.level());
+		return .0;
 	}
 
-	float dist = (tuc.eye.transpose() - corners.colwise().mean()).norm();
+	Vector3f meanCorner = corners.colwise().mean();
+	float dist = (tuc.eye - meanCorner).norm();
+#if 0
+	float angle = abs(tuc.zplus.dot(meanCorner.normalized()));
+	if (angle < .7) angle = .7f;
+	auto sse = angle * geoError * tuc.wh(1) / (dist * tuc.two_tan_half_fov_y);
+#else
 	auto sse = geoError * tuc.wh(1) / (dist * tuc.two_tan_half_fov_y);
-	// fmt::print(" - [#computeSSE] sse = {} (n_invalid {})\n", sse, n_invalid);
+#endif
+	// fmt::print(" - [#computeSSE] sse = {} (n_invalid {}, d {}, tanhf {})\n", sse, n_invalid, dist, tuc.two_tan_half_fov_y);
 	return sse;
 }
 
+// NOTE: TODO THere appears to be an issue with computeSSE.
+// It gives a low sse on nearby out-of-frame tiles,
+// but a high sse on out-of-frame tiles that are farther... ???
+
 void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
+
 	this->mask = 0;
 	if (parent) parent->mask |= 1 << (nc.key[nc.level()-1] - '0');
 
@@ -157,7 +176,7 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 			if (okay_to_close) {
 				// Check to make sure we don't immediately want to re-open, which will repeat oscillating.
 				lastSSE = computeSSE(rtuc);
-				if (lastSSE < rtuc.sseThresholdOpen * .99) {
+				if (lastSSE < rtuc.sseThresholdOpen * .98) {
 					// fmt::print(" - [#update] inner tile {} okay_to_close, closing children, loading self.\n", nc.key);
 					state = State::LOADING_INNER;
 					for (auto c : children) c->state = State::CLOSING;
@@ -227,6 +246,32 @@ void RtTile::render(RtRenderContext& rtc) {
 	} else if (children.size() != 0) {
 		// fmt::print(" - node {} calling render on {} children\n", nc.key, children.size());
 		for (auto c : children) c->render(rtc);
+	}
+}
+
+void RtTile::renderDbg(RtRenderContext& rtc) {
+	if ((state == State::INNER or state == State::LEAF or state == State::OPENING or state == State::CLOSING) and loaded and not noData) {
+		if (state == State::INNER) for (auto c : children) c->renderDbg(rtc);
+		if (loaded) {
+			auto &cmd = rtc.cmd;
+			int mi = 0;
+			for (auto& mesh : meshes) {
+				assert(mesh.idx != NO_INDEX);
+				auto &td = rtc.pooledTileData.datas[mesh.idx];
+				RtPushConstants pushc;
+				pushc.index = mesh.idx;
+				// pushc.octantMask = mask;
+				//pushc.octantMask = lastSSE * 5000.f;
+				pushc.octantMask = lastSSE == .5 ? 5000.f : 0;
+				pushc.level = nc.level();
+				cmd.pushConstants(*rtc.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const RtPushConstants>{1, &pushc});
+				cmd.draw(24, 1, 0,0);
+				mi++;
+			}
+		}
+	} else if (children.size() != 0) {
+		// fmt::print(" - node {} calling render on {} children\n", nc.key, children.size());
+		for (auto c : children) c->renderDbg(rtc);
 	}
 }
 
@@ -356,8 +401,8 @@ bool RtDataLoader::pushAsk(const Ask& ask) {
 
 bool RtDataLoader::allowOpenAsks() {
 	std::lock_guard<std::mutex> lck(mtx);
-	// return pooledTileData.available.size() > RtCfg::tilesDedicatedToClosing * 2;
-	return (available.size() - asks.size()) > RtCfg::tilesDedicatedToClosing + 8;
+	return pooledTileData.available.size() > RtCfg::tilesDedicatedToClosing * 2;
+	// return (pooledTileData.available.size() - asks.size()) > RtCfg::tilesDedicatedToClosing + 8;
 }
 
 // Check if all child are not available. Return true if and only if all are not. Can be used from any thread.
@@ -391,7 +436,7 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 	std::string path = cfg.rootDir + "/node/" + std::string(tile->nc.key);
 	std::ifstream ifs(path);
 	DecodedTileData dtd;
-	fmt::print(" - Decoding {}\n",path);
+	// fmt::print(" - Decoding {}\n",path);
 	if (decode_node_to_tile(ifs, dtd)) {
 		// throw std::runtime_error("Failed to load tile " + std::string(tile->nc.key));
 		fmt::print(fmt::fg(fmt::color::orange), " - [#loadTile] decode failed, skipping tile.\n");
@@ -502,9 +547,11 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		// tile->geoError = 4.0 * (1/255.) / (1 << tile->nc.level());
 		tile->geoError = 8.0 * (1/255.) / (1 << tile->nc.level());
 		// tile->geoError = 16.0 * (1/255.) / (1 << tile->nc.level());
+		// fmt::print(" - [{}/{}] geoError from lvl {}\n", tile->nc.key, tile->nc.level(), tile->geoError);
 	} else {
 		// tile->geoError = dtd.metersPerTexel / (255. * R1);
 		tile->geoError = dtd.metersPerTexel / (R1);
+		// fmt::print(" - [{}/{}] geoError from mpt {}\n", tile->nc.key, tile->nc.level(), tile->geoError);
 	}
 
 	// Compute corners
@@ -591,18 +638,20 @@ void RtDataLoader::internalLoop() {
 	populateFromFiles();
 
 	bool lastIterHadTryAgain = false;
+	bool lastIterHadClose = false;
 
 	while (not shouldStop) {
 		std::vector<Ask> curAsks;
 		std::vector<Ask> nxtAsks;
 		lastIterHadTryAgain = false;
+		lastIterHadClose = false;
 		{
 			std::lock_guard<std::mutex> lck(mtx);
 			//std::swap(curAsks, this->asks);
 			curAsks = std::move(this->asks);
 		}
 		if (curAsks.size())
-			fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks\n", curAsks.size());
+			fmt::print(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] handling {} asks ({}/{} avail)\n", curAsks.size(), pooledTileData.available.size(), RtCfg::maxTiles);
 
 		for (; curAsks.size(); curAsks.pop_back()) {
 			Ask& ask = curAsks.back();
@@ -620,13 +669,17 @@ void RtDataLoader::internalLoop() {
 					continue;
 				} else if (stat == LoadStatus::eTryAgain) {
 					fmt::print(fmt::fg(fmt::color::pink), " - [#Loader::internalLoop] not allowed to fail loading parent with eTryAgain (tree is dead-locked) ({})\n", nc.key);
-					lastIterHadTryAgain = true;
+					// lastIterHadTryAgain = true;
+					lastIterHadClose = false;
+					// nxtAsks.push_back(std::move(ask));
+					nxtAsks.insert(nxtAsks.begin(),std::move(ask)); // TODO: Obviously bad, have two vectors, one for closes
 					continue;
 				} else if (stat == LoadStatus::eSuccess) {
 					res.isClose = true;
 					// res.tiles = std::move(ask.tiles);
 					res.tiles = (ask.tiles);
 					res.parent = ask.parent;
+					lastIterHadClose = true;
 				}
 			}
 			else if (not lastIterHadTryAgain) {
@@ -634,8 +687,8 @@ void RtDataLoader::internalLoop() {
 				NodeCoordinate parent_nc = ask.parent->nc;
 				dprint(fmt::fg(fmt::color::light_green), " - [#Loader::internalLoop] loading {} children (parent {})\n", ask.tiles.size(), parent_nc.key);
 				bool failed = false;
-				for (int i=0; i<ask.tiles.size(); i++) {
 
+				for (int i=0; i<ask.tiles.size(); i++) {
 					// TODO: Withdraw idx's up front, that we we avoid loading some and immediately throwing them away!!!
 					auto stat = loadTile(ask.tiles[i], false);
 					if (stat == LoadStatus::eFailed) {
@@ -648,6 +701,7 @@ void RtDataLoader::internalLoop() {
 						lastIterHadTryAgain = true;
 						// nxtAsks.push_back(std::move(ask));
 						failed = true;
+						break;
 					} else if (stat == LoadStatus::eSuccess) {
 					}
 				}
@@ -673,13 +727,19 @@ void RtDataLoader::internalLoop() {
 			}
 		}
 
+		// Must do this for forward progress.
+		if (pooledTileData.available.size() > RtCfg::tilesDedicatedToClosing) lastIterHadTryAgain = false;
+
 		// Copy eTryAgain asks to next period
 		{
 			std::lock_guard<std::mutex> lck(mtx);
-			for (auto& ask : nxtAsks) asks.push_back(std::move(ask));
+			// Put our nxtAsks first: they have closes pfront
+			std::vector<Ask> prevAsks = std::move(asks);
+			asks = std::move(nxtAsks);
+			for (auto& ask : prevAsks) asks.push_back(std::move(ask));
 		}
 
-		usleep(63'000);
+		usleep(sleepMicros);
 	}
 }
 
@@ -706,19 +766,25 @@ void RtRenderer::stepAndRender(RenderState& rs, vk::CommandBuffer& cmd) {
 }
 
 void RtRenderer::update(RenderState& rs) {
+
 	RtUpdateContext rtuc { dataLoader };
 	rtuc.mvp = Eigen::Map<const RowMatrix4d> { rs.mvp() }.cast<float>();
 	Vector3d eyed;
 	rs.eyed(eyed.data());
+	// rtuc.zplus = Eigen::Map<const RowMatrix4d> { rs.viewInv() }.block<3,1>(0,2).cast<float>();
+	rtuc.zplus = Eigen::Map<const RowMatrix4d> { rs.view() }.block<1,3>(2,0).cast<float>();
 	rtuc.eye = eyed.cast<float>();
 	rtuc.wh = Vector2f { rs.camera->spec().w, rs.camera->spec().h };
 	// rtuc.two_tan_half_fov_y = 2.f * std::tan(rs.camera->spec().vfov() * .5f);
 	rtuc.two_tan_half_fov_y = rs.camera->spec().w / rs.camera->spec().fx();
-	rtuc.sseThresholdOpen = 1.7;
-	rtuc.sseThresholdClose = .8;
+	// rtuc.sseThresholdOpen = 1.7;
+	// rtuc.sseThresholdOpen = 1.99;
+	// rtuc.sseThresholdClose = .9;
+	rtuc.sseThresholdOpen = cfg.sseThresholdOpen;
+	rtuc.sseThresholdClose = cfg.sseThresholdClose;
 
 	// Update all tiles recursively. Will computeSSE, queue opens/closes
-	if (root) {
+	if (root and allowUpdate) {
 		root->update(rtuc, nullptr);
 	}
 
@@ -841,7 +907,7 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 			pooledTileData,
 			*thePipelineStuff,
 			{},
-			cmd
+			cmd,
 	};
 
 	// Load global data (camera and such)
@@ -892,7 +958,16 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 	pooledTileData.globalBuffer.mem.unmapMemory();
 
 	if (root) root->render(rtc);
+
+	if (cfg.dbg) {
+		thePipelineStuff = &pipelineStuff;
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *dbgPipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *dbgPipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *dbgPipelineStuff.pipeline);
+		if (root) root->renderDbg(rtc);
+	}
 }
+
 
 void RtRenderer::init() {
 	dataLoader.init();
@@ -1060,6 +1135,30 @@ void RtRenderer::init() {
 	}
 
 	init_caster_stuff();
+
+	if (cfg.dbg) {
+		PipelineBuilder plBuilder;
+
+		loadShader(app->deviceGpu, dbgPipelineStuff.vs, dbgPipelineStuff.fs, "rt/dbgLines");
+
+		dbgPipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
+		VertexInputDescription vertexInputDescription;
+		plBuilder.init(
+				vertexInputDescription,
+				vk::PrimitiveTopology::eLineList,
+				*dbgPipelineStuff.vs, *dbgPipelineStuff.fs);
+
+		// Add Push Constants & Set Layouts.
+		dbgPipelineStuff.setLayouts.push_back(*globalDescSetLayout);
+		dbgPipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
+
+		dbgPipelineStuff.pushConstants.push_back(vk::PushConstantRange{
+				vk::ShaderStageFlagBits::eVertex,
+				0,
+				sizeof(RtPushConstants) });
+
+		dbgPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
+	}
 
 	// Find root frast tile, then create the Tile backing it.
 	// Done on the current thread, so we synch load it

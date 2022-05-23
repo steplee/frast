@@ -740,6 +740,10 @@ void BaseVkApp::executeCommandsThenPresent(std::vector<vk::CommandBuffer>& cmds,
 	}
 }
 
+bool BaseVkApp::getDepthImage(ResidentImage& out, const FrameData& fd, const RenderState& rs) {
+
+}
+
 /* ===================================================
  *
  *

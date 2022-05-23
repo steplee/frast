@@ -13,12 +13,14 @@ layout (location=3) out vec4 v_caster_uv; // uv1, uv2
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
 	vec4 anchor;
-	mat4 modelMats[512];
-	vec4 uvScaleAndOff[512];
+	mat4 modelMats[800];
+	vec4 uvScaleAndOff[800];
 } cameraData;
 
 layout(std430, set=2, binding=0) uniform CasterData {
 	mat4 casterMatrix[2];
+	vec4 color1;
+	vec4 color2;
 	uint casterMask;
 } casterData;
 

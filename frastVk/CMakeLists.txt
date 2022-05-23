@@ -141,6 +141,9 @@ add_executable(runRt frastVk/rt/run.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)
 
+add_executable(rtGenSets frastVk/rt/rtRenderSets.cc frastVk/rt/protos/rocktree.pb.cc)
+target_link_libraries(rtGenSets frastVk)
+target_precompile_headers(rtGenSets REUSE_FROM frastVk)
 
 ##################
 #   Install

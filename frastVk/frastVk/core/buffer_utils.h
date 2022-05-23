@@ -192,9 +192,14 @@ struct ResidentImage {
 		return scalarSizeOfFormat(format) * extent.width * extent.height * extent.depth;
 	}
 
-	void createAsDepthBuffer(Uploader& uploader, int h, int w);
+	void createAsDepthBuffer(Uploader& uploader, int h, int w, bool cpuVisible=false, vk::ImageUsageFlagBits extraFlags={});
 	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void create_(Uploader& uploader);
+
+	bool copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
+			const vk::Semaphore* waitSema, const vk::Semaphore* signalSema,
+			vk::Extent3D ex, vk::Offset3D off={},
+			vk::ImageAspectFlagBits aspect=vk::ImageAspectFlagBits::eColor);
 };
 
