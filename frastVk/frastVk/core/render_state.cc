@@ -82,6 +82,10 @@ CameraSpec::CameraSpec(double w, double h, double hfov, double vfov) : w(w), h(h
 	fx_ = w / (2 * std::tan(hfov / 2.));
 	fy_ = h / (2 * std::tan(vfov / 2.));
 }
+CameraSpec::CameraSpec(double w, double h, double hfov, double vfov, double n, double f) : w(w), h(h), near(n), far(f) {
+	fx_ = w / (2 * std::tan(hfov / 2.));
+	fy_ = h / (2 * std::tan(vfov / 2.));
+}
 
 float CameraSpec::fx() const {
 	return fx_;

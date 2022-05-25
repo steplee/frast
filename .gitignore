@@ -3,3 +3,5 @@ build
 *.a
 *.jpg
 __pycache__
+frastVk/frastVk/rt/protos/rocktree.pb.h
+frastVk/frastVk/rt/protos/rocktree.pb.cc

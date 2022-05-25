@@ -25,6 +25,12 @@ namespace {
 		return Eigen::AlignedBox2f { a, b }.intersects(
 					Eigen::AlignedBox2f { Vector2f{-1,-1}, Vector2f{1,1} });
 	}
+	bool in_box(const Vector3f& p, const Vector3f& a, const Vector3f& b) {
+		//Vector2f tl { std::min(a(0), b(0)), std::min(a(1), b(1)) };
+		//Vector2f br { std::max(a(0), b(0)), std::max(a(1), b(1)) };
+		//return Eigen::AlignedBox2f { tl, br }.intersects(
+		return Eigen::AlignedBox3f { a, b }.contains(p);
+	}
 
 	using std::to_string;
 	std::string to_string(const RtTile::State& s) {
@@ -93,6 +99,10 @@ RtTile::~RtTile() {}
 // TODO: This is unacceptably slow. I think a better way is possible. Really want to avoid testing all 8 points...
 // WELL: If you pass the threshold, can check distances FIRST then check corners...
 float RtTile::computeSSE(const RtUpdateContext& tuc) {
+
+	// If empty, return 0
+	if (meshes.size() == 0) return 0.f;
+
 	Eigen::Matrix<float,8,4,Eigen::RowMajor> corners1;
 
 	//corners1.topLeftCorner<2,3>() = corners;
@@ -124,12 +134,18 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 	}
 
 	if (n_invalid == 8) {
-		// fmt::print(" - [#computeSSE] n_invalid is 8, returning 0 sse.\n");
+		//fmt::print(" - [#computeSSE] n_invalid is 8, returning 0 sse.\n");
 		return .0;
 	}
-	if (not projection_xsects_ndc_box(tl,br)) {
-		// fmt::print(" - [#computeSSE] {}/{} not in frame, returning 0 sse.\n", nc.key, nc.level());
-		return .0;
+
+	// I've added this second in_box check with the full tile bbox because it was finicky without it.
+	// It fixes some of the issues I was seeing.
+	// It keeps more tiles resident, but this might be good because you shouldn't unload when rotating, because
+	// it is likely you need them again soon
+	if ( (not in_box(tuc.eye, outerCorners.row(0), outerCorners.row(1))) and (not projection_xsects_ndc_box(tl,br)) ) {
+	// if ( (not projection_xsects_ndc_box(tl,br)) ) {
+		// fmt::print(" - [#computeSSE] {}/{} not in frame, returning 0 sse ({} invalid tl {} br {}).\n", nc.key, nc.level(), n_invalid, tl.transpose(),br.transpose());
+		return -1.0;
 	}
 
 	Vector3f meanCorner = corners.colwise().mean();
@@ -145,11 +161,12 @@ float RtTile::computeSSE(const RtUpdateContext& tuc) {
 	return sse;
 }
 
+
 // NOTE: TODO THere appears to be an issue with computeSSE.
 // It gives a low sse on nearby out-of-frame tiles,
 // but a high sse on out-of-frame tiles that are farther... ???
 
-void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
+void RtTile::update(RtUpdateContext& rtuc, RtTile* parent) {
 
 	this->mask = 0;
 	if (parent) parent->mask |= 1 << (nc.key[nc.level()-1] - '0');
@@ -185,6 +202,7 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 					ask.parent = this;
 					ask.tiles = {this};
 					rtuc.dataLoader.pushAsk(ask);
+					rtuc.nAsked++;
 				}
 			}
 		}
@@ -211,6 +229,7 @@ void RtTile::update(const RtUpdateContext& rtuc, RtTile* parent) {
 			ask.parent = this;
 			// fmt::print(" - [#update] leaf tile {} opening {} children sse {}.\n", nc.key, ask.tiles.size(), lastSSE);
 			rtuc.dataLoader.pushAsk(ask);
+			rtuc.nAsked++;
 		} else if (lastSSE >= rtuc.sseThresholdOpen) {
 			// fmt::print(" - [#update] leaf tile {}/{} sse {}, not opening zero children\n", nc.key, nc.level(), lastSSE);
 		}
@@ -229,6 +248,8 @@ void RtTile::render(RtRenderContext& rtc) {
 			for (auto& mesh : meshes) {
 				assert(mesh.idx != NO_INDEX);
 				auto &td = rtc.pooledTileData.datas[mesh.idx];
+				if (td.residentInds <= 0) continue;
+
 				cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*td.verts.buffer}, {0u});
 				cmd.bindIndexBuffer(*td.inds.buffer, 0u, vk::IndexType::eUint16);
 				// if (meshes.size() > 1) fmt::print(" - [#RtTile::render] tile {}/{} mesh {} idx {} with {} inds.\n", nc.key, nc.level(), mi, mesh.idx, td.residentInds);
@@ -261,8 +282,8 @@ void RtTile::renderDbg(RtRenderContext& rtc) {
 				RtPushConstants pushc;
 				pushc.index = mesh.idx;
 				// pushc.octantMask = mask;
-				//pushc.octantMask = lastSSE * 5000.f;
-				pushc.octantMask = lastSSE == .5 ? 5000.f : 0;
+				pushc.octantMask = lastSSE * 5000.f;
+				// pushc.octantMask = lastSSE < 0. ? 5000.f : 0;
 				pushc.level = nc.level();
 				cmd.pushConstants(*rtc.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const RtPushConstants>{1, &pushc});
 				cmd.draw(24, 1, 0,0);
@@ -449,6 +470,7 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 	Eigen::Matrix<uint8_t,3,1> max = {0,0,0};
 
 
+	tile->modelMatf.resize(16);
 	tile->meshes.resize(dtd.meshes.size());
 	for (int i=0; i<dtd.meshes.size(); i++) {
 
@@ -500,11 +522,10 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 			td.inds.setAsIndexBuffer(i_size, false);
 			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		}
-		myUploader.uploadSync(td.verts, md.vert_buffer_cpu.data(), v_size, 0);
-		myUploader.uploadSync(td.inds, md.ind_buffer_cpu.data(), i_size, 0);
+		if (v_size > 0) myUploader.uploadSync(td.verts, md.vert_buffer_cpu.data(), v_size, 0);
+		if (i_size > 0) myUploader.uploadSync(td.inds, md.ind_buffer_cpu.data(), i_size, 0);
 		td.residentInds = md.ind_buffer_cpu.size();
 
-		tile->modelMatf.resize(16);
 
 
 		// tile->uvScaleAndOffset = {md.uvScale[0], md.uvScale[1], md.uvOffset[0], md.uvOffset[1]};
@@ -520,6 +541,12 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		for (int i=0; i<3; i++) min(i) = std::min(min_(i), min(i));
 		for (int i=0; i<3; i++) max(i) = std::max(max_(i), max(i));
 	}
+
+	if (dtd.meshes.size() == 0) {
+		tile->loaded = true; // loaded, but empty
+		return LoadStatus::eSuccess;
+	}
+
 
 	Eigen::Map<Eigen::Matrix4d> mm(dtd.modelMat);
 	constexpr double R1         = (6378137.0);
@@ -556,11 +583,36 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 
 	// Compute corners
 	// Would be better to get the OBB from the bulk metadata, but this should suffice.
+	/*
 	Eigen::Matrix<float,2,3> corners_;
 	corners_.row(0) = (mm.topLeftCorner<3,3>() * min.cast<double>() + mm.topRightCorner<3,1>()).cast<float>();
 	corners_.row(1) = (mm.topLeftCorner<3,3>() * max.cast<double>() + mm.topRightCorner<3,1>()).cast<float>();
 	tile->corners.row(0) = corners_.colwise().minCoeff();
 	tile->corners.row(1) = corners_.colwise().maxCoeff();
+	*/
+	Eigen::Matrix<float,8,4> corners_;
+	corners_.rightCols(1).setConstant(1);
+	for (int i=0; i<8; i++) {
+		int xi = (i  ) % 2;
+		int yi = (i/2) % 2;
+		int zi = (i/4) % 2;
+		corners_.block<1,3>(i,0) << (xi==0?min(0):max(0)), (yi==0?min(1):max(2)), (zi==0?min(2):max(2));
+	}
+	auto tmpCorners1 = (corners_ * mm.transpose().cast<float>()).rowwise().hnormalized();
+	tile->corners.row(0) = tmpCorners1.colwise().minCoeff();
+	tile->corners.row(1) = tmpCorners1.colwise().maxCoeff();
+
+	Eigen::Matrix<float,8,4> outerCorners_;
+	outerCorners_.rightCols(1).setConstant(1);
+	for (int i=0; i<8; i++) {
+		int xi = (i  ) % 2;
+		int yi = (i/2) % 2;
+		int zi = (i/4) % 2;
+		outerCorners_.block<1,3>(i,0) << xi*255., yi*255., zi*255.;
+	}
+	auto tmpCorners = (outerCorners_ * mm.transpose().cast<float>()).rowwise().hnormalized();
+	tile->outerCorners.row(0) = tmpCorners.colwise().minCoeff();
+	tile->outerCorners.row(1) = tmpCorners.colwise().maxCoeff();
 
 	if (tile->childrenMissing == RtTile::MissingStatus::UNKNOWN) {
 		bool have_any_children = false;
@@ -760,6 +812,13 @@ RtRenderer::~RtRenderer() {
 }
 
 
+int RtRenderer::numWaitingAsks(bool doLock) {
+	if (doLock) dataLoader.mtx.lock();
+	int n = pushedAsks - handledResults;
+	if (doLock) dataLoader.mtx.unlock();
+	return n;
+}
+
 void RtRenderer::stepAndRender(RenderState& rs, vk::CommandBuffer& cmd) {
 	update(rs);
 	render(rs, cmd);
@@ -817,6 +876,7 @@ void RtRenderer::update(RenderState& rs) {
 	// Handle loaded opens/closes
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
+		pushedAsks += rtuc.nAsked;
 
 		void* rtgd_buf = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
 
@@ -825,6 +885,7 @@ void RtRenderer::update(RenderState& rs) {
 		for (; dataLoader.loadedResults.size(); dataLoader.loadedResults.pop_back()) {
 			auto &res = dataLoader.loadedResults.back();
 			RtTile* parent = res.parent;
+			handledResults++;
 
 			// Handle opening/closing tiles
 			// TODO
@@ -1165,6 +1226,7 @@ void RtRenderer::init() {
 	{
 		root = new RtTile();
 		dataLoader.loadRootTile(root);
+		pushedAsks++;
 	}
 }
 

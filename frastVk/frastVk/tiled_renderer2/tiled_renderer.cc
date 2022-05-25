@@ -109,10 +109,12 @@ void TileDataLoader::internalLoop(
 	dopts1.allowInflate = false;
 	dopts2.allowInflate = true;
 	colorDset = new DatasetReader(colorDsetPath, dopts1);
-	elevDset  = new DatasetReader(elevDsetPath,  dopts2);
+	if (elevDsetPath.length())
+		elevDset  = new DatasetReader(elevDsetPath,  dopts2);
 
 	colorDset->beginTxn(&color_txn, true);
-	elevDset->beginTxn(&elev_txn, true);
+	if (elevDset)
+		elevDset->beginTxn(&elev_txn, true);
 
 	assert(cfg.tileSize == colorDset->tileSize());
 
@@ -124,14 +126,17 @@ void TileDataLoader::internalLoop(
 	// if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) colorFormat = Image::Format::GRAY;
 	assert(cfg.tileSize == colorDset->tileSize());
 	colorBuf = Image { (int)colorDset->tileSize(), (int)colorDset->tileSize(), colorFormat };
-	elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
 	colorBuf.alloc();
-	elevBuf.alloc();
 	if (colorFormat == Image::Format::RGBA)
 		for (int y=0; y<cfg.tileSize; y++)
 		for (int x=0; x<cfg.tileSize; x++)
 			colorBuf.buffer[y*cfg.tileSize*4+x*4+3] = 255;
-	memset(elevBuf.buffer, 0, elevBuf.size());
+
+	if (elevDset) {
+		elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
+		elevBuf.alloc();
+		memset(elevBuf.buffer, 0, elevBuf.size());
+	}
 
 	while (not shouldStop) {
 		std::vector<Ask> curAsks;
@@ -280,7 +285,10 @@ bool TileDataLoader::loadTile(Tile* tile) {
 		//return true;
 	}
 
-	if (loadElevAndMeta(tile)) {
+	if (elevDset == nullptr and loadElevAndMetaNoDted(tile)) {
+		return true;
+	}
+	else if (elevDset and loadElevAndMeta(tile)) {
 		return true;
 	}
 
@@ -334,6 +342,45 @@ bool TileDataLoader::loadColor(Tile* tile) {
 			tile->childrenMissing = Tile::MissingStatus::NOT_MISSING;
 		}
 	}
+
+	return false;
+}
+
+bool TileDataLoader::loadElevAndMetaNoDted(Tile* tile) {
+
+		int64_t tz = tile->bc.z();
+		int64_t ty = tile->bc.y();
+		int64_t tx = tile->bc.x();
+		float lvlScale = 2. / (1 << tz);
+		float ox = tx * lvlScale * 1. - 1.;
+		float oy = (ty * lvlScale * 1. - 1.);
+
+	std::vector<float> vertData(cfg.vertsAlongEdge*cfg.vertsAlongEdge*5, 0);
+	for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
+		for (int32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
+			int32_t ii = ((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx;
+			// int32_t ii = ((yy)*cfg.vertsAlongEdge)+xx;
+
+			float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
+			float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
+			float xxx = (xxx_ * lvlScale) + ox;
+			float yyy = ((1. - yyy_) * lvlScale) + oy;
+			vertData[ii*5+0] = xxx;
+			vertData[ii*5+1] = yyy;
+			vertData[ii*5+2] = 0;
+			vertData[ii*5+3] = xxx_;
+			vertData[ii*5+4] = yyy_;
+		}
+
+		unit_wm_to_ecef(vertData.data(), vertData.size()/5, vertData.data(), 5);
+
+		tile->corners <<
+			vertData[0*5+0], vertData[0*5+1], vertData[0*5+2],
+			vertData[(0*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+0], vertData[(0*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+1], vertData[(0*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+2],
+			vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+0], vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+1], vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+cfg.vertsAlongEdge-1)*5+2],
+			vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+0)*5+0], vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+0)*5+1], vertData[((cfg.vertsAlongEdge-1)*cfg.vertsAlongEdge+0)*5+2];
+
+	myUploader.uploadSync(sharedTileData.vertsXYZs[tile->idx], vertData.data(), sizeof(float)*vertData.size(), 0);
 
 	return false;
 }

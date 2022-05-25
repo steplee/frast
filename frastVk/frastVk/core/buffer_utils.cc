@@ -453,9 +453,9 @@ void ResidentImage::create_(Uploader& uploader) {
 bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
 		vk::ImageCopy region {
 			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
-				vk::Offset3D{},
-				vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
 				off,
+				vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				vk::Offset3D{},
 				ex,
 		};
 

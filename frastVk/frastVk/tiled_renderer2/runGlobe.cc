@@ -39,6 +39,24 @@ struct GlobeApp : public ImguiApp {
 			return ImguiApp::handleKey(key,scancode,action,mods);
 		}
 
+	Vector3d frustumPos0 { 0.17287, -0.754957,  0.631011 };
+	inline void setFrustumPoses(double tt) {
+			Vector3d pos = frustumPos0;
+
+			Eigen::Matrix<double,3,3,Eigen::RowMajor> R;
+			R.row(2) = -pos.normalized();
+			R.row(0) =  R.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+			R.row(1) =  R.row(2).cross(R.row(0)).normalized();
+			R.transposeInPlace();
+
+			Vector3d pos1 = pos - Vector3d{1e-5,1e-6,1e-7} * tt;
+			Vector3d pos2 = pos + Vector3d{1e-5,1e-6,1e-7} * tt;
+			frustumSet->setPose(0, pos1, R);
+			frustumSet->setPose(1, pos2, R);
+
+			if (rand()%100 == 0) frustumSet->setNextPath(0, Vector4f{1,0,0,1});
+			if (rand()%100 == 0) frustumSet->setNextPath(1, Vector4f{0,1,0,1});
+	}
 
 
 	inline virtual void initVk() override {
@@ -85,6 +103,7 @@ struct GlobeApp : public ImguiApp {
 		// TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/srtm/usa.11.ft");
 		// TiledRendererCfg cfg ("/data/khop/whole.ft", "/data/elevation/srtm/usa.11.ft");
 		TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
+		// TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "");
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
 
@@ -106,24 +125,15 @@ struct GlobeApp : public ImguiApp {
 
 		if (1) {
 			frustumSet = std::make_shared<FrustumSet>(this, 2);
-			Vector3d pos { 0.17287, -0.754957,  0.631011 };
-			Vector3d t = p.normalized();
 
-			Eigen::Matrix<double,3,3,Eigen::RowMajor> R;
-			R.row(2) = -pos.normalized();
-			R.row(0) =  R.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
-			R.row(1) =  R.row(2).cross(R.row(0)).normalized();
-			R.transposeInPlace();
-
-			Vector3d pos2 = pos + Vector3d{1e-5,1e-6,1e-7};
 			Eigen::Vector4f color1 { 0,1,0,1 };
 			Eigen::Vector4f color2 { 0,0,1,.5 };
-			frustumSet->setPose(0, pos, R);
+
 			frustumSet->setIntrin(0, spec.w,spec.h, spec.fx(),spec.fy());
 			frustumSet->setColor(0,color1.data());
-			frustumSet->setPose(1, pos2, R);
 			frustumSet->setIntrin(1, spec.w,spec.h, spec.fx(),spec.fy());
 			frustumSet->setColor(1,color2.data());
+			setFrustumPoses(0);
 		}
 
 		earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
@@ -163,6 +173,10 @@ struct GlobeApp : public ImguiApp {
 		textSet->setText(0, "a random number " + std::to_string(rand()%999), txtMatrix.data(), color_);
 		txtMatrix.topRightCorner<3,1>() <<  sin(fd.time)*.001 + 0.163815,-0.759765 ,0.633448 - .001;
 		textSet->setText(1, "a SeCoNd random number " + std::to_string(rand()%999), txtMatrix.data(), color_);
+
+		static double _tt = 0;
+		_tt += .01;
+		setFrustumPoses(_tt);
 
 		// Test caster stuff.
 		

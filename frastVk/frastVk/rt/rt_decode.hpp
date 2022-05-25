@@ -185,8 +185,8 @@ inline bool decode_node_to_tile(
 			}
 			for (; 10 > m; m++) md.layerBounds[m] = k;
 			if (md.layerBounds[3] < 1) fmt::print(" - truncating {} to {} lb len {}, k {}, m {}\n", md.ind_buffer_cpu.size(), md.layerBounds[3], len,k,m);
-			bad |= md.layerBounds[3] == 0;
-			if (bad) continue;
+			// bad |= md.layerBounds[3] == 0;
+			// if (bad) continue;
 			md.ind_buffer_cpu.resize(md.layerBounds[3]);
 		}
 

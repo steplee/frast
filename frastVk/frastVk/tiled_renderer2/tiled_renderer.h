@@ -118,6 +118,7 @@ struct TileDataLoader {
 
 		bool loadColor(Tile* tile);
 		bool loadElevAndMeta(Tile* tile);
+		bool loadElevAndMetaNoDted(Tile* tile);
 
 		std::thread internalThread;
 		void internalLoop(const std::string& colorDsetPath, const std::string& elevDsetPath);

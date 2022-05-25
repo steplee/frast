@@ -98,6 +98,7 @@ struct RtUpdateContext {
 	float two_tan_half_fov_y;
 
 	float sseThresholdClose, sseThresholdOpen;
+	int nAsked = 0;
 };
 
 struct PooledTileData;
@@ -185,6 +186,7 @@ class RtTile {
 	// The altitude is filled in by sampling the parents'.
 	// Contains min/max box (expanded to 8 points of a cube in update())
 	Eigen::Matrix<float, 2,3, Eigen::RowMajor> corners;
+	Eigen::Matrix<float, 2,3, Eigen::RowMajor> outerCorners;
 	float lastSSE = -1;
 	float geoError;
 
@@ -207,7 +209,7 @@ class RtTile {
 	float computeSSE(const RtUpdateContext& cam);
 	inline bool hasChildren() const { return children.size() != 0; }
 
-	void update(const RtUpdateContext& cam, RtTile* parent);
+	void update(RtUpdateContext& cam, RtTile* parent);
 	void render(RtRenderContext& trc);
 	void renderDbg(RtRenderContext& trc);
 
@@ -368,6 +370,8 @@ class RtRenderer : public Castable
 
 		// inline void setCasterInRenderThread(CasterWaitingData& cwd) { Castable::setCasterInRenderThread(cwd,app); }
 
+		int numWaitingAsks(bool lock = true);
+
 	private:
 		RtCfg cfg;
 		BaseVkApp* app;
@@ -389,6 +393,7 @@ class RtRenderer : public Castable
 		RtTile *root = nullptr;
 
 		RtDataLoader dataLoader;
+		int pushedAsks=0, handledResults=0;
 
 		void init_caster_stuff();
 

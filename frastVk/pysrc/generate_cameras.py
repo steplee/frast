@@ -8,6 +8,9 @@ import proto.rocktree_pb2 as RT
 from utils import *
 from decode import *
 
+R1         = 6378137.0
+R2         = 6356752.314245179
+
 def add_row(a):
     return np.vstack((a,np.array((0,0,0,1),dtype=a.dtype)))
 
@@ -78,7 +81,7 @@ class PoseSet:
         self.base = None
         self.perturbedPoses = []
         self.logDiffs = []
-        self.cameraIntrin = None # w h fx fy cx cy
+        self.cameraIntrin = None # w h fx fy cx cy near far
     def pre_serialize(self):
         # return json.dumps({
         return ({
@@ -199,6 +202,8 @@ class Generator():
         hfov = np.deg2rad(np.random.sample() * 50 + 30) # Between 50 and 80
         fx = fy = self.wh / (2. * np.tan(hfov * .5))
         cx, cy = self.wh / 2, self.wh / 2
+        near = 10
+        far = 10000
 
         # The middle, in unit ecef
         anchor = tileData.middle()
@@ -241,11 +246,9 @@ class Generator():
             res.perturbedPoses.append(perturbed_pose)
             # print(' - Relative Pose:\n', np.linalg.inv(add_row(perturbed_pose)) @ base_pose4)
             res.logDiffs.append(np.concatenate((dp,rvec)))
-            res.cameraIntrin = [self.wh,self.wh, fx,fy, cx,cy]
+            res.cameraIntrin = [self.wh,self.wh, fx,fy, cx,cy, near,far]
 
         scaler = np.eye(3)
-        R1         = 6378137.0
-        R2         = 6356752.314245179
         scaler[0,0] = 1./R1
         scaler[1,1] = 1./R1
         scaler[2,2] = 1./R1
@@ -265,7 +268,7 @@ class Generator():
             ent = self.generate_one()
             entries.append(ent)
 
-        d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries]}
+        d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries], 'earthMajorRadius': R1 }
         try: os.makedirs(self.args.outDir)
         except: pass
         with open(os.path.join(self.args.outDir, 'entries.json'), 'w') as fp:

@@ -20,7 +20,9 @@ class FrustumSet {
 
 		void setColor(int n, const float color[4]);
 		void setIntrin(int n, float w, float h, float fx, float fy);
-		void setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R);
+		void setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R, bool pushPath=true);
+		void setNextPath(int n, const Vector4f& color);
+
 
 	private:
 
@@ -44,6 +46,17 @@ class FrustumSet {
 		ResidentBuffer matrices;
 
 		std::vector<double> modelMatrices;
+
+		PipelineStuff pathPipelineStuff;
+		ResidentBuffer paths;
+		int maxPaths = 8;
+		int maxPathLen = 4096;
+		std::vector<int> idToCurrentPath;
+		std::vector<int> pathLens;
+		std::vector<Vector4f> pathColors;
+		std::vector<Vector4f> pathColorsById;
+		int pathIdx = 0;
+
 };
 
 
