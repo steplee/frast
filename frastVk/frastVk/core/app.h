@@ -12,8 +12,9 @@
 #include "frastVk/core/render_state.h"
 
 struct ResidentMesh;
+class BaseVkApp;
 
-uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags);
+uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags, uint32_t maskOrZero=0);
 
 struct SimpleRenderPass {
 	vk::raii::RenderPass pass { nullptr };
@@ -57,6 +58,25 @@ struct PipelineStuff {
 
 	bool setup_viewport(float w, float h, float x=0, float y=0);
 	bool build(PipelineBuilder& builder, vk::raii::Device& device, const vk::RenderPass& pass, uint32_t subpass);
+};
+
+struct RaytracePipelineStuff {
+	vk::Viewport viewport;
+	vk::Rect2D scissor;
+	vk::raii::PipelineLayout pipelineLayout { nullptr };
+	vk::raii::Pipeline pipeline { nullptr };
+
+	vk::raii::ShaderModule closestHit{nullptr}, anyHist{nullptr}, miss{nullptr}, gen{nullptr};
+
+	std::vector<vk::PushConstantRange> pushConstants;
+	std::vector<vk::DescriptorSetLayout> setLayouts;
+
+	ResidentImage storageImage;
+	ResidentBuffer genSBT, missSBT, chitSBT;
+	uint32_t handleSizeAligned;
+
+	bool setup_viewport(float w, float h, float x=0, float y=0);
+	bool build(BaseVkApp* app);
 };
 
 bool createShaderFromStrings(
@@ -133,6 +153,21 @@ struct AbstractSwapchain {
 	int curIdx = 0;
 };
 
+struct RayTracingInfo {
+	bool enablePipeline = false;
+	bool enableQuery = false;
+
+	// Read-only
+	bool haveDeferredHostOps = false;
+	bool havePipelineLibrary = false;
+
+	vk::PhysicalDeviceAccelerationStructureFeaturesKHR accFeatures;
+	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rayPiplelineFeatures;
+	vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures;
+
+	vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayPipelineProps;
+};
+
 /*
  *
  * A base class for a vulkan graphics app.
@@ -191,7 +226,12 @@ struct BaseVkApp : public Window {
 
 	bool getDepthImage(ResidentImage& out, const FrameData& fd, const RenderState& rs);
 
+	// Subclass should set flags in here if desired before calling initVk();
+	RayTracingInfo rti;
+	inline RayTracingInfo& getRayTracingInfo() { return rti; }
+
 	protected:
+
 		bool require_16bit_shader_types = true;
 		bool make_instance();
 		bool make_gpu_device();
@@ -202,6 +242,9 @@ struct BaseVkApp : public Window {
 
 		bool make_frames();
 		bool make_basic_render_stuff();
+
+		// Uses the above flags
+		void setupRayTracingInfo();
 
 		FrameData& acquireFrame();
 

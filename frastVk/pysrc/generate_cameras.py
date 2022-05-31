@@ -268,7 +268,7 @@ class Generator():
             ent = self.generate_one()
             entries.append(ent)
 
-        d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries], 'earthMajorRadius': R1 }
+        d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries]}
         try: os.makedirs(self.args.outDir)
         except: pass
         with open(os.path.join(self.args.outDir, 'entries.json'), 'w') as fp:

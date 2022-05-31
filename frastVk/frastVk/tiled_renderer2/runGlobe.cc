@@ -24,7 +24,10 @@ using namespace tr2;
 #include "extra/primitives/ellipsoid.h"
 #include "extra/text/textSet.h"
 
-struct GlobeApp : public ImguiApp {
+// using BaseApp = VkApp;
+using BaseApp = ImguiApp;
+
+struct GlobeApp : public BaseApp {
 
 		std::shared_ptr<ClipMapRenderer1> clipmap;
 		std::shared_ptr<TiledRenderer> tiledRenderer;
@@ -36,7 +39,7 @@ struct GlobeApp : public ImguiApp {
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) {
 			if (key == GLFW_KEY_M and action == GLFW_PRESS) showMenu = !showMenu;
-			return ImguiApp::handleKey(key,scancode,action,mods);
+			return BaseApp::handleKey(key,scancode,action,mods);
 		}
 
 	Vector3d frustumPos0 { 0.17287, -0.754957,  0.631011 };
@@ -60,7 +63,7 @@ struct GlobeApp : public ImguiApp {
 
 
 	inline virtual void initVk() override {
-		ImguiApp::initVk();
+		BaseApp::initVk();
 		initFinalImage();
 		//set position of camera offset by loaded mld ctr
 
@@ -107,23 +110,27 @@ struct GlobeApp : public ImguiApp {
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
 
-		particleCloud = std::make_shared<ParticleCloudRenderer>(this, 1024*64);
-		std::vector<float> particles4;
-		Vector3d p { camera->viewInv()[0*4+3], camera->viewInv()[1*4+3], camera->viewInv()[2*4+3] };
-		Vector3d t = p.normalized();
-		p = p * .003 + t * .997;
-		RowMatrix3d P = RowMatrix3d::Identity() - t*t.transpose();
-		const int N = 1024*64;
-		for (int i=0; i<N; i++) {
-			Vector3d x = p + P * Vector3d::Random() * .03;
-			particles4.push_back((float)x[0]);
-			particles4.push_back((float)x[1]);
-			particles4.push_back((float)x[2]);
-			particles4.push_back(((float)i)/N);
-		}
-		particleCloud->uploadParticles(particles4);
-
 		if (1) {
+			particleCloud = std::make_shared<ParticleCloudRenderer>(this, 1024*64);
+			std::vector<float> particles4;
+			Vector3d p { camera->viewInv()[0*4+3], camera->viewInv()[1*4+3], camera->viewInv()[2*4+3] };
+			Vector3d t = p.normalized();
+			p = p * .003 + t * .997;
+			RowMatrix3d P = RowMatrix3d::Identity() - t*t.transpose();
+			const int N = 1024*64;
+			for (int i=0; i<N; i++) {
+				Vector3d x = p + P * Vector3d::Random() * .03;
+				particles4.push_back((float)x[0]);
+				particles4.push_back((float)x[1]);
+				particles4.push_back((float)x[2]);
+				particles4.push_back(((float)i)/N);
+			}
+			particleCloud->uploadParticles(particles4);
+			// particleCloud->setRenderMode(ParticleRenderMode::ePoints);
+			// particleCloud->setRenderMode(ParticleRenderMode::eNone);
+		}
+
+		if (0) {
 			frustumSet = std::make_shared<FrustumSet>(this, 2);
 
 			Eigen::Vector4f color1 { 0,1,0,1 };
@@ -136,8 +143,10 @@ struct GlobeApp : public ImguiApp {
 			setFrustumPoses(0);
 		}
 
-		earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
-		earthEllipsoid->init(0);
+		if (0) {
+			earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
+			earthEllipsoid->init(0);
+		}
 
 		ellpSet = std::make_shared<EllipsoidSet>(this);
 		ellpSet->init(mainSubpass());
@@ -176,7 +185,8 @@ struct GlobeApp : public ImguiApp {
 
 		static double _tt = 0;
 		_tt += .01;
-		setFrustumPoses(_tt);
+		if (frustumSet)
+			setFrustumPoses(_tt);
 
 		// Test caster stuff.
 		
@@ -245,8 +255,8 @@ struct GlobeApp : public ImguiApp {
 
 		// If we use a frustum, it must be rendered in a pass, so we can use the simpleRenderPass from VkApp.
 		vk::CommandBuffer frame_cmd = *fd.cmd;
-		// frame_cmd.reset();
-		// frame_cmd.begin(vk::CommandBufferBeginInfo{});
+		frame_cmd.reset();
+		frame_cmd.begin(vk::CommandBufferBeginInfo{});
 
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
 		vk::ClearValue clears_[2] = {
@@ -285,13 +295,27 @@ struct GlobeApp : public ImguiApp {
 		if (ellpSet) ellpSet->renderInPass(rs, frame_cmd);
 		if (textSet) textSet->render(rs, frame_cmd);
 		frame_cmd.endRenderPass();
+		frame_cmd.end();
+
 		// frame_cmd.end();
 
 
 		std::vector<vk::CommandBuffer> cmds = {
 			frame_cmd
 		};
-		cmds.push_back( particleCloud->render(renderState, *simpleRenderPass.framebuffers[renderState.frameData->scIndx]) );
+		if (particleCloud) cmds.push_back( particleCloud->render(renderState, *simpleRenderPass.framebuffers[renderState.frameData->scIndx]) );
+		else {
+			vk::ImageMemoryBarrier barrier;
+			barrier.image = sc.getImage(rs.frameData->scIndx);
+			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			// barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+			// barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+			// frame_cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+		}
 
 
 		/*
@@ -337,9 +361,19 @@ struct GlobeApp : public ImguiApp {
 	}
 
 	ResidentImage finalImage, finalImageDepth;
+	ResidentBuffer finalImageBuf;
 	void initFinalImage() {
 		if (headless) finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
 		if (headless) finalImageDepth.createAsDepthBuffer(uploader, windowHeight, windowWidth, true, vk::ImageUsageFlagBits::eTransferDst);
+		if (headless) {
+			finalImageBuf.setAsStorageBuffer(windowHeight*windowWidth*4, true);
+			finalImageBuf.memPropFlags =
+					  vk::MemoryPropertyFlagBits::eHostVisible
+					| vk::MemoryPropertyFlagBits::eHostCached
+					;
+			finalImageBuf.usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
+			finalImageBuf.create(deviceGpu, *pdeviceGpu, queueFamilyGfxIdxs);
+		}
 	}
 	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
 		auto &srcImg = *sc.headlessImages[fd.scIndx];
@@ -349,18 +383,24 @@ struct GlobeApp : public ImguiApp {
 		vk::Extent3D ex = vk::Extent3D{windowWidth,windowHeight,1};
 		vk::Offset3D off{};
 
-		finalImage.copyFrom(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
-		finalImageDepth.copyFrom(copyCmd, depthImg, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
+		// finalImage.copyFrom(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+		auto signalSema = &*fd.scAcquireSema;
+		if (not headless)
+			signalSema = nullptr;
+		finalImageBuf.copyFromImage(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+		finalImageDepth.copyFrom(copyCmd, depthImg, *deviceGpu, *queueGfx, &fence, 0, signalSema, ex, off, vk::ImageAspectFlagBits::eDepth);
 
 		if (1) {
-			uint8_t* dbuf = (uint8_t*) finalImage.mem.mapMemory(0, windowHeight*windowWidth*4, {});
+			// uint8_t* dbuf = (uint8_t*) finalImage.mem.mapMemory(0, windowHeight*windowWidth*4, {});
+			uint8_t* dbuf = (uint8_t*) finalImageBuf.mem.mapMemory(0, windowHeight*windowWidth*4, {});
 			uint8_t* buf = (uint8_t*) malloc(windowWidth*windowHeight*3);
 			for (int y=0; y<windowHeight; y++)
 				for (int x=0; x<windowWidth; x++)
 					for (int c=0; c<3; c++) {
 						buf[y*windowWidth*3+x*3+c] = dbuf[y*windowWidth*4+x*4+c];
 					}
-			finalImage.mem.unmapMemory();
+			// finalImage.mem.unmapMemory();
+			finalImageBuf.mem.unmapMemory();
 
 			auto fd_ = open("tst.bmp", O_RDWR | O_TRUNC | O_CREAT, S_IRWXU);
 			write(fd_, buf, windowWidth*windowHeight*3);
@@ -368,7 +408,7 @@ struct GlobeApp : public ImguiApp {
 			free(buf);
 		}
 
-		if (1) {
+		if (0) {
 			float* dbuf = (float*) finalImageDepth.mem.mapMemory(0, windowHeight*windowWidth*4, {});
 			float* buf = (float*) malloc(windowWidth*windowHeight*4);
 			for (int y=0; y<windowHeight; y++)

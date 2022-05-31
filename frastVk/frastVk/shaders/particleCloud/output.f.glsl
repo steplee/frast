@@ -8,16 +8,18 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 layout (location = 0) out vec4 outFragColor;
 
 layout(std430, push_constant) uniform PushConstants {
-	float w;
-	float h;
-	float s;
-	float d;
+	vec4 whsd;
+	/* float w; */
+	/* float h; */
+	/* float s; */
+	/* float d; */
 } pushConstants;
 
 void main() {
+	float w = pushConstants.whsd[0], h = pushConstants.whsd[1], s = pushConstants.whsd[2], d = pushConstants.whsd[3];
 	/* vec2 uv = v_uv * vec2(float(pushConstants.w) - 1.0, float(pushConstants.h) - 1.0); */
 	/* vec2 uv = v_uv;// * pushConstants.s; */
-	vec2 uv = v_uv * pushConstants.w;
+	vec2 uv = v_uv * w;
 	vec4 tt = textureLod(tex, uv, 0);
 	float intensity = tt.r;
 
@@ -37,6 +39,9 @@ void main() {
 	/* c.a = c.a * pushConstants.d; */
 	//c.g += pow(clamp(10. * (.3 - c.b), 0., 1.), 2.0) * a;
 	/* c.a = length(c.rgb); */
-	c.a *= sqrt(length(c.rgb) * .5) * pushConstants.d;
+	c.a *= sqrt(length(c.rgb) * .5) * d;
 	outFragColor = clamp(c * 1., 0.,1.);
+	/* outFragColor = vec4(.5, 0., 0., .5); */
+
+	/* outFragColor = vec4(1., 0., 0., 0.1); */
 }

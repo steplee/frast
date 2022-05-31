@@ -30,6 +30,11 @@ void ImguiApp::initVk() {
 
 	if (headless) return;
 
+	vk::CommandPoolCreateInfo poolInfo { vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamilyGfxIdxs[0] };
+	cmdPool = std::move(deviceGpu.createCommandPool(poolInfo));
+	vk::CommandBufferAllocateInfo bufInfo { *cmdPool, vk::CommandBufferLevel::ePrimary, (uint32_t)scNumImages };
+	cmdBuffers = std::move(deviceGpu.allocateCommandBuffers(bufInfo));
+
 	{
 		vk::DescriptorPoolSize pool_sizes[] =
         {
@@ -76,10 +81,11 @@ void ImguiApp::initVk() {
 			{},
 				scSurfaceFormat.format,
 				vk::SampleCountFlagBits::e1,
-				vk::AttachmentLoadOp::eNoneEXT, vk::AttachmentStoreOp::eStore,
+				vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore,
 				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-				vk::ImageLayout::eUndefined,
-				vk::ImageLayout::ePresentSrcKHR };
+				vk::ImageLayout::eColorAttachmentOptimal,
+				vk::ImageLayout::ePresentSrcKHR
+		};
 
 		vk::AttachmentReference colorAttachmentRef { 0, vk::ImageLayout::eColorAttachmentOptimal };
 
@@ -100,7 +106,6 @@ void ImguiApp::initVk() {
 				vk::AttachmentLoadOp::eClear,
 				vk::AttachmentStoreOp::eDontCare,
 				vk::ImageLayout::eUndefined,
-				//vk::ImageLayout::eColorAttachmentOptimal,
 				vk::ImageLayout::eDepthStencilAttachmentOptimal };
 
 		vk::AttachmentReference depthAttachmentRef {
@@ -232,17 +237,16 @@ void ImguiApp::render() {
 	FrameData& fd = acquireFrame();
 	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
 
-	vk::raii::CommandBuffer &cmd = fd.cmd;
-	vk::CommandBufferBeginInfo beginInfo { {}, {} };
-	cmd.reset();
-	cmd.begin(beginInfo);
-
 	// Update Camera Buffer
 	if (1) {
 		renderState.frameBegin(&fd);
 	}
 	auto cmds = doRender(renderState);
 
+
+	vk::raii::CommandBuffer &uiCmd = cmdBuffers[fd.scIndx];
+	uiCmd.reset();
+	uiCmd.begin({});
 
 	if (not headless) {
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
@@ -252,13 +256,41 @@ void ImguiApp::render() {
 		};
 
 		if (showMenu) {
-			cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-			renderUi(renderState, *renderState.frameData->cmd);
-			cmd.endRenderPass();
-		} else ImGui::Render();
-	}
+			uiCmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
+			renderUi(renderState, *uiCmd);
+			uiCmd.endRenderPass();
+		} else {
 
-	cmd.end();
+			ImGui::Render();
+
+			vk::ImageMemoryBarrier barrier;
+			barrier.image = sc.getImage(renderState.frameData->scIndx);
+			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+			barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+			uiCmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+		}
+	}
+	uiCmd.end();
+	cmds.push_back(*uiCmd);
+
+	/*
+	vk::ImageMemoryBarrier barrier;
+	barrier.image = sc.getImage(renderState.frameData->scIndx);
+	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+	barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+	*/
+
 
 	executeCommandsThenPresent(cmds, renderState);
 

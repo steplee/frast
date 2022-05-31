@@ -25,7 +25,8 @@ if (IS_ARM)
 	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersArm)
 else()
 	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -march=native -fPIC -fopenmp ")
-	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64)
+	# set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64)
+	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64_2)
 endif()
 
 include_directories(${COPIED_HEADERS_DIR}/vulkanHeadersCopy)
@@ -37,7 +38,9 @@ add_definitions(-DUSE_TURBOJPEG=1)
 find_package(PkgConfig REQUIRED)
 # pkg_check_modules(XCB REQUIRED xcb xcb-keysyms)
 #find_package(Vulkan REQUIRED)
-set(VULKAN_LIBS vulkan)
+# set(VULKAN_LIBS vulkan)
+link_directories(/opt/vulkanSdk/lib)
+set(VULKAN_LIBS /opt/vulkanSdk/lib/libvulkan.so.1.3.211)
 
 option(VULKAN_DEBUG "debug layer" ON)
 if (VULKAN_DEBUG)
@@ -83,6 +86,7 @@ add_library(frastVk
 	frastVk/tiled_renderer2/tiled_renderer.cc
 
 	frastVk/rt/rt.cc
+	frastVk/rt/rt_raytrace.cc
 	frastVk/rt/protos/rocktree.pb.cc
 
 	frastVk/extra/particleCloud/particleCloud.cc
@@ -91,6 +95,9 @@ add_library(frastVk
 	frastVk/extra/caster/castable.cc
 	frastVk/extra/primitives/earthEllipsoid.cc
 	frastVk/extra/primitives/ellipsoid.cc
+
+	# frastVk/shaders/compiled/all.cc
+	frastVk/core/load_shader_funcs.cc
 
   ${IMGUI_SOURCES}
 )

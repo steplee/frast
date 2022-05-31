@@ -67,11 +67,20 @@ uint64_t scalarSizeOfFormat(const vk::Format& f) {
  *
  * =================================================== */
 
+
+void* ResidentBuffer::map() {
+	mapped = (void*) mem.mapMemory(0, residentSize, {});
+	return mapped;
+}
+void ResidentBuffer::unmap() {
+	assert(mapped);
+	mem.unmapMemory();
+}
+
 void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices) {
 	assert(givenSize>0);
 
 	uint32_t idx = 0;
-	idx = findMemoryTypeIndex(pd, memPropFlags);
 
 
 	vk::BufferCreateInfo binfo {
@@ -85,7 +94,16 @@ void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, c
 	residentSize = req.size;
 	//printf(" - allocating buffer to memory type idx %u, givenSize %lu, residentSize %lu\n", idx, givenSize, residentSize);
 
+	uint32_t memMask = req.memoryTypeBits;
+	idx = findMemoryTypeIndex(pd, memPropFlags, memMask);
+
 	vk::MemoryAllocateInfo allocInfo { residentSize, idx };
+
+	vk::MemoryAllocateFlagsInfo memAllocInfo { vk::MemoryAllocateFlagBits::eDeviceAddress };
+	if (usageFlags & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
+		allocInfo.pNext = &memAllocInfo;
+	}
+
 	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
 
 	buffer.bindMemory(*mem, 0);
@@ -110,6 +128,9 @@ void ResidentBuffer::setAsUniformBuffer(uint64_t len, bool mappable) {
 void ResidentBuffer::setAsStorageBuffer(uint64_t len, bool mappable) {
 	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eStorageBuffer);
 }
+void ResidentBuffer::setAsAccelBuffer(uint64_t len, bool mappable) {
+	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
+}
 void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage) {
 	givenSize = len;
 	memPropFlags = mappable ? vk::MemoryPropertyFlagBits::eHostVisible
@@ -117,6 +138,71 @@ void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::Buff
 	usageFlags = usage;
 	if (not mappable) usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
 }
+
+bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& other,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+		vk::ImageCopy region {
+			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				off,
+				vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				vk::Offset3D{},
+				ex,
+		};
+		/*
+    VULKAN_HPP_CONSTEXPR BufferImageCopy( VULKAN_HPP_NAMESPACE::DeviceSize             bufferOffset_      = {},
+                                          uint32_t                                     bufferRowLength_   = {},
+                                          uint32_t                                     bufferImageHeight_ = {},
+                                          VULKAN_HPP_NAMESPACE::ImageSubresourceLayers imageSubresource_  = {},
+                                          VULKAN_HPP_NAMESPACE::Offset3D               imageOffset_       = {},
+                                          VULKAN_HPP_NAMESPACE::Extent3D imageExtent_ = {} ) VULKAN_HPP_NOEXCEPT
+		*/
+		vk::BufferImageCopy copyInfo {
+				0,
+				{}, {}, // Inferred from image
+				vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
+				off, ex
+		};
+
+		copyCmd.begin(vk::CommandBufferBeginInfo{});
+
+		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
+			vk::ImageMemoryBarrier {
+				{},{},
+				{}, vk::ImageLayout::eTransferSrcOptimal,
+				{}, {},
+				other,
+				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}
+			}
+		};
+		copyCmd.pipelineBarrier(
+				vk::PipelineStageFlagBits::eAllGraphics,
+				// vk::PipelineStageFlagBits::eAllGraphics,
+				vk::PipelineStageFlagBits::eHost,
+				vk::DependencyFlagBits::eDeviceGroup,
+				{}, {}, imgBarriers);
+
+		copyCmd.copyImageToBuffer(other, vk::ImageLayout::eTransferSrcOptimal, *buffer, {1,&copyInfo});
+		copyCmd.end();
+
+		vk::PipelineStageFlags waitMasks[1] = {vk::PipelineStageFlagBits::eAllGraphics};
+		uint32_t wait_semas = waitSema == nullptr ? 0 : 1;
+		uint32_t signal_semas = signalSema == nullptr ? 0 : 1;
+		vk::SubmitInfo submitInfo {
+				{wait_semas, waitSema}, // wait sema
+				{wait_semas, waitMasks},
+				{1u, &copyCmd},
+				{signal_semas, signalSema} // signal sema
+		};
+		uint32_t nfence = fence == nullptr ? 0 : 1;
+		if (nfence) {
+			q.submit(submitInfo, *fence);
+			d.waitForFences({nfence, fence}, true, 999999999999);
+			d.resetFences({nfence, fence});
+		} else
+			q.submit(submitInfo);
+
+		return false;
+}
+
 
 
 /* ===================================================
@@ -376,6 +462,7 @@ void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::For
 	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
 	usageFlags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
 	aspectFlags = vk::ImageAspectFlagBits::eColor;
+	// memPropFlags = vk::MemoryPropertyFlagBits::eHostCoherent | vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCached;
 	memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
 
 	create_(uploader);
@@ -413,13 +500,14 @@ void ResidentImage::create_(Uploader& uploader) {
 	auto reqs = image.getMemoryRequirements();
 	uint64_t size_ = reqs.size;
 	// auto memPropFlags_ = memPropFlags | ((vk::Flags<vk::MemoryPropertyFlagBits>) reqs.memoryTypeBits);
-	auto memPropFlags_ = memPropFlags ;
+	uint32_t memMask = reqs.memoryTypeBits;
+	auto memPropFlags_ = memPropFlags;
 	//printf(" - image computed size %lu, vulkan given size %lu\n", size_);
 
 	// Memory
 	uint32_t idx = 0;
 	uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
-	idx = findMemoryTypeIndex(pd, memPropFlags_);
+	idx = findMemoryTypeIndex(pd, memPropFlags_, memMask);
 	// printf(" - creating image buffers to memory type idx %u\n", idx);
 	vk::MemoryAllocateInfo allocInfo { std::max(minSize,size()), idx };
 	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
@@ -448,6 +536,73 @@ void ResidentImage::create_(Uploader& uploader) {
 	}
 
 	//return false;
+}
+
+void ResidentImage::createAsStorage(vk::raii::Device& d, vk::raii::PhysicalDevice& pd, int h, int w, vk::Format f, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
+	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
+	format = f;
+	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
+	usageFlags = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | extraFlags;
+	aspectFlags = vk::ImageAspectFlagBits::eColor;
+	memPropFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+	// memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+	// memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
+
+	{
+		vk::ImageCreateInfo imageInfo = { };
+		imageInfo.imageType = vk::ImageType::e2D;
+		imageInfo.format = format;
+		imageInfo.extent = extent;
+		imageInfo.mipLevels = 1;
+		imageInfo.arrayLayers = 1;
+		imageInfo.samples = vk::SampleCountFlagBits::e1;
+		imageInfo.tiling = memPropFlags == vk::MemoryPropertyFlagBits::eHostVisible ? vk::ImageTiling::eLinear : vk::ImageTiling::eOptimal;
+		imageInfo.usage = usageFlags;
+
+		image = std::move(d.createImage(imageInfo));
+
+		auto reqs = image.getMemoryRequirements();
+		uint64_t size_ = reqs.size;
+		uint32_t memMask = reqs.memoryTypeBits;
+		auto memPropFlags_ = memPropFlags;
+
+		// Memory
+		uint32_t idx = 0;
+		uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
+		idx = findMemoryTypeIndex(*pd, memPropFlags_, memMask);
+		vk::MemoryAllocateInfo allocInfo { std::max(minSize,size()), idx };
+		mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
+
+		image.bindMemory(*mem, 0);
+
+		// ImageView
+		// Only create if usageFlags is compatible
+		if (
+				(usageFlags &  vk::ImageUsageFlagBits::eSampled) or
+				(usageFlags &  vk::ImageUsageFlagBits::eColorAttachment) or
+				(usageFlags &  vk::ImageUsageFlagBits::eDepthStencilAttachment) or
+				(usageFlags &  vk::ImageUsageFlagBits::eStorage)) {
+			vk::ImageViewCreateInfo viewInfo = {};
+			viewInfo.viewType = vk::ImageViewType::e2D;
+			viewInfo.image = *image;
+			viewInfo.format = viewFormat;
+			// viewInfo.format = format == vk::Format::eR8Uint ? vk::Format::eR8G8B8A8Uint : format;
+			viewInfo.subresourceRange.baseMipLevel = 0;
+			viewInfo.subresourceRange.levelCount = 1;
+			viewInfo.subresourceRange.baseArrayLayer = 0;
+			viewInfo.subresourceRange.layerCount = 1;
+			viewInfo.subresourceRange.aspectMask = aspectFlags;
+
+			view = std::move(d.createImageView(viewInfo));
+		}
+	}
+
+	vk::SamplerCreateInfo samplerInfo {};
+	samplerInfo.magFilter = vk::Filter::eLinear;
+	samplerInfo.minFilter = vk::Filter::eLinear;
+	samplerInfo.addressModeV = samplerInfo.addressModeU = addr;
+	samplerInfo.unnormalizedCoordinates = unnormalizedCoordinates;
+	sampler = std::move(vk::raii::Sampler{d, samplerInfo});
 }
 
 bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
@@ -534,13 +689,13 @@ Uploader::Uploader(BaseVkApp* app_, vk::Queue q_) : app(app_), q(q_)
 
 void Uploader::uploadScratch(void* data, size_t len) {
 	if (len > scratchBuffer.residentSize) {
-		//if (scratchBuffer.residentSize == 0) {
 			scratchBuffer.setAsStorageBuffer(len, true);
-			scratchBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
+			scratchBuffer.usageFlags = scratchFlags;
 			scratchBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		//}
 	}
-	scratchBuffer.upload(data, len);
+	if (data)
+		scratchBuffer.upload(data, len);
 }
 
 void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, uint64_t off) {

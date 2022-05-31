@@ -33,6 +33,10 @@ struct ResidentBuffer {
 	vk::raii::BufferView view { nullptr };
 	vk::raii::DeviceMemory mem { nullptr };
 
+	void* map();
+	void unmap();
+	void* mapped = nullptr;
+
 
 
 	// Buffer details
@@ -41,7 +45,7 @@ struct ResidentBuffer {
 	vk::SharingMode sharingMode = vk::SharingMode::eExclusive;
 	vk::BufferUsageFlags usageFlags;
 	// Memory details: easy way to upload is to mapMemory, which requires host visible.
-	vk::MemoryPropertyFlagBits memPropFlags;
+	vk::MemoryPropertyFlags memPropFlags;
 	// BufferView details : TODO
 	//vk::ImageAspectFlags aspectFlags;
 
@@ -51,9 +55,16 @@ struct ResidentBuffer {
 	void setAsUniformBuffer(uint64_t len, bool mappable=false);
 	void setAsOtherBuffer(uint64_t len, bool mappable=false);
 	void setAsStorageBuffer(uint64_t len, bool mappable=false);
+	void setAsAccelBuffer(uint64_t len, bool mappable=false);
 	void setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage);
 	void create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices);
 	void upload(void* cpuData, uint64_t len, uint64_t offset=0);
+
+	//void copyFromImage(ResidentImage& other);
+	bool copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
+			const vk::Semaphore* waitSema, const vk::Semaphore* signalSema,
+			vk::Extent3D ex, vk::Offset3D off={},
+			vk::ImageAspectFlagBits aspect=vk::ImageAspectFlagBits::eColor);
 
 };
 
@@ -65,7 +76,9 @@ struct Uploader {
 
 	BaseVkApp* app = nullptr;
 
-	inline Uploader() {}
+
+	inline Uploader(vk::BufferUsageFlags scratchFlags_ = vk::BufferUsageFlagBits::eTransferSrc) : scratchFlags(scratchFlags_) {
+	}
 	Uploader(BaseVkApp* app, vk::Queue q_);
 
 	Uploader(const Uploader&) = delete;
@@ -81,6 +94,7 @@ struct Uploader {
 		q = o.q;
 		return *this;
 	}
+	vk::BufferUsageFlags scratchFlags;
 	ResidentBuffer scratchBuffer;
 	void uploadScratch(void* data, size_t len);
 
@@ -179,7 +193,7 @@ struct ResidentImage {
 	vk::ImageUsageFlags usageFlags;
 	vk::Extent3D extent;
 	// Memory details
-	vk::MemoryPropertyFlagBits memPropFlags = vk::MemoryPropertyFlagBits::eHostVisible;
+	vk::MemoryPropertyFlags memPropFlags;
 	// ImageView details
 	vk::ImageAspectFlags aspectFlags;
 	// Passed to sampler.
@@ -194,6 +208,7 @@ struct ResidentImage {
 
 	void createAsDepthBuffer(Uploader& uploader, int h, int w, bool cpuVisible=false, vk::ImageUsageFlagBits extraFlags={});
 	void createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
+	void createAsStorage(vk::raii::Device& dev, vk::raii::PhysicalDevice& pdev, int h, int w, vk::Format f, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void create_(Uploader& uploader);
 

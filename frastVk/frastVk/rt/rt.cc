@@ -67,6 +67,7 @@ PooledTileData::PooledTileData(RtCfg &cfg) : cfg(cfg) {
 
 
 bool PooledTileData::withdraw(std::vector<uint32_t>& ids, bool isClose) {
+	std::lock_guard<std::mutex> lck(mtx);
 	for (int i=0; i<ids.size(); i++) {
 		if (
 				(isClose and available.size() == 0)
@@ -77,12 +78,28 @@ bool PooledTileData::withdraw(std::vector<uint32_t>& ids, bool isClose) {
 	return false;
 }
 bool PooledTileData::deposit(std::vector<uint32_t>& ids) {
+	std::lock_guard<std::mutex> lck(mtx);
 	for (int i=0; i<ids.size(); i++) {
+		assert(ids[i] >= 0);
+		assert(ids[i] < cfg.maxTiles);
 		available.push_back(ids[i]);
 		if (available.size() >= cfg.maxTiles)
 			throw std::runtime_error("Pushed id that set over initial maxTiles, should not happen");
 	}
 	return false;
+}
+int PooledTileData::tellInUse(std::vector<bool>& out) {
+	std::lock_guard<std::mutex> lck(mtx);
+	out.resize(cfg.maxTiles);
+	int n = cfg.maxTiles;
+	for (int i=0; i<cfg.maxTiles; i++) out[i] = true;
+	for (auto i : available) {
+		if (i >= 0 and i < cfg.maxTiles) {
+			out[i] = false;
+			n--;
+		}
+	}
+	return n;
 }
 
 /* ===================================================
@@ -458,7 +475,7 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 	std::ifstream ifs(path);
 	DecodedTileData dtd;
 	// fmt::print(" - Decoding {}\n",path);
-	if (decode_node_to_tile(ifs, dtd)) {
+	if (decode_node_to_tile(ifs, dtd, cfg.forceTriangleList)) {
 		// throw std::runtime_error("Failed to load tile " + std::string(tile->nc.key));
 		fmt::print(fmt::fg(fmt::color::orange), " - [#loadTile] decode failed, skipping tile.\n");
 		tile->loaded = true;
@@ -516,15 +533,36 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		auto i_size = sizeof(uint16_t)*md.ind_buffer_cpu.size();
 		if (v_size > td.verts.residentSize) {
 			td.verts.setAsVertexBuffer(v_size, false);
+			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 			td.verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		}
 		if (i_size > td.inds.residentSize) {
 			td.inds.setAsIndexBuffer(i_size, false);
+			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		}
 		if (v_size > 0) myUploader.uploadSync(td.verts, md.vert_buffer_cpu.data(), v_size, 0);
 		if (i_size > 0) myUploader.uploadSync(td.inds, md.ind_buffer_cpu.data(), i_size, 0);
 		td.residentInds = md.ind_buffer_cpu.size();
+		td.residentVerts = md.vert_buffer_cpu.size() / sizeof(PackedVertex);
+
+		if (cfg.raytrace) {
+			auto v_size = 12*md.vert_buffer_cpu.size();
+			td.vertsFloatRemoveMe.setAsStorageBuffer(v_size, true);
+			td.vertsFloatRemoveMe.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+			td.vertsFloatRemoveMe.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+			float* verts_ = (float*)td.vertsFloatRemoveMe.map();
+			Eigen::Map<Eigen::Matrix4d> mm(dtd.modelMat);
+			for (int i=0; i<md.vert_buffer_cpu.size(); i++) {
+				PackedVertex vv = md.vert_buffer_cpu[i];
+				Vector4d v = mm * Vector4d{vv.x,vv.y,vv.z,1.};
+				constexpr double R1         = (6378137.0);
+				Vector3f vf = v.hnormalized().cast<float>() / R1;
+				verts_[i*3+0]=vf(0); verts_[i*3+1]=vf(1); verts_[i*3+2]=vf(2);
+				fmt::print(" - {} {} {}\n", vf(0), vf(1), vf(2));
+			}
+			td.vertsFloatRemoveMe.unmap();
+		}
 
 
 
@@ -623,6 +661,11 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		tile->childrenMissing = have_any_children ? RtTile::MissingStatus::NOT_MISSING : RtTile::MissingStatus::MISSING;
 	}
 
+
+	if (cfg.raytrace) {
+		// Build bottom-level acceleration structure.
+		createBottomLevelAS(tile, dtd);
+	}
 
 	// fmt::print(" - [#RtDataLoader::loadTile] successfully loaded {}, lvl {}, geoError {}\n", tile->nc.key, tile->nc.level(), tile->geoError);
 	// fmt::print(" -                          tl {}, r {}\n", tile->corners.row(0), tile->corners.norm());
@@ -874,14 +917,17 @@ void RtRenderer::update(RenderState& rs) {
 
 
 	// Handle loaded opens/closes
+	bool anyChange = false;
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
 		pushedAsks += rtuc.nAsked;
 
 		void* rtgd_buf = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
 
-		if (dataLoader.loadedResults.size())
+		if (dataLoader.loadedResults.size()) {
 			fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results\n", dataLoader.loadedResults.size());
+			anyChange = true;
+		}
 		for (; dataLoader.loadedResults.size(); dataLoader.loadedResults.pop_back()) {
 			auto &res = dataLoader.loadedResults.back();
 			RtTile* parent = res.parent;
@@ -937,16 +983,35 @@ void RtRenderer::update(RenderState& rs) {
 						memcpy(((uint8_t*)rtgd_buf) + 4*4 + sizeof(float)*(16)*(1+cfg.maxTiles) + sizeof(float)*(4*mesh.idx), mesh.uvScaleAndOffset.data(), sizeof(float)*4);
 						mesh.uvScaleAndOffset.clear();
 					}
-					tile->modelMatf.clear();
+					if (not cfg.raytrace)
+						tile->modelMatf.clear();
 				}
 			}
 		}
 		pooledTileData.globalBuffer.mem.unmapMemory();
-
 	}
+
+	if (anyChange and cfg.raytrace) {
+		auto &q = app->queueGfx;
+		auto &cmd = cmdBuffers[0];
+		auto &fence = fences[0];
+		createThenSwapTopLevelAS(cmd, q, fence);
+	}
+
 }
 
 void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
+
+	if (cfg.raytrace) {
+		if (tlasIsSet) {
+			fmt::print(" - Begin renderRaytrace\n");
+			renderRaytrace(rs,cmd);
+			fmt::print(" - After renderRaytrace\n");
+		} else {
+			fmt::print(" - Not raytracing - tlas not set.\n");
+		}
+		return;
+	}
 
 	PipelineStuff* thePipelineStuff = nullptr;
 
@@ -967,7 +1032,6 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 			rs,
 			pooledTileData,
 			*thePipelineStuff,
-			{},
 			cmd,
 	};
 
@@ -1013,7 +1077,6 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 	rtgd.offset[2] = -offset(2);
 	rtgd.offset[3] = 0;
 	//fmt::print(" - [#render] copying {} bytes to global buffer.\n", size);
-	// for (int i=0; i<rtc.drawTileIds.size(); i++) rtgd.drawTileIds[i] = rtc.drawTileIds[i];
 	void* dbuf = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
 	memcpy(dbuf, &rtgd, sizeof(RtGlobalData::mvp) + sizeof(RtGlobalData::offset));
 	pooledTileData.globalBuffer.mem.unmapMemory();
@@ -1027,6 +1090,159 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *dbgPipelineStuff.pipeline);
 		if (root) root->renderDbg(rtc);
 	}
+}
+
+void RtRenderer::renderRaytrace(RenderState& rs, vk::CommandBuffer& cmd) {
+
+	PipelineStuff* thePipelineStuff = nullptr;
+
+	RtRenderContext rtc {
+			rs,
+			pooledTileData,
+			*thePipelineStuff,
+			cmd,
+	};
+
+	
+	/*
+	RtGlobalData rtgd;
+	Vector3d offset;
+	rs.eyed(offset.data());
+	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
+	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
+	memcpy(rtgd.mvp, new_mvp.data(), 4*16);
+
+	rtgd.offset[0] = -offset(0);
+	rtgd.offset[1] = -offset(1);
+	rtgd.offset[2] = -offset(2);
+	rtgd.offset[3] = 0;
+	void* dbuf = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
+	memcpy(dbuf, &rtgd, sizeof(RtGlobalData::mvp) + sizeof(RtGlobalData::offset));
+	pooledTileData.globalBuffer.mem.unmapMemory();
+	*/
+
+	Eigen::Map<const RowMatrix4d> view_ { rs.camera->viewInv() };
+	Eigen::Map<const RowMatrix4d> proj_ { rs.proj() };
+	RtRaytraceCameraData rrcd;
+	Eigen::Map<RowMatrix4f> invView { rrcd.invView };
+	Eigen::Map<RowMatrix4f> invProj { rrcd.invProj };
+	invView = view_.cast<float>().transpose();
+	invProj = proj_.inverse().cast<float>().transpose();
+	// invProj.setIdentity();
+	// invView = view_.inverse().cast<float>();
+	// invProj = proj_.inverse().cast<float>();
+	fmt::print(" - invView:\n{}\n", invView);
+	fmt::print(" - invProj:\n{}\n", invProj);
+	assert(sizeof(RtRaytraceCameraData) == 16*2*4);
+	void* dbuf = (void*) raytraceCameraBuffer.mem.mapMemory(0, sizeof(RtRaytraceCameraData), {});
+	memcpy(dbuf, &rrcd, sizeof(RtRaytraceCameraData));
+	raytraceCameraBuffer.mem.unmapMemory();
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipelineLayout, 0, {1,&*raytraceDescSet}, nullptr);
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipeline);
+
+	vk::StridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
+	raygenShaderSbtEntry.deviceAddress = app->deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*raytracePipelineStuff.genSBT.buffer});
+	raygenShaderSbtEntry.stride = raytracePipelineStuff.handleSizeAligned;
+	raygenShaderSbtEntry.size = raytracePipelineStuff.handleSizeAligned;
+
+	vk::StridedDeviceAddressRegionKHR missShaderSbtEntry{};
+	missShaderSbtEntry.deviceAddress = app->deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*raytracePipelineStuff.missSBT.buffer});
+	missShaderSbtEntry.stride = raytracePipelineStuff.handleSizeAligned;
+	missShaderSbtEntry.size = raytracePipelineStuff.handleSizeAligned;
+
+	vk::StridedDeviceAddressRegionKHR hitShaderSbtEntry{};
+	hitShaderSbtEntry.deviceAddress = app->deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*raytracePipelineStuff.chitSBT.buffer});
+	hitShaderSbtEntry.stride = raytracePipelineStuff.handleSizeAligned;
+	hitShaderSbtEntry.size = raytracePipelineStuff.handleSizeAligned;
+
+	vk::StridedDeviceAddressRegionKHR callableShaderSbtEntry{};
+
+	fmt::print(" - TraceRays with {} {} {} {} size {}\n",
+			raygenShaderSbtEntry.deviceAddress,
+			missShaderSbtEntry.deviceAddress,
+			hitShaderSbtEntry.deviceAddress,
+			callableShaderSbtEntry.deviceAddress,
+			raytracePipelineStuff.handleSizeAligned);
+	
+	// For some reason, vkCmdTraceRaysKHR is not in the loader .so, so must do this
+    auto _vkCmdTraceRaysKHR              = PFN_vkCmdTraceRaysKHR( vkGetDeviceProcAddr( *app->deviceGpu, "vkCmdTraceRaysKHR" ) );
+	assert(_vkCmdTraceRaysKHR);
+
+	// getDispatcher()->vkCmdTraceRaysKHR( static_cast<VkCommandBuffer>( m_commandBuffer ),
+	_vkCmdTraceRaysKHR( static_cast<VkCommandBuffer>( &*cmd ),
+			reinterpret_cast<const VkStridedDeviceAddressRegionKHR *>( &raygenShaderSbtEntry ),
+			reinterpret_cast<const VkStridedDeviceAddressRegionKHR *>( &missShaderSbtEntry ),
+			reinterpret_cast<const VkStridedDeviceAddressRegionKHR *>( &hitShaderSbtEntry ),
+			reinterpret_cast<const VkStridedDeviceAddressRegionKHR *>( &callableShaderSbtEntry ),
+			app->windowWidth,
+			app->windowHeight,
+			1 );
+
+
+	auto dst = app->sc.getImage(rs.frameData->scIndx);
+	{
+		std::vector<vk::ImageMemoryBarrier> barriers;
+		vk::ImageMemoryBarrier barrier;
+		barrier.image = *raytracePipelineStuff.storageImage.image;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eGeneral;
+		barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+		barriers.push_back(barrier);
+
+		barrier.image = dst;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+		barriers.push_back(barrier);
+
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {barriers});
+	}
+
+	vk::ImageCopy copyRegion{};
+	copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	copyRegion.srcOffset = vk::Offset3D{ 0, 0, 0 };
+	copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	copyRegion.dstOffset = vk::Offset3D{ 0, 0, 0 };
+	copyRegion.extent = vk::Extent3D{ app->windowWidth, app->windowHeight, 1 };
+	cmd.copyImage(*raytracePipelineStuff.storageImage.image, vk::ImageLayout::eTransferSrcOptimal, dst, vk::ImageLayout::eTransferDstOptimal, 1, &copyRegion);
+
+	{
+		std::vector<vk::ImageMemoryBarrier> barriers;
+		vk::ImageMemoryBarrier barrier;
+		barrier.image = *raytracePipelineStuff.storageImage.image;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+		barrier.newLayout = vk::ImageLayout::eGeneral;
+		barriers.push_back(barrier);
+
+		barrier.image = dst;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+		barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		barriers.push_back(barrier);
+
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {barriers});
+	}
+
 }
 
 
@@ -1051,6 +1267,10 @@ void RtRenderer::init() {
 			td.verts.setAsVertexBuffer(sizeof(PackedVertex)*cfg.maxVerts, false);
 			td.inds.setAsIndexBuffer(sizeof(uint16_t)*cfg.maxInds, false);
 			// td.ubo.setAsUniformBuffer(sizeof(RtNodeData), false);
+
+			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+
 			td.verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 			// td.ubo.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
@@ -1058,14 +1278,20 @@ void RtRenderer::init() {
 		free(emptyImage);
 
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
-			// vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
+			vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
 			// vk::DescriptorPoolSize { vk::DescriptorType::eStorageBuffer, 1 },
 			// vk::DescriptorPoolSize { vk::DescriptorType::eCombinedImageSampler, cfg.maxTiles },
 			vk::DescriptorPoolSize { vk::DescriptorType::eCombinedImageSampler, 1 },
 		};
+
+		if (cfg.raytrace) {
+			poolSizes.push_back( vk::DescriptorPoolSize { vk::DescriptorType::eStorageImage, 1 } );
+			poolSizes.push_back( vk::DescriptorPoolSize { vk::DescriptorType::eAccelerationStructureKHR, 1 } );
+		}
+
 		vk::DescriptorPoolCreateInfo poolInfo {
 			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, // allow raii to free the owned sets
-				cfg.maxTiles,
+				10,
 				(uint32_t)poolSizes.size(), poolSizes.data()
 		};
 		descPool = std::move(vk::raii::DescriptorPool(app->deviceGpu, poolInfo));
@@ -1074,15 +1300,11 @@ void RtRenderer::init() {
 		{
 			std::vector<vk::DescriptorSetLayoutBinding> bindings;
 			// Texture array binding
+			vk::ShaderStageFlags usedStages = vk::ShaderStageFlagBits::eFragment;
+			if (cfg.raytrace) usedStages |= vk::ShaderStageFlagBits::eClosestHitKHR;
 			bindings.push_back({
 					0, vk::DescriptorType::eCombinedImageSampler,
-					cfg.maxTiles, vk::ShaderStageFlagBits::eFragment });
-			// UBO
-			bindings.push_back({
-					1, vk::DescriptorType::eUniformBuffer,
-					// cfg.maxTiles,
-					1,
-					vk::ShaderStageFlagBits::eVertex });
+					cfg.maxTiles, usedStages });
 
 			vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
 			pooledTileData.descSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
@@ -1093,16 +1315,8 @@ void RtRenderer::init() {
 			pooledTileData.descSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
 
 			// descSet is allocated, now make the arrays point correctly on the gpu side.
-			std::vector<vk::DescriptorBufferInfo> b_infos;
 			std::vector<vk::DescriptorImageInfo> i_infos;
 
-			b_infos.push_back(vk::DescriptorBufferInfo{
-					// *pooledTileData.datas[j].ubo.buffer,
-					// *pooledTileData.datas[0].ubo.buffer,
-					*pooledTileData.globalBuffer.buffer,
-					0,
-					VK_WHOLE_SIZE
-					});
 			for (int j=0; j<cfg.maxTiles; j++) {
 				i_infos.push_back(vk::DescriptorImageInfo{
 						*pooledTileData.datas[j].tex.sampler,
@@ -1119,15 +1333,6 @@ void RtRenderer::init() {
 					vk::DescriptorType::eCombinedImageSampler,
 					i_infos.data(),
 					nullptr,
-					nullptr
-				}
-				,{
-					*pooledTileData.descSet,
-					1, 0, (uint32_t)b_infos.size(),
-					vk::DescriptorType::eUniformBuffer,
-					// vk::DescriptorType::eStorageBuffer,
-					nullptr,
-					b_infos.data(),
 					nullptr
 				}
 			};
@@ -1178,8 +1383,7 @@ void RtRenderer::init() {
 		VertexInputDescription vertexInputDescription = md.getVertexDescription();
 		plBuilder.init(
 				vertexInputDescription,
-				// vk::PrimitiveTopology::eTriangleList,
-				vk::PrimitiveTopology::eTriangleStrip,
+				cfg.forceTriangleList ? vk::PrimitiveTopology::eTriangleList : vk::PrimitiveTopology::eTriangleStrip,
 				*pipelineStuff.vs, *pipelineStuff.fs);
 
 		// Add Push Constants & Set Layouts.
@@ -1219,6 +1423,10 @@ void RtRenderer::init() {
 				sizeof(RtPushConstants) });
 
 		dbgPipelineStuff.build(plBuilder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
+	}
+
+	if (cfg.raytrace) {
+		setupRaytracePipelines();
 	}
 
 	// Find root frast tile, then create the Tile backing it.

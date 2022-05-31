@@ -1,4 +1,5 @@
 #include "app.h"
+#include "load_shader.hpp"
 
 // #include <vulkan/vulkan_xcb.h>
 
@@ -7,6 +8,8 @@
 #include <chrono>
 
 #include <fmt/core.h>
+
+#include <cstdlib>
 
 
 
@@ -22,11 +25,13 @@ float getSeconds(bool first=false) {
 }
 }
 
-uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags) {
+uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags, uint32_t maskOrZero) {
 	vk::PhysicalDeviceMemoryProperties props { pdev.getMemoryProperties() };
 
 	for (int i=0; i<props.memoryTypeCount; i++) {
-		if (props.memoryTypes[i].propertyFlags & flags) return i;
+		if ( ((maskOrZero == 0) or ((1<<i) & maskOrZero)) )
+			if ((props.memoryTypes[i].propertyFlags & flags) == flags) return i;
+			// if ((props.memoryTypes[i].propertyFlags & flags)) return i;
 	}
 	throw std::runtime_error("failed to find memory type index.");
 	return 99999999;
@@ -64,6 +69,13 @@ void AbstractSwapchain::clear() {
 
 bool BaseVkApp::make_instance() {
 
+	uint32_t desiredApiVersion = VK_HEADER_VERSION_COMPLETE;
+
+	if (rti.enablePipeline) {
+		// If using raytracing, we need 1.2+
+		desiredApiVersion = VK_MAKE_VERSION(1,3,0);
+	}
+
 	vk::ApplicationInfo       applicationInfo{
 			"vulkanApp",
 			VK_MAKE_VERSION(1, 0, 0),
@@ -71,11 +83,13 @@ bool BaseVkApp::make_instance() {
 			VK_MAKE_VERSION(1, 0, 0),
 			// VK_MAKE_VERSION(1, 2, 0) };
 			// VK_MAKE_VERSION(2, 0, 3) };
-			VK_HEADER_VERSION_COMPLETE };
+			// VK_HEADER_VERSION_COMPLETE
+			// VK_MAKE_VERSION(1, 2, 0)
+			desiredApiVersion
+			};
 
 	std::vector<char*> layers_ = {
 #ifdef VULKAN_DEBUG
-		"VK_LAYER_KHRONOS_validation",
 		//"VK_LAYER_LUNARG_parameter_validation",
       	//"VK_LAYER_LUNARG_device_limits", 
       	//"VK_LAYER_LUNARG_object_tracker",
@@ -93,14 +107,19 @@ bool BaseVkApp::make_instance() {
 #endif
 	};
 
+#ifdef VULKAN_DEBUG
+	if (getenv("NO_VULKAN_DEBUG") == 0) {
+		layers_.push_back( "VK_LAYER_KHRONOS_validation");
+	}
+#endif
+
 	std::vector<std::string> extraExtensions = getWindowExtensions();
-	fmt::print(" - Extra window exensions: ");
-	for (auto s : extraExtensions) fmt::print("{}, ", s);
-	fmt::print("\n");
+	fmt::print(" - Extra window exensions: "); for (auto s : extraExtensions) fmt::print("{}, ", s); fmt::print("\n");
 	for (auto &extraExtension : extraExtensions) extensions.push_back((char*)extraExtension.c_str());
-	fmt::print(" - Instance Extensions: ");
-	for (auto s : extensions) fmt::print("{}, ", s);
-	fmt::print("\n");
+
+
+
+	fmt::print(" - Final Instance Extensions: "); for (auto s : extensions) fmt::print("{}, ", s); fmt::print("\n");
 
 	vk::InstanceCreateInfo info {
 			{},
@@ -112,7 +131,7 @@ bool BaseVkApp::make_instance() {
 	std::cout << " - Using layers:\n";
 	for (auto l : layers_) std::cout << l << "\n";
 
-	instance = vk::raii::Instance(ctx, info);
+	instance = std::move(vk::raii::Instance(ctx, info));
 	return false;
 }
 
@@ -131,13 +150,42 @@ bool BaseVkApp::make_gpu_device() {
 		for (int i=0; myDeviceIdx>9999 and i<ndevices; i++) {
 			VkPhysicalDeviceProperties props;
 			vkGetPhysicalDeviceProperties(pdevices[i], &props);
-			if (props.deviceType == prefer) {
+			if (props.deviceType != prefer) {
+				printf(" - want %u, skipping dev %d of type %u\n", prefer, i, props.deviceType);
+			} else {
+
+
+				if (rti.enablePipeline) {
+					vk::PhysicalDeviceFeatures2 feats;
+					feats.pNext = &rti.accFeatures;
+					rti.accFeatures.pNext = &rti.rayPiplelineFeatures;
+					vkGetPhysicalDeviceFeatures2(pdevices[i], (VkPhysicalDeviceFeatures2*)&feats);
+
+					if (not rti.accFeatures.accelerationStructure) {
+						printf(" - skipping dev %d (ok type %u), but does not support accelerationStructure\n", i, props.deviceType);
+						continue;
+					}
+					if (not rti.accFeatures.accelerationStructureHostCommands) {
+						// printf(" - skipping dev %d (ok type %u), but does not support accelerationStructureHostCommands\n", i, props.deviceType);
+						// continue;
+					}
+					if (not rti.rayPiplelineFeatures.rayTracingPipeline) {
+						printf(" - skipping dev %d (ok type %u), but does not support rayTracingPipeline\n", i, props.deviceType);
+						continue;
+					}
+				}
+				if (rti.enableQuery) {
+					assert((not rti.enableQuery) && "rayQuery not supported now");
+				}
+
+
 				myDeviceIdx = i;
 				break;
 			}
-			printf(" - want %u, skipping dev %d of type %u\n", prefer, i, props.deviceType);
 		}
-	assert(myDeviceIdx < 9999);
+	if (myDeviceIdx >= 999) {
+		throw std::runtime_error(" - No device could be found (did you enable features not supported?)");
+	}
 	VkPhysicalDevice pdevice = pdevices[myDeviceIdx];
 	pdeviceGpu = vk::raii::PhysicalDevice { instance, pdevice };
 
@@ -154,9 +202,9 @@ bool BaseVkApp::make_gpu_device() {
 	}
 	assert(qfamilyIdx < 9999);
 
-	VkPhysicalDeviceProperties props;
-	vkGetPhysicalDeviceProperties(pdevice, &props);
-	printf(" - Selected Device '%s', queueFamily %u.\n", props.deviceName, qfamilyIdx);
+	VkPhysicalDeviceProperties pdeviceProps;
+	vkGetPhysicalDeviceProperties(pdevice, &pdeviceProps);
+	printf(" - Selected Device '%s', queueFamily %u.\n", pdeviceProps.deviceName, qfamilyIdx);
 	queueFamilyGfxIdxs.push_back(qfamilyIdx);
 
 	// Create Device
@@ -167,84 +215,128 @@ bool BaseVkApp::make_gpu_device() {
 	uint32_t qcnt = 2;
 	std::vector<float> qprior;
 	for (int i=0; i<qcnt; i++) qprior.push_back(1.f);
+
+
 	VkDeviceQueueCreateInfo qinfos[n_q_family] = {{
 		VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 		nullptr, {},
 		qfamilyIdx, qcnt, qprior.data()
 
 	}};
-	const std::vector<char*> exts = {
+
+
+	// -----------------------------------------------
+	//      Extensions
+	// -----------------------------------------------
+
+	std::vector<const char*> exts = {
 		VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME,
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
-		,VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME 
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME
 		// ,VK_EXT_MULTI_DRAW_EXTENSION_NAME  
 		//,VK_KHR_16BIT_STORAGE_EXTENSION_NAME
 	};
 
-	void* createInfoNext = nullptr;
+	std::vector<vk::ExtensionProperties> availableExts = pdeviceGpu.enumerateDeviceExtensionProperties();
+	for (auto & aext : availableExts) {
+		if (strcmp(aext.extensionName.data(), VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) == 0)
+			rti.haveDeferredHostOps = true;
+		if (strcmp(aext.extensionName.data(), VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME) == 0)
+			rti.havePipelineLibrary = true;
+	}
+
+	if (rti.enablePipeline or rti.enableQuery) {
+		// These are unconditionally required
+		// They are gauranteed to be supported since we already checked the PhysicalDeviceFeatures
+		exts.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+		exts.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+		exts.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+		exts.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+		exts.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+		// exts.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+
+		// These are optional
+		if (rti.haveDeferredHostOps)
+			exts.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		if (rti.havePipelineLibrary)
+			exts.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+	}
+	if (rti.enableQuery) {
+		// TODO
+	}
+
+
+	using S = VkBaseInStructure;
+	S *_prev = nullptr, *_first = nullptr;
+
+	// Helper function that makes the next chain simple
+	auto pushIt = [&_prev, &_first](VkBaseInStructure* ptr) {
+		if (not _first) _first = ptr;
+		if (_prev) _prev->pNext = ptr;
+		_prev = ptr;
+	};
+
+
+	// -----------------------------------------------
+	//      Basic Features
+	// -----------------------------------------------
 
 	VkPhysicalDeviceVulkan11Features extraFeatures3 = {
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
 	};
 	extraFeatures3.storageBuffer16BitAccess = true;
 	extraFeatures3.uniformAndStorageBuffer16BitAccess = true;
-	/*
-	vk::PhysicalDevice8BitStorageFeatures extra3_2;
-	extra3_2.uniformAndStorageBuffer8BitAccess = true;
-	extraFeatures3.pNext = &extra3_2;
-	*/
+	pushIt((S*)&extraFeatures3);
 
 	VkPhysicalDeviceFeatures2 extraFeatures4 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	extraFeatures4.features.shaderInt16 = true;
-	// extra3_2.pNext = &extraFeatures4;
-	extraFeatures3.pNext = &extraFeatures4;
-
-	// Remove this, in favor of Vulkan12Features below
-	/*
-	VkPhysicalDeviceUniformBufferStandardLayoutFeatures bufLayoutFeature = {
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES
-	};
-	bufLayoutFeature.uniformBufferStandardLayout = true;
-	extraFeatures4.pNext = &bufLayoutFeature;
-	*/
+	pushIt((S*)&extraFeatures4);
 
 	VkPhysicalDeviceIndexTypeUint8FeaturesEXT extraFeatures5 = {
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT,
 		nullptr,
 		true
 	};
-	// bufLayoutFeature.pNext = &extraFeatures5;
-	extraFeatures4.pNext = &extraFeatures5;
-	//extraFeatures4.pNext = &extraFeatures5;
+	pushIt((S*)&extraFeatures5);
 
 	vk::PhysicalDeviceMultiDrawFeaturesEXT extraFeatures6;
 	extraFeatures6.multiDraw = true;
-	extraFeatures5.pNext = &extraFeatures6;
+	pushIt((S*)&extraFeatures6);
 
 	vk::PhysicalDeviceRobustness2FeaturesEXT extraFeatures7;
     extraFeatures7.nullDescriptor = true;
-	extraFeatures6.pNext = &extraFeatures7;
+	pushIt((S*)&extraFeatures7);
 
 	vk::PhysicalDeviceVulkan12Features extraFeatures8;
 	extraFeatures8.shaderInt8 = true;
 	extraFeatures8.uniformBufferStandardLayout = true;
 	extraFeatures8.uniformAndStorageBuffer8BitAccess = true;
 	extraFeatures8.storageBuffer8BitAccess = true;
-	extraFeatures7.pNext = &extraFeatures8;
+	extraFeatures8.bufferDeviceAddress = true;
+	pushIt((S*)&extraFeatures8);
 
 
-	/*
-	if (require_16bit_shader_types) {
-		createInfoNext = &extraFeatures3;
-	} else
-		createInfoNext = &bufLayoutFeature;
-	*/
-	createInfoNext = &extraFeatures3;
+	// -----------------------------------------------
+	//      RayTracing Features
+	// -----------------------------------------------
 
+	if (rti.enablePipeline) {
+		pushIt((S*)&rti.accFeatures);
+		pushIt((S*)&rti.rayPiplelineFeatures);
+	}
+	if (rti.enableQuery) {
+		assert((not rti.enableQuery) && "rayQuery not supported now");
+	}
+
+	// -----------------------------------------------
+	//      Ready to make device!
+	// -----------------------------------------------
+
+	fmt::print(" - Final Device Extensions: "); for (auto s : exts) fmt::print("{}, ", s); fmt::print("\n");
 
     VkDeviceCreateInfo dinfo {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			createInfoNext,
+			_first,
 			{},
 			n_q_family, qinfos,
 			0, nullptr,
@@ -252,11 +344,23 @@ bool BaseVkApp::make_gpu_device() {
 			nullptr };
 	deviceGpu = std::move(vk::raii::Device(pdeviceGpu, dinfo, nullptr));
 
-	//std::cout << " - device version: " << app.deviceGpu.getDispatcher()->getVkHeaderVersion() << " header " << VK_HEADER_VERSION << "\n";
+	uint32_t instanceVersion = ctx.enumerateInstanceVersion();
+	// std::cout << " - pdevice api version: " << pdeviceProps.apiVersion << "\n";
+	fmt::print(" - instance version {} :: {} {} {}\n", instanceVersion, VK_API_VERSION_MAJOR(instanceVersion), VK_API_VERSION_MINOR(instanceVersion), VK_API_VERSION_PATCH(instanceVersion));
+	fmt::print(" - pdevice api version {} :: {} {} {}\n", pdeviceProps.apiVersion, VK_API_VERSION_MAJOR(pdeviceProps.apiVersion), VK_API_VERSION_MINOR(pdeviceProps.apiVersion), VK_API_VERSION_PATCH(pdeviceProps.apiVersion));
+	std::cout << " - device vk header version: " << deviceGpu.getDispatcher()->getVkHeaderVersion() << " header " << VK_HEADER_VERSION << "\n";
 
 	// Get Queue
 	queueGfx = deviceGpu.getQueue(qfamilyIdx, 0);
 
+
+
+	if (rti.enablePipeline) {
+		VkPhysicalDeviceProperties2 deviceProperties2{};
+		deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		deviceProperties2.pNext = &rti.rayPipelineProps;
+		vkGetPhysicalDeviceProperties2(*pdeviceGpu, &deviceProperties2);
+	}
 
 	return false;
 }
@@ -562,8 +666,9 @@ bool BaseVkApp::make_basic_render_stuff() {
 			vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
 			vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
 			vk::ImageLayout::eUndefined,
-			//vk::ImageLayout::eColorAttachmentOptimal,
-			vk::ImageLayout::ePresentSrcKHR };
+			vk::ImageLayout::eColorAttachmentOptimal
+			// vk::ImageLayout::ePresentSrcKHR
+	};
 
 	vk::AttachmentReference colorAttachmentRef {
 		0,
@@ -731,6 +836,7 @@ void BaseVkApp::executeCommandsThenPresent(std::vector<vk::CommandBuffer>& cmds,
 		// Copy output and what not
 		handleCompletedHeadlessRender(renderState, fd);
 	} else {
+		// handleCompletedHeadlessRender(renderState, fd);
 		vk::PresentInfoKHR presentInfo {
 			1, &*fd.renderCompleteSema, // wait sema
 				1, &(*sc.sc),
@@ -948,6 +1054,133 @@ bool PipelineStuff::build(PipelineBuilder& builder, vk::raii::Device& device, co
 
 	return false;
 }
+
+
+bool RaytracePipelineStuff::setup_viewport(float w, float h, float x, float y) {
+	viewport = vk::Viewport { x, y, w, h, 0, 1 };
+	scissor = vk::Rect2D { { 0, 0 }, { (uint32_t)(w+.1f), (uint32_t)(h+.1f) } };
+	return false;
+}
+bool RaytracePipelineStuff::build(BaseVkApp* app) {
+	vk::raii::Device& device = app->deviceGpu;
+	vk::raii::PhysicalDevice& pd = app->pdeviceGpu;
+
+	// storageImage.createAsStorage(device, pd, viewport.height, viewport.width, vk::Format::eR32G32B32A32Sfloat);
+	storageImage.createAsStorage(device, pd, viewport.height, viewport.width, app->scSurfaceFormat.format);
+
+	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+	std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
+
+	// Create shader stages & groups
+	{
+		if (((VkShaderModule)*gen) != 0) {
+			vk::PipelineShaderStageCreateInfo ci{};
+			ci.stage = vk::ShaderStageFlagBits::eRaygenKHR;
+			ci.module = *gen;
+			ci.pName = "main";
+			shaderStages.push_back(ci);
+
+			vk::RayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups.push_back(shaderGroup);
+		}
+
+		if (((VkShaderModule)*closestHit) != 0) {
+			vk::PipelineShaderStageCreateInfo ci{};
+			ci.stage = vk::ShaderStageFlagBits::eClosestHitKHR;
+			ci.module = *closestHit;
+			ci.pName = "main";
+			shaderStages.push_back(ci);
+
+			vk::RayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
+			shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups.push_back(shaderGroup);
+		}
+
+		if (((VkShaderModule)*miss) != 0) {
+			vk::PipelineShaderStageCreateInfo ci{};
+			ci.stage = vk::ShaderStageFlagBits::eMissKHR;
+			ci.module = *miss;
+			ci.pName = "main";
+			shaderStages.push_back(ci);
+
+			vk::RayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups.push_back(shaderGroup);
+		}
+	}
+
+	// Create layout
+	{
+		vk::PipelineLayoutCreateInfo info{};
+		info.flags = {};
+		info.pushConstantRangeCount = pushConstants.size();
+		info.pPushConstantRanges = pushConstants.data();
+		info.setLayoutCount = setLayouts.size();
+		info.pSetLayouts = setLayouts.data();
+
+		pipelineLayout = std::move(device.createPipelineLayout(info));
+	}
+
+	vk::RayTracingPipelineCreateInfoKHR info;
+	info.stageCount = (uint32_t) shaderStages.size();
+	info.pStages =  shaderStages.data();
+	info.groupCount =  (uint32_t)shaderGroups.size();
+	info.pGroups =  shaderGroups.data();
+	info.maxPipelineRayRecursionDepth = 12;
+	info.layout = *pipelineLayout;
+
+	pipeline = std::move(device.createRayTracingPipelinesKHR(nullptr, nullptr, info)[0]);
+
+	// Create SBT
+	{
+		uint32_t handleSize = app->rti.rayPipelineProps.shaderGroupHandleSize;
+		uint32_t a = app->rti.rayPipelineProps.shaderGroupHandleAlignment;
+		handleSizeAligned = ((handleSize+a-1) / a) * a;
+		uint32_t groups = (uint32_t)shaderGroups.size();
+		uint32_t sbtSize = groups * handleSizeAligned;
+		fmt::print(" - handle size {}, alignment {}, chosen {}\n", handleSize, a, handleSizeAligned);
+
+		std::vector<uint8_t> shaderHandleStorage = pipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(0, groups, sbtSize);
+
+		genSBT.setAsBuffer(handleSize, true, vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+		chitSBT.setAsBuffer(handleSize, true, vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+		missSBT.setAsBuffer(handleSize, true, vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+		genSBT.memPropFlags |= vk::MemoryPropertyFlagBits::eHostCoherent;
+		chitSBT.memPropFlags |= vk::MemoryPropertyFlagBits::eHostCoherent;
+		missSBT.memPropFlags |= vk::MemoryPropertyFlagBits::eHostCoherent;
+
+		genSBT.create(device, *pd, app->queueFamilyGfxIdxs);
+		missSBT.create(device, *pd, app->queueFamilyGfxIdxs);
+		chitSBT.create(device, *pd, app->queueFamilyGfxIdxs);
+
+
+		// Copy handles
+		genSBT.map();
+		missSBT.map();
+		chitSBT.map();
+		memcpy(genSBT.mapped, shaderHandleStorage.data(), handleSize);
+		memcpy(chitSBT.mapped, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+		memcpy(missSBT.mapped, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+	}
+
+
+	return false;
+}
+
+
 
 float BaseVkApp::time() {
 	return getSeconds() - time0;
@@ -1236,9 +1469,6 @@ void VkApp::render() {
 	FrameData& fd = acquireFrame();
 
 	auto& cmd = fd.cmd;
-	vk::CommandBufferBeginInfo beginInfo { {}, {} };
-	cmd.reset();
-	cmd.begin(beginInfo);
 
 	// camera->step(fd.dt);
 	// camera->step(1.0 / 60.0);
@@ -1254,7 +1484,6 @@ void VkApp::render() {
 	}
 
 	auto cmds = doRender(renderState);
-	cmd.end();
 
 
 	executeCommandsThenPresent(cmds, renderState);

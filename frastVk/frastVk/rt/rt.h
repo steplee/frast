@@ -68,6 +68,8 @@ struct RtCfg {
 	float sseThresholdOpen = 1.99;
 	float sseThresholdClose = .9;
 	bool dbg = false;
+	bool forceTriangleList = false;
+	bool raytrace = false;
 };
 
 struct __attribute__((packed)) RtGlobalData {
@@ -75,7 +77,6 @@ struct __attribute__((packed)) RtGlobalData {
 	float offset[4];
 	float modelMats[16*RtCfg::maxTiles];
 	float uvScalesAndOffs[4*RtCfg::maxTiles];
-	// uint32_t drawTileIds[RtCfg::maxTiles];
 };
 
 struct RtPushConstants {
@@ -106,7 +107,6 @@ struct RtRenderContext {
 	const RenderState& rs;
 	PooledTileData& pooledTileData;
 	PipelineStuff& pipelineStuff;
-	std::vector<uint32_t> drawTileIds;
 
 	vk::CommandBuffer& cmd;
 };
@@ -242,6 +242,13 @@ struct TileData {
 	ResidentImage texOld;
 	ResidentBuffer verts;
 	ResidentBuffer inds;
+
+	ResidentBuffer accel;
+	vk::raii::AccelerationStructureKHR accelStructure{nullptr};
+	vk::DeviceAddress accelAddress;
+	std::vector<float> modelMatf;
+	ResidentBuffer vertsFloatRemoveMe;
+
 	// Actually: limited amount of ubs in one DescSet, so have just one global UBO and index into it.
 	// ResidentBuffer ubo; // Holds RtNodeData
 	uint32_t residentVerts, residentInds;
@@ -268,6 +275,7 @@ struct DecodedTileData {
 struct PooledTileData {
 	RtGlobalData rtgd;
 	ResidentBuffer globalBuffer;
+	ResidentBuffer tmpXformBuffer;
 	std::vector<TileData> datas;
 	// std::vector<TileData> datas;
 	vk::raii::DescriptorSetLayout descSetLayout = {nullptr};
@@ -279,9 +287,12 @@ struct PooledTileData {
 	std::vector<uint32_t> available;
 	int n_available = RtCfg::maxTiles;
 
+	std::mutex mtx;
+
 	public:
 		bool withdraw(std::vector<uint32_t>& ids, bool isClose);
 		bool deposit(std::vector<uint32_t>& ids);
+		int tellInUse(std::vector<bool>& out);
 	public:
 };
 
@@ -304,7 +315,11 @@ struct RtDataLoader {
 		};
 
 		~RtDataLoader();
-		inline RtDataLoader(BaseVkApp* app_, RtCfg& cfg_, PooledTileData& p) : app(app_), pooledTileData(p), cfg(cfg_) {}
+		inline RtDataLoader(BaseVkApp* app_, RtCfg& cfg_, PooledTileData& p) : app(app_), pooledTileData(p), cfg(cfg_),
+			myUploader(cfg_.raytrace ?
+				vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer :
+				vk::BufferUsageFlagBits::eTransferSrc)
+		{}
 		bool tileExists(const NodeCoordinate& nc);
 
 		bool loadRootTile(RtTile* tile);
@@ -335,6 +350,8 @@ struct RtDataLoader {
 	private:
 		LoadStatus loadTile(RtTile* tile, bool isClose);
 
+		bool createBottomLevelAS(RtTile* tile, DecodedTileData& dtd);
+
 		bool populated;
 		bool populateFromFiles();
 
@@ -356,11 +373,13 @@ class RtRenderer : public Castable
 {
 	public:
 
-		inline RtRenderer(RtCfg& cfg_, BaseVkApp* app_) : cfg(cfg_), pooledTileData(cfg), app(app_), dataLoader(app_,cfg,pooledTileData) {}
+		inline RtRenderer(RtCfg& cfg_, BaseVkApp* app_) : cfg(cfg_), pooledTileData(cfg), app(app_), dataLoader(app_,cfg,pooledTileData) {
+		}
 		~RtRenderer();
 
 		void update(RenderState& rs);
 		void render(RenderState& rs, vk::CommandBuffer&);
+		void renderRaytrace(RenderState& rs, vk::CommandBuffer&);
 		void stepAndRender(RenderState& rs, vk::CommandBuffer&);
 		inline void setDataLoaderSleepMicros(int64_t t) { dataLoader.sleepMicros = t; }
 
@@ -372,8 +391,8 @@ class RtRenderer : public Castable
 
 		int numWaitingAsks(bool lock = true);
 
-	private:
 		RtCfg cfg;
+	private:
 		BaseVkApp* app;
 
 		PipelineStuff pipelineStuff;
@@ -387,16 +406,46 @@ class RtRenderer : public Castable
 		vk::raii::DescriptorSetLayout globalDescSetLayout = {nullptr}; // holds camera etc
 		vk::raii::DescriptorSet globalDescSet = {nullptr};
 
-		vk::raii::CommandPool cmdPool { nullptr };
-		std::vector<vk::raii::CommandBuffer> cmdBuffers;
+
 
 		RtTile *root = nullptr;
 
 		RtDataLoader dataLoader;
 		int pushedAsks=0, handledResults=0;
 
+
 		void init_caster_stuff();
 
+		// -----------------------------------------
+		//      Raytracing stuff
+		// -----------------------------------------
+
+		vk::raii::CommandPool cmdPool { nullptr };
+		std::vector<vk::raii::CommandBuffer> cmdBuffers;
+		std::vector<vk::raii::Fence> fences;
+		ResidentBuffer nextTlasBuf;
+		vk::raii::AccelerationStructureKHR nextTlas{nullptr};
+		vk::DeviceAddress nextTlasAddr;
+		ResidentBuffer currTlasBuf;
+		vk::raii::AccelerationStructureKHR currTlas{nullptr};
+		vk::DeviceAddress currTlasAddr;
+		bool tlasIsSet = false;
+		bool createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii::Queue& q, vk::raii::Fence& fence);
+
+		RaytracePipelineStuff raytracePipelineStuff;
+		bool setupRaytracePipelines();
+		bool setupRaytraceDescriptors();
+
+		struct RtRaytraceCameraData {
+			alignas(8) float invView[16];
+			alignas(8) float invProj[16];
+		};
+		ResidentBuffer raytraceCameraBuffer;
+		vk::raii::DescriptorSetLayout raytraceDescSetLayout = {nullptr};
+		vk::raii::DescriptorSet raytraceDescSet = {nullptr};
+		vk::raii::DescriptorSetLayout raytraceTileDescSetLayout = {nullptr};
+		vk::raii::DescriptorSet raytraceTileDescSet = {nullptr};
+		void writeDescSetTlas();
 
 };
 

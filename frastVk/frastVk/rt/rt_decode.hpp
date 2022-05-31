@@ -34,7 +34,7 @@ inline int unpackVarInt(uint8_t*& b) {
 
 inline bool decode_node_to_tile(
 		std::ifstream &ifs,
-		DecodedTileData& dtd) {
+		DecodedTileData& dtd, bool forceTriList) {
 
 	rtpb::NodeData nd;
 	if (!nd.ParseFromIstream(&ifs)) {
@@ -188,6 +188,21 @@ inline bool decode_node_to_tile(
 			// bad |= md.layerBounds[3] == 0;
 			// if (bad) continue;
 			md.ind_buffer_cpu.resize(md.layerBounds[3]);
+		}
+
+		if (forceTriList) {
+			std::vector<uint16_t> oldInds { std::move(md.ind_buffer_cpu) };
+			for (int i=0; i<oldInds.size()-2; i++) {
+				if (i % 2 == 0) {
+					md.ind_buffer_cpu.push_back(oldInds[i+0]);
+					md.ind_buffer_cpu.push_back(oldInds[i+1]);
+					md.ind_buffer_cpu.push_back(oldInds[i+2]);
+				} else {
+					md.ind_buffer_cpu.push_back(oldInds[i+1]);
+					md.ind_buffer_cpu.push_back(oldInds[i+0]);
+					md.ind_buffer_cpu.push_back(oldInds[i+2]);
+				}
+			}
 		}
 
 

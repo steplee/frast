@@ -1,7 +1,7 @@
 #version 450
 #extension GL_EXT_scalar_block_layout: enable
 
-layout (location = 0) in vec4 aPosition;
+/* layout (location = 0) in vec4 aPosition; */
 //layout (location = 1) in vec2 aUv;
 //layout (location = 2) in vec3 aNormal;
 

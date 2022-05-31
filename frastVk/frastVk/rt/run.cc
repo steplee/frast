@@ -9,6 +9,7 @@ using namespace rt;
 struct RtApp : public VkApp {
 
 		std::shared_ptr<RtRenderer> rtr;
+		bool doRaytrace = false;
 
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
@@ -40,7 +41,8 @@ struct RtApp : public VkApp {
 
 		//Eigen::Vector3d pos0 { .2,-1.0,.84};
 		// pos0 *= .8;
-		Eigen::Vector3d pos0 { 0.116664 ,-0.884764  ,0.473077};
+		// Eigen::Vector3d pos0 { 0.116664 ,-0.884764  ,0.473077};
+		Eigen::Vector3d pos0 { 0.136273, -1.03348, 0.552593 };
 		Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
 		R0.row(2) = -pos0.normalized();
 		R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
@@ -62,6 +64,8 @@ struct RtApp : public VkApp {
 		cfg.sseThresholdOpen = 1.0;
 		cfg.sseThresholdClose = .5;
 		cfg.dbg = true;
+		cfg.raytrace = doRaytrace;
+		cfg.forceTriangleList = doRaytrace;
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();
@@ -136,6 +140,8 @@ struct RtApp : public VkApp {
 
 
 		auto cmd = *rs.frameData->cmd;
+		cmd.reset();
+		cmd.begin(vk::CommandBufferBeginInfo{});
 
 		// setCasterFakeData(rs);
 
@@ -154,13 +160,27 @@ struct RtApp : public VkApp {
 
 
 		// Render scene
-		rtr->stepAndRender(renderState, cmd);
-		std::vector<vk::CommandBuffer> cmds = {
-			cmd
-		};
+		if (rtr->cfg.raytrace) {
+			cmd.endRenderPass();
+			rtr->stepAndRender(renderState, cmd);
+		} else {
+			rtr->stepAndRender(renderState, cmd);
+			cmd.endRenderPass();
+		}
 
-		cmd.endRenderPass();
-		// cmd.end();
+		std::vector<vk::CommandBuffer> cmds = { cmd };
+
+		vk::ImageMemoryBarrier barrier;
+		barrier.image = sc.getImage(rs.frameData->scIndx);
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+		cmd.end();
 
 		return cmds;
 	}
@@ -172,13 +192,24 @@ struct RtApp : public VkApp {
 };
 
 
-int main() {
+int main(int argc, char** argv) {
 
 	RtApp app;
 	app.windowWidth = 1000;
 	app.windowHeight = 800;
 	app.windowWidth = app.windowHeight = 512;
 	app.windowWidth = app.windowHeight = 1024;
+
+	bool raytrace = false;
+	for (int i=0; i<argc; i++) {
+		if (strcmp("ray", argv[i]) == 0 or strcmp("raytrace", argv[i]) == 0 or strcmp("raytracing",argv[i]) == 0) raytrace = true;
+	}
+
+	if (raytrace) {
+	app.windowWidth = app.windowHeight = 256;
+		app.rti.enablePipeline = true;
+		app.doRaytrace = true;
+	}
 
 	app.initVk();
 

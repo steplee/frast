@@ -36,6 +36,9 @@ class ImguiApp : public BaseVkApp {
 
 		std::shared_ptr<Camera> camera = nullptr;
 
+		vk::raii::CommandPool cmdPool { nullptr };
+		std::vector<vk::raii::CommandBuffer> cmdBuffers;
+
 
 		virtual void prepareUi(RenderState& rs);
 		virtual void renderUi(RenderState& rs, vk::CommandBuffer cmd);

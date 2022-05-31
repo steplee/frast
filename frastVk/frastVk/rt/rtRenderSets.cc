@@ -263,7 +263,7 @@ struct RtApp : public VkApp {
 
 	inline bool done_updating() {
 		int n_waiting = rtr->numWaitingAsks(false);
-		fmt::print(" - [app] n_waiting {}\n", n_waiting);
+		// fmt::print(" - [app] n_waiting {}\n", n_waiting);
 		return n_waiting == 0;
 	}
 
