@@ -10,6 +10,7 @@ else()
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frastVk)
@@ -22,15 +23,28 @@ add_definitions(-DVK_USE_PLATFORM_XCB_KHR=1)
 if (IS_ARM)
 	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -fPIC -fopenmp ")
 	link_directories(/usr/lib/aarch64-linux-gnu)
-	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersArm)
+	#set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersArm)
+
+	set(VULKAN_HEADERS_DIR /usr/local/include/)
+	set(VULKAN_INC ${VULKAN_HEADERS_DIR}/vulkan)
+	set(EIGEN_INC /usr/local/include/eigen3)
 else()
 	list(APPEND CMAKE_CXX_FLAGS " -g -O3 -march=native -fPIC -fopenmp ")
 	# set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64)
-	set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64_2)
+	#set(COPIED_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/copiedHeadersAmd64_2)
+	#set(VULKAN_INC ${COPIED_HEADERS_DIR}/vulkanHeadersCopy)
+	#set(EIGEN_INC ${COPIED_HEADERS_DIR}/eigen3)
+
+	set(VULKAN_HEADERS_DIR /opt/vulkanSdk/include)
+	set(VULKAN_INC ${VULKAN_HEADERS_DIR}/vulkan)
+	set(EIGEN_INC /usr/local/include/eigen3)
 endif()
 
-include_directories(${COPIED_HEADERS_DIR}/vulkanHeadersCopy)
-include_directories(${COPIED_HEADERS_DIR}/eigen3)
+# include_directories(${COPIED_HEADERS_DIR}/vulkanHeadersCopy)
+# include_directories(${COPIED_HEADERS_DIR}/vulkan)
+# include_directories(${COPIED_HEADERS_DIR}/eigen3)
+include_directories(${VULKAN_HEADERS_DIR})
+include_directories(${EIGEN_INC})
 
 add_definitions(-DCOMPRESS_TERRAIN=1)
 add_definitions(-DUSE_TURBOJPEG=1)
@@ -38,9 +52,12 @@ add_definitions(-DUSE_TURBOJPEG=1)
 find_package(PkgConfig REQUIRED)
 # pkg_check_modules(XCB REQUIRED xcb xcb-keysyms)
 #find_package(Vulkan REQUIRED)
-# set(VULKAN_LIBS vulkan)
-link_directories(/opt/vulkanSdk/lib)
-set(VULKAN_LIBS /opt/vulkanSdk/lib/libvulkan.so.1.3.211)
+if (IS_ARM)
+	set(VULKAN_LIBS vulkan)
+else()
+	link_directories(/opt/vulkanSdk/lib)
+	set(VULKAN_LIBS /opt/vulkanSdk/lib/libvulkan.so.1.3.211)
+endif()
 
 option(VULKAN_DEBUG "debug layer" ON)
 if (VULKAN_DEBUG)
@@ -121,17 +138,19 @@ target_link_libraries(frastVk
 
 # In a simple test, this results in over a 5x compile speedup.
 target_precompile_headers(frastVk PUBLIC
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_raii.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_enums.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_handles.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_structs.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_hash.hpp
-	${COPIED_HEADERS_DIR}/vulkanHeadersCopy/vulkan/vulkan_funcs.hpp
-	${COPIED_HEADERS_DIR}/eigen3/Eigen/Core
-	${COPIED_HEADERS_DIR}/eigen3/Eigen/Dense
-	${COPIED_HEADERS_DIR}/eigen3/Eigen/Geometry
-	${COPIED_HEADERS_DIR}/eigen3/Eigen/StdVector
+	${VULKAN_INC}/vk_platform.h
+	${VULKAN_INC}/vulkan_core.h
+	${VULKAN_INC}/vulkan_raii.hpp
+	${VULKAN_INC}/vulkan.hpp
+	${VULKAN_INC}/vulkan_enums.hpp
+	${VULKAN_INC}/vulkan_handles.hpp
+	${VULKAN_INC}/vulkan_structs.hpp
+	${VULKAN_INC}/vulkan_hash.hpp
+	${VULKAN_INC}/vulkan_funcs.hpp
+	${EIGEN_INC}/Eigen/Core
+	${EIGEN_INC}/Eigen/Dense
+	${EIGEN_INC}/Eigen/Geometry
+	${EIGEN_INC}/Eigen/StdVector
 	)
 
 
