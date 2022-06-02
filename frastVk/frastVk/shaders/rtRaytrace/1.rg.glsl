@@ -11,7 +11,7 @@ layout(std430, binding = 2, set = 0) uniform CameraProperties
 } cam;
 layout(set = 1, binding = 0) uniform sampler2D texs[800];
 
-layout(location = 0) rayPayloadEXT vec3 hitValue;
+layout(location = 0) rayPayloadEXT vec4 hitValue;
 
 void main()
 {
@@ -31,9 +31,9 @@ void main()
 	float tmin = .000000001;
 	float tmax = 9.0;
 
-    hitValue = vec3(0.0);
+    hitValue = vec4(1.0);
 
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 	/* imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue * .5 + .2*direction.xyz, 0.0)); */
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 0.0));
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue.rgb, 1.0));
 }

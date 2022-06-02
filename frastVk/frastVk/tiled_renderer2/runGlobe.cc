@@ -110,7 +110,7 @@ struct GlobeApp : public BaseApp {
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();
 
-		if (1) {
+		if (0) {
 			particleCloud = std::make_shared<ParticleCloudRenderer>(this, 1024*64);
 			std::vector<float> particles4;
 			Vector3d p { camera->viewInv()[0*4+3], camera->viewInv()[1*4+3], camera->viewInv()[2*4+3] };
@@ -127,7 +127,7 @@ struct GlobeApp : public BaseApp {
 			}
 			particleCloud->uploadParticles(particles4);
 			// particleCloud->setRenderMode(ParticleRenderMode::ePoints);
-			// particleCloud->setRenderMode(ParticleRenderMode::eNone);
+			particleCloud->setRenderMode(ParticleRenderMode::eNone);
 		}
 
 		if (0) {
@@ -304,7 +304,9 @@ struct GlobeApp : public BaseApp {
 			frame_cmd
 		};
 		if (particleCloud) cmds.push_back( particleCloud->render(renderState, *simpleRenderPass.framebuffers[renderState.frameData->scIndx]) );
-		else {
+
+
+		if (not headless) {
 			vk::ImageMemoryBarrier barrier;
 			barrier.image = sc.getImage(rs.frameData->scIndx);
 			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
@@ -312,8 +314,8 @@ struct GlobeApp : public BaseApp {
 			barrier.subresourceRange.levelCount = 1;
 			barrier.subresourceRange.baseArrayLayer = 0;
 			barrier.subresourceRange.layerCount = 1;
-			// barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-			// barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+			barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+			barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
 			// frame_cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
 		}
 
@@ -360,11 +362,11 @@ struct GlobeApp : public BaseApp {
 			deviceGpu.waitForFences({*fd.frameDoneFence}, true, 999999999);
 	}
 
-	ResidentImage finalImage, finalImageDepth;
-	ResidentBuffer finalImageBuf;
+	// ResidentImage finalImage, finalImageDepth;
+	ResidentBuffer finalImageBuf, finalImageDepthBuf;
 	void initFinalImage() {
-		if (headless) finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
-		if (headless) finalImageDepth.createAsDepthBuffer(uploader, windowHeight, windowWidth, true, vk::ImageUsageFlagBits::eTransferDst);
+		// if (headless) finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
+		// if (headless) finalImageDepth.createAsDepthBuffer(uploader, windowHeight, windowWidth, true, vk::ImageUsageFlagBits::eTransferDst);
 		if (headless) {
 			finalImageBuf.setAsStorageBuffer(windowHeight*windowWidth*4, true);
 			finalImageBuf.memPropFlags =
@@ -373,6 +375,14 @@ struct GlobeApp : public BaseApp {
 					;
 			finalImageBuf.usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
 			finalImageBuf.create(deviceGpu, *pdeviceGpu, queueFamilyGfxIdxs);
+
+			finalImageDepthBuf.setAsStorageBuffer(windowWidth*windowHeight*4, true);
+			finalImageDepthBuf.memPropFlags =
+					  vk::MemoryPropertyFlagBits::eHostVisible
+					| vk::MemoryPropertyFlagBits::eHostCached
+					;
+			finalImageDepthBuf.usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
+			finalImageDepthBuf.create(deviceGpu, *pdeviceGpu, queueFamilyGfxIdxs);
 		}
 	}
 	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
@@ -387,8 +397,8 @@ struct GlobeApp : public BaseApp {
 		auto signalSema = &*fd.scAcquireSema;
 		if (not headless)
 			signalSema = nullptr;
-		finalImageBuf.copyFromImage(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
-		finalImageDepth.copyFrom(copyCmd, depthImg, *deviceGpu, *queueGfx, &fence, 0, signalSema, ex, off, vk::ImageAspectFlagBits::eDepth);
+		finalImageBuf.copyFromImage(copyCmd, srcImg, vk::ImageLayout::eColorAttachmentOptimal, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+		finalImageDepthBuf.copyFromImage(copyCmd, depthImg, vk::ImageLayout::eDepthStencilAttachmentOptimal, *deviceGpu, *queueGfx, &fence, 0, signalSema, ex, off, vk::ImageAspectFlagBits::eDepth);
 
 		if (1) {
 			// uint8_t* dbuf = (uint8_t*) finalImage.mem.mapMemory(0, windowHeight*windowWidth*4, {});
@@ -409,12 +419,12 @@ struct GlobeApp : public BaseApp {
 		}
 
 		if (0) {
-			float* dbuf = (float*) finalImageDepth.mem.mapMemory(0, windowHeight*windowWidth*4, {});
+			float* dbuf = (float*) finalImageDepthBuf.mem.mapMemory(0, windowHeight*windowWidth*4, {});
 			float* buf = (float*) malloc(windowWidth*windowHeight*4);
 			for (int y=0; y<windowHeight; y++)
 				for (int x=0; x<windowWidth; x++)
 						buf[y*windowWidth+x] = dbuf[y*windowWidth+x];
-			finalImageDepth.mem.unmapMemory();
+			finalImageDepthBuf.mem.unmapMemory();
 
 			auto fd_ = open("tstDepth.bmp", O_RDWR | O_TRUNC | O_CREAT, S_IRWXU);
 			write(fd_, buf, windowWidth*windowHeight*4);
@@ -443,10 +453,12 @@ int main(int argc, char** argv) {
 
 	app.initVk();
 
+	int ii = 0;
 	while (not app.isDone()) {
 		//if (proc) app.render();
 		app.render();
 		//usleep(33'000);
+		// if ((ii++) > 5) break;
 	}
 
 	return 0;

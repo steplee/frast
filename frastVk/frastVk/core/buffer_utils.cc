@@ -139,7 +139,7 @@ void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::Buff
 	if (not mappable) usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
 }
 
-bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& other,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& other,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
 		vk::ImageCopy region {
 			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
 				off,
@@ -167,7 +167,9 @@ bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::I
 		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
 			vk::ImageMemoryBarrier {
 				{},{},
-				{}, vk::ImageLayout::eTransferSrcOptimal,
+				// {}, vk::ImageLayout::eTransferSrcOptimal,
+				// vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal,
+				prevLayout, vk::ImageLayout::eTransferSrcOptimal,
 				{}, {},
 				other,
 				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}
@@ -235,18 +237,18 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		if (posType == MeshDescription::ScalarType::UInt16_scaled) positionAttribute.format = vk::Format::eR16G16B16A16Uscaled;
 	} else {
 		if (posType == MeshDescription::ScalarType::Float)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
 		if (posType == MeshDescription::ScalarType::UInt8)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8Unorm;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8Unorm;
 		if (posType == MeshDescription::ScalarType::UInt16)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR16G16B16Unorm : vk::Format::eR16G16Unorm;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR16G16B16Unorm : vk::Format::eR16G16Unorm;
 		if (posType == MeshDescription::ScalarType::UInt32)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR32G32B32Uint : vk::Format::eR32G32Uint;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR32G32B32Uint : vk::Format::eR32G32Uint;
 
 		if (posType == MeshDescription::ScalarType::UInt8_scaled)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR8G8B8Uscaled : vk::Format::eR8G8Uscaled;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR8G8B8Uscaled : vk::Format::eR8G8Uscaled;
 		if (posType == MeshDescription::ScalarType::UInt16_scaled)
-			positionAttribute.format = posDims == 2 ? vk::Format::eR16G16B16Uscaled : vk::Format::eR16G16Uscaled;
+			positionAttribute.format = posDims == 3 ? vk::Format::eR16G16B16Uscaled : vk::Format::eR16G16Uscaled;
 	}
 	positionAttribute.offset = offset;
 	fmt::print(" - [vertex desc] pos offset {}\n", offset);
@@ -605,7 +607,7 @@ void ResidentImage::createAsStorage(vk::raii::Device& d, vk::raii::PhysicalDevic
 	sampler = std::move(vk::raii::Sampler{d, samplerInfo});
 }
 
-bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
 		vk::ImageCopy region {
 			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
 				off,
@@ -619,7 +621,7 @@ bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& 
 		std::vector<vk::ImageMemoryBarrier> imgBarriers = {
 			vk::ImageMemoryBarrier {
 				{},{},
-				{}, vk::ImageLayout::eTransferSrcOptimal,
+				prevLayout, vk::ImageLayout::eTransferSrcOptimal,
 				{}, {},
 				srcImg,
 				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}

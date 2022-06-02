@@ -59,6 +59,7 @@ void AbstractSwapchain::clear() {
 	headlessCopyDoneFences.clear();
 }
 
+
 /* ===================================================
  *
  *
@@ -177,6 +178,18 @@ bool BaseVkApp::make_gpu_device() {
 				if (rti.enableQuery) {
 					assert((not rti.enableQuery) && "rayQuery not supported now");
 				}
+
+				vk::FormatProperties2 fprops;
+				vkGetPhysicalDeviceFormatProperties2(pdevices[i], (VkFormat)vk::Format::eR8G8B8Uint, (VkFormatProperties2*)&fprops);
+				fmt::print(" - BuildAccelStructure supports uint8   : {}\n", (uint32_t)(fprops.formatProperties.bufferFeatures & vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR));
+				vkGetPhysicalDeviceFormatProperties2(pdevices[i], (VkFormat)vk::Format::eR8G8B8Sint, (VkFormatProperties2*)&fprops);
+				fmt::print(" - BuildAccelStructure supports  int8   : {}\n", (uint32_t)(fprops.formatProperties.bufferFeatures & vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR));
+				vkGetPhysicalDeviceFormatProperties2(pdevices[i], (VkFormat)vk::Format::eR8G8B8Unorm, (VkFormatProperties2*)&fprops);
+				fmt::print(" - BuildAccelStructure supports unorm8  : {}\n", (uint32_t)(fprops.formatProperties.bufferFeatures & vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR));
+				vkGetPhysicalDeviceFormatProperties2(pdevices[i], (VkFormat)vk::Format::eR8G8B8Snorm, (VkFormatProperties2*)&fprops);
+				fmt::print(" - BuildAccelStructure supports  norm8  : {}\n", (uint32_t)(fprops.formatProperties.bufferFeatures & vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR));
+				vkGetPhysicalDeviceFormatProperties2(pdevices[i], (VkFormat)vk::Format::eR32G32B32Sfloat, (VkFormatProperties2*)&fprops);
+				fmt::print(" - BuildAccelStructure supports float32 : {}\n", (uint32_t)(fprops.formatProperties.bufferFeatures & vk::FormatFeatureFlagBits::eAccelerationStructureVertexBufferKHR));
 
 
 				myDeviceIdx = i;

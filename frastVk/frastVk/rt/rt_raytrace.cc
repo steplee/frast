@@ -15,6 +15,16 @@ bool RtDataLoader::createBottomLevelAS(RtTile* tile, DecodedTileData& dtd) {
 		auto &fence = myUploader.fence;
 		auto &deviceGpu = app->deviceGpu;
 
+		// My GPU/driver supports only unorm8 input vertices, but the RT format is uint8, so we must scale model matrix accordingly.
+		Eigen::Map<Matrix4f> mapModel { tile->modelMatf.data() };
+		Matrix4f scale; scale <<
+			255.f, 0., 0., 0.,
+			0.f, 255., 0., 0.,
+			0.f, 0., 255., 0.,
+			0.f, 0., 0., 1.;
+
+		Matrix4f modelMatScaled = mapModel * scale;
+
 		// fmt::print(" - ModelMat:\n{}\n", Map<const RowMatrix4f>{tile->modelMatf.data()});
 
 		ResidentBuffer& tmpXformBuffer = pooledTileData.tmpXformBuffer;
@@ -27,9 +37,9 @@ bool RtDataLoader::createBottomLevelAS(RtTile* tile, DecodedTileData& dtd) {
 		VkTransformMatrixKHR* xform = (VkTransformMatrixKHR*) tmpXformBuffer.mem.mapMemory(0, 4*12, {});
 		for (int r=0; r<3; r++)
 			for (int c=0; c<4; c++)
-				// xform->matrix[r][c] = tile->modelMatf[r*4+c];
-				// ((float*)xform->matrix)[r*4+c] = tile->modelMatf[r*4+c];
-				((float*)xform->matrix)[r*4+c] = r==c;
+				// xform->matrix[r][c] = tile->modelMatf[c*4+r];
+				xform->matrix[r][c] = modelMatScaled(r,c);
+				// ((float*)xform->matrix)[r*4+c] = r==c;
 		vk::DeviceOrHostAddressConstKHR xformAddr;
 		xformAddr.deviceAddress = deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*tmpXformBuffer.buffer});
 
@@ -42,24 +52,24 @@ bool RtDataLoader::createBottomLevelAS(RtTile* tile, DecodedTileData& dtd) {
 			auto& mesh = tile->meshes[i];
 			auto& td = pooledTileData.datas[mesh.idx];
 			auto& md = dtd.meshes[i];
-			td.modelMatf = tile->modelMatf;
+			// td.modelMatf = tile->modelMatf;
 
 			vk::DeviceOrHostAddressConstKHR vertsAddr, indsAddr, vertsAddrTmp;
 			vertsAddr.deviceAddress = (uint64_t)deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*td.verts.buffer});
 			indsAddr.deviceAddress = deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*td.inds.buffer});
 
-			vertsAddrTmp.deviceAddress = (uint64_t)deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*td.vertsFloatRemoveMe.buffer});
+			// vertsAddrTmp.deviceAddress = (uint64_t)deviceGpu.getBufferAddress(vk::BufferDeviceAddressInfo{*td.vertsFloatRemoveMe.buffer});
 
 			geoms.push_back(vk::AccelerationStructureGeometryKHR{
 						vk::GeometryTypeKHR::eTriangles,
 						vk::AccelerationStructureGeometryDataKHR {
 							vk::AccelerationStructureGeometryTrianglesDataKHR {
-								// vk::Format::eR8G8B8Uint, vertsAddr, (VkDeviceSize)sizeof(PackedVertex), td.residentVerts,
-								vk::Format::eR32G32B32Sfloat, vertsAddrTmp, (VkDeviceSize)(4*3), td.residentVerts,
+								vk::Format::eR8G8B8Unorm, vertsAddr, (VkDeviceSize)sizeof(PackedVertex), td.residentVerts,
+								// vk::Format::eR32G32B32Sfloat, vertsAddrTmp, (VkDeviceSize)(4*3), td.residentVerts,
 								vk::IndexType::eUint16,
 								indsAddr,
-								{nullptr}
-								// xformAddr
+								// {nullptr}
+								xformAddr
 							}
 						},
 						vk::GeometryFlagBitsKHR::eOpaque
@@ -81,7 +91,7 @@ bool RtDataLoader::createBottomLevelAS(RtTile* tile, DecodedTileData& dtd) {
 
 		// fmt::print(" - Got acc build size {} {} {}\n", buildSize.accelerationStructureSize, buildSize.updateScratchSize, buildSize.buildScratchSize);
 
-		assert(tile->meshes.size() == 1);
+		// assert(tile->meshes.size() == 1);
 		auto &td0 = pooledTileData.datas[tile->meshes[0].idx];
 		if (buildSize.accelerationStructureSize > td0.accel.residentSize) {
 			td0.accel.setAsAccelBuffer(buildSize.accelerationStructureSize, false);
@@ -176,6 +186,7 @@ bool RtRenderer::createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii
 	for (int i=0, j=0; i<cfg.maxTiles; i++) {
 		if (not residentIds[i]) continue;
 
+		/*
 		VkTransformMatrixKHR xform2;
 		if (ptd.datas[i].modelMatf.size()) {
 			for (int r=0; r<3; r++)
@@ -185,6 +196,7 @@ bool RtRenderer::createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii
 			xform2 = xform1;
 			fmt::print(" - tile id {} missing modelMatf\n", i);
 		}
+		*/
 
 		primCnts[j] = ptd.datas[i].residentInds/3;
 		totalPrims += primCnts[j];
@@ -277,7 +289,7 @@ bool RtRenderer::createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii
 	q.submit(submitInfo, *fence);
 	app->deviceGpu.waitForFences({1u, &*fence}, true, 999999999999);
 	app->deviceGpu.resetFences({1u, &*fence});
-	// fmt::print(" - Done creating BLAS\n");
+	// fmt::print(" - Done creating TLAS\n");
 
 	nextTlasAddr = app->deviceGpu.getAccelerationStructureAddressKHR(vk::AccelerationStructureDeviceAddressInfoKHR { *nextTlas });
 
@@ -383,10 +395,15 @@ bool RtRenderer::setupRaytraceDescriptors() {
 
 	// Setup descriptor for raygen shader
 	{
+		auto flags2 = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eRaygenKHR;
 		std::vector<vk::DescriptorSetLayoutBinding> bindings = {
-			{ 0, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR },
+			{ 0, vk::DescriptorType::eAccelerationStructureKHR, 1, flags2 },
 			{ 1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR },
-			{ 2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR } };
+			{ 2, vk::DescriptorType::eUniformBuffer, 1, flags2 }, // Camera data
+			{ 3, vk::DescriptorType::eStorageBuffer, cfg.maxTiles, vk::ShaderStageFlagBits::eClosestHitKHR }, // The vertex array
+			{ 4, vk::DescriptorType::eStorageBuffer, cfg.maxTiles, vk::ShaderStageFlagBits::eClosestHitKHR }, // The index  array
+			//{ 4, vk::DescriptorType::eCombinedImageSampler, cfg.maxTiles, vk::ShaderStageFlagBits::eClosestHitKHR }, // The texture array
+		};
 
 		vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
 		raytraceDescSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
@@ -410,6 +427,7 @@ bool RtRenderer::setupRaytraceDescriptors() {
 
 	raytracePipelineStuff.setLayouts.push_back(*raytraceDescSetLayout);
 	raytracePipelineStuff.setLayouts.push_back(*pooledTileData.descSetLayout);
+	raytracePipelineStuff.setLayouts.push_back(*globalDescSetLayout);
 
 	return false;
 }
@@ -431,6 +449,69 @@ void RtRenderer::writeDescSetTlas() {
 
 	app->deviceGpu.updateDescriptorSets({writeDesc}, nullptr);
 	tlasIsSet = true;
+}
+
+void RtRenderer::writeNewTileDescriptors(std::vector<RtTile*>& cands, PooledTileData& ptd) {
+
+	std::vector<vk::WriteDescriptorSet> ws;
+	std::vector<vk::DescriptorImageInfo> iinfos;
+	std::vector<vk::DescriptorBufferInfo> binfos;
+
+	// Must allocate exact number, otherwise std::vector will copy and we can't ahve that (taking pointers)
+	int n = 0;
+	for (auto cand : cands) n += cand->meshes.size();
+
+	ws.reserve(n);
+	binfos.reserve(n*2);
+
+	for (auto cand : cands) {
+		for (auto& mesh : cand->meshes) {
+			TileData& td = ptd.datas[mesh.idx];
+			vk::DescriptorBufferInfo bi { *td.verts.buffer, 0, VK_WHOLE_SIZE };
+			binfos.push_back(bi);
+
+			vk::WriteDescriptorSet w {
+				*raytraceDescSet,
+					3, mesh.idx, 1,
+					vk::DescriptorType::eStorageBuffer,
+					nullptr, &binfos.back(), nullptr };
+			ws.push_back(w);
+		}
+	}
+	for (auto cand : cands) {
+		for (auto& mesh : cand->meshes) {
+			TileData& td = ptd.datas[mesh.idx];
+			vk::DescriptorBufferInfo bi { *td.inds.buffer, 0, VK_WHOLE_SIZE };
+			binfos.push_back(bi);
+
+			vk::WriteDescriptorSet w {
+				*raytraceDescSet,
+					4, mesh.idx, 1,
+					vk::DescriptorType::eStorageBuffer,
+					nullptr, &binfos.back(), nullptr };
+			ws.push_back(w);
+		}
+	}
+
+	/*
+	iinfos.reserve(n);
+	for (auto cand : cands) {
+		for (auto& mesh : cand->meshes) {
+			TileData& td = ptd.datas[mesh.idx];
+			vk::DescriptorImageInfo ii { *td.tex.sampler, *td.tex.view, vk::ImageLayout::eShaderReadOnlyOptimal };
+			iinfos.push_back(ii);
+
+			vk::WriteDescriptorSet w {
+				*raytraceDescSet,
+					4, mesh.idx, 1,
+					vk::DescriptorType::eCombinedImageSampler,
+					&iinfos.back(), nullptr, nullptr };
+			ws.push_back(w);
+		}
+	}
+	*/
+
+	app->deviceGpu.updateDescriptorSets(ws, nullptr);
 }
 
 }

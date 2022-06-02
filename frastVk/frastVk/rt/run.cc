@@ -206,7 +206,8 @@ int main(int argc, char** argv) {
 	}
 
 	if (raytrace) {
-	app.windowWidth = app.windowHeight = 256;
+		app.windowWidth = app.windowHeight = 256;
+		app.windowWidth = app.windowHeight = 512;
 		app.rti.enablePipeline = true;
 		app.doRaytrace = true;
 	}

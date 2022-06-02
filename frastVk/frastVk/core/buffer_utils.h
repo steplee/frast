@@ -61,7 +61,7 @@ struct ResidentBuffer {
 	void upload(void* cpuData, uint64_t len, uint64_t offset=0);
 
 	//void copyFromImage(ResidentImage& other);
-	bool copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
+	bool copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
 			const vk::Semaphore* waitSema, const vk::Semaphore* signalSema,
 			vk::Extent3D ex, vk::Offset3D off={},
 			vk::ImageAspectFlagBits aspect=vk::ImageAspectFlagBits::eColor);
@@ -212,7 +212,7 @@ struct ResidentImage {
 	void createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags={}, vk::SamplerAddressMode=vk::SamplerAddressMode::eClampToEdge);
 	void create_(Uploader& uploader);
 
-	bool copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
+	bool copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
 			const vk::Semaphore* waitSema, const vk::Semaphore* signalSema,
 			vk::Extent3D ex, vk::Offset3D off={},
 			vk::ImageAspectFlagBits aspect=vk::ImageAspectFlagBits::eColor);

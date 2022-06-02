@@ -84,6 +84,7 @@ void ImguiApp::initVk() {
 				vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore,
 				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
 				vk::ImageLayout::eColorAttachmentOptimal,
+				// vk::ImageLayout::eColorAttachmentOptimal
 				vk::ImageLayout::ePresentSrcKHR
 		};
 
@@ -244,11 +245,12 @@ void ImguiApp::render() {
 	auto cmds = doRender(renderState);
 
 
-	vk::raii::CommandBuffer &uiCmd = cmdBuffers[fd.scIndx];
-	uiCmd.reset();
-	uiCmd.begin({});
 
 	if (not headless) {
+		vk::raii::CommandBuffer &uiCmd = cmdBuffers[fd.scIndx];
+		uiCmd.reset();
+		uiCmd.begin({});
+
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
 		vk::RenderPassBeginInfo rpInfo {
 			*uiPass, *uiFramebuffers[renderState.frameData->scIndx],
@@ -259,6 +261,7 @@ void ImguiApp::render() {
 			uiCmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 			renderUi(renderState, *uiCmd);
 			uiCmd.endRenderPass();
+
 		} else {
 
 			ImGui::Render();
@@ -274,9 +277,10 @@ void ImguiApp::render() {
 			barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
 			uiCmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
 		}
+
+		uiCmd.end();
+		cmds.push_back(*uiCmd);
 	}
-	uiCmd.end();
-	cmds.push_back(*uiCmd);
 
 	/*
 	vk::ImageMemoryBarrier barrier;

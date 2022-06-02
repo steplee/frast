@@ -30,6 +30,111 @@ inline int unpackVarInt(uint8_t*& b) {
 	}
 }
 
+// Almost directly from the 'client' code in the gearth repo
+int unpackNormalsStepOne(const rtpb::NodeData& nodeData, std::vector<uint8_t>& partialNormals) {
+	auto f1 = [](int v, int l) {
+		if (4 >= l)
+			return (v << l) + (v & (1 << l) - 1);
+		if (6 >= l) {;
+			auto r = 8 - l;
+			return (v << l) + (v << l >> r) + (v << l >> r >> r) + (v << l >> r >> r >> r);
+		}
+		return -(v & 1);
+	};
+	auto f2 = [](double c) {
+		auto cr = (int)round(c);
+		if (cr < 0) return 0;
+		if (cr > 255) return 255;
+		return cr;
+	};
+	assert(nodeData.has_for_normals());
+	auto input = nodeData.for_normals();
+	auto data = (uint8_t*)input.data();
+	auto size = input.size();
+	assert(size > 2);
+	auto count = *(uint16_t*)data;
+	assert(count * 2 == size - 3);
+	int s = data[2];
+	data += 3;
+
+	partialNormals.resize(3*count);
+	
+	for (auto i = 0; i < count; i++) {
+		double a = f1(data[0 + i], s) / 255.0;
+		double f = f1(data[count + i], s) / 255.0;
+			
+		double b = a, c = f, g = b + c, h = b - c;
+		int sign = 1;
+
+		if (!(.5 <= g && 1.5 >= g && -.5 <= h && .5 >= h)) {
+			sign = -1;
+			if (.5 >= g) {
+				b = .5 - f;
+				c = .5 - a;
+			} else {
+				if (1.5 <= g) {
+					b = 1.5 - f;
+					c = 1.5 - a;
+				} else {
+					if (-.5 >= h) {
+						b = f - .5;
+						c = a + .5;
+					} else {
+						b = f + .5;
+						c = a - .5;
+					}
+				}
+			}
+			g = b + c;
+			h = b - c;
+		}
+		
+		a = fmin(fmin(2 * g - 1, 3 - 2 * g), fmin(2 * h + 1, 1 - 2 * h)) * sign;
+		b = 2 * b - 1;
+		c = 2 * c - 1;
+		auto m = 127 / sqrt(a * a + b * b + c * c);
+
+		partialNormals[3 * i + 0] = f2(m * a + 127);
+		partialNormals[3 * i + 1] = f2(m * b + 127);
+		partialNormals[3 * i + 2] = f2(m * c + 127);		
+	}
+	return 3*count;
+}
+int unpackNormalsStepTwo(const rtpb::Mesh& mesh, std::vector<PackedVertex>& verts, const std::vector<uint8_t>& partialNormals) {
+	auto normals = mesh.normals();
+	uint8_t *new_normals = NULL;
+	int count = 0;
+	if (mesh.has_normals() && partialNormals.size()) {
+		count = normals.size() / 2;		
+		auto input = (uint8_t*)normals.data();
+		for (auto i = 0; i < count; ++i) {
+			int j = input[i] + (input[count + i] << 8);
+			assert(3 * j + 2 < partialNormals.size());
+			verts[i].nx = partialNormals[3 * j + 0];
+			verts[i].ny = partialNormals[3 * j + 1];
+			verts[i].nz = partialNormals[3 * j + 2];
+			verts[i].extra = 0;			
+		}
+	} else {
+		count = (mesh.vertices().size() / 3) * 8;
+		for (auto i = 0; i < count; ++i) {
+			verts[i].nx = 127;
+			verts[i].ny = 127;
+			verts[i].nz = 127;
+			verts[i].extra = 0;
+		}
+	}
+	return 4 * count;
+}
+
+void computeNormals(const rtpb::Mesh& mesh, std::vector<PackedVertex>& vs) {
+	std::vector<Vector3f> nacc(vs.size());
+
+	for (int i=0; i<vs.size(); i++) {
+		Vector3f n = nacc[i].normalized() * 255;
+	}
+
+}
 
 
 inline bool decode_node_to_tile(
@@ -41,6 +146,9 @@ inline bool decode_node_to_tile(
 		fmt::print(" - [#decode_node_to_tile] ERROR: failed to parse istream!\n");
 		return true;
 	}
+
+	std::vector<uint8_t> partialNormals;
+	unpackNormalsStepOne(nd, partialNormals);
 
 	int n_mesh = nd.meshes_size();
 	int out_index = 0;
@@ -67,6 +175,9 @@ inline bool decode_node_to_tile(
 				if (i==2) md.vert_buffer_cpu[j].z = acc;
 			}
 		}
+
+		unpackNormalsStepTwo(mesh, md.vert_buffer_cpu, partialNormals);
+		// computeNormals(mesh, md.vert_buffer_cpu);
 
 
 		uint8_t* data = (uint8_t*) mesh.texture_coordinates().data();

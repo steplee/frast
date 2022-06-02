@@ -533,12 +533,12 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		auto i_size = sizeof(uint16_t)*md.ind_buffer_cpu.size();
 		if (v_size > td.verts.residentSize) {
 			td.verts.setAsVertexBuffer(v_size, false);
-			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
 			td.verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		}
 		if (i_size > td.inds.residentSize) {
 			td.inds.setAsIndexBuffer(i_size, false);
-			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
 			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 		}
 		if (v_size > 0) myUploader.uploadSync(td.verts, md.vert_buffer_cpu.data(), v_size, 0);
@@ -546,11 +546,13 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 		td.residentInds = md.ind_buffer_cpu.size();
 		td.residentVerts = md.vert_buffer_cpu.size() / sizeof(PackedVertex);
 
+		/*
 		if (cfg.raytrace) {
 			auto v_size = 12*md.vert_buffer_cpu.size();
 			td.vertsFloatRemoveMe.setAsStorageBuffer(v_size, true);
 			td.vertsFloatRemoveMe.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 			td.vertsFloatRemoveMe.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+
 			float* verts_ = (float*)td.vertsFloatRemoveMe.map();
 			Eigen::Map<Eigen::Matrix4d> mm(dtd.modelMat);
 			for (int i=0; i<md.vert_buffer_cpu.size(); i++) {
@@ -558,11 +560,22 @@ RtDataLoader::LoadStatus RtDataLoader::loadTile(RtTile* tile, bool isClose) {
 				Vector4d v = mm * Vector4d{vv.x,vv.y,vv.z,1.};
 				constexpr double R1         = (6378137.0);
 				Vector3f vf = v.hnormalized().cast<float>() / R1;
-				verts_[i*3+0]=vf(0); verts_[i*3+1]=vf(1); verts_[i*3+2]=vf(2);
-				fmt::print(" - {} {} {}\n", vf(0), vf(1), vf(2));
+				// verts_[i*3+0]=vf(0); verts_[i*3+1]=vf(1); verts_[i*3+2]=vf(2);
+				verts_[i*3+0]=vv.x; verts_[i*3+1]=vv.y; verts_[i*3+2]=vv.z;
+				// fmt::print(" - {} {} {}\n", vf(0), vf(1), vf(2));
 			}
+
+			// uint8_t* verts_ = (uint8_t*)td.vertsFloatRemoveMe.map();
+			// Eigen::Map<Eigen::Matrix4d> mm(dtd.modelMat);
+			// for (int i=0; i<md.vert_buffer_cpu.size(); i++) {
+				// PackedVertex vv = md.vert_buffer_cpu[i];
+				// verts_[i*3+0]=vv.x; verts_[i*3+1]=vv.y; verts_[i*3+2]=vv.z;
+				// fmt::print(" - {} {} {}\n", vf(0), vf(1), vf(2));
+			// }
+
 			td.vertsFloatRemoveMe.unmap();
 		}
+	*/
 
 
 
@@ -918,6 +931,7 @@ void RtRenderer::update(RenderState& rs) {
 
 	// Handle loaded opens/closes
 	bool anyChange = false;
+	std::vector<RtTile*> changedTiles; // only pushed to if raytrace enabled
 	{
 		std::lock_guard<std::mutex> lck(dataLoader.mtx);
 		pushedAsks += rtuc.nAsked;
@@ -985,6 +999,7 @@ void RtRenderer::update(RenderState& rs) {
 					}
 					if (not cfg.raytrace)
 						tile->modelMatf.clear();
+					if (cfg.raytrace) changedTiles.push_back(tile);
 				}
 			}
 		}
@@ -996,6 +1011,7 @@ void RtRenderer::update(RenderState& rs) {
 		auto &cmd = cmdBuffers[0];
 		auto &fence = fences[0];
 		createThenSwapTopLevelAS(cmd, q, fence);
+		writeNewTileDescriptors(changedTiles, pooledTileData);
 	}
 
 }
@@ -1004,9 +1020,7 @@ void RtRenderer::render(RenderState& rs, vk::CommandBuffer& cmd) {
 
 	if (cfg.raytrace) {
 		if (tlasIsSet) {
-			fmt::print(" - Begin renderRaytrace\n");
 			renderRaytrace(rs,cmd);
-			fmt::print(" - After renderRaytrace\n");
 		} else {
 			fmt::print(" - Not raytracing - tlas not set.\n");
 		}
@@ -1121,6 +1135,17 @@ void RtRenderer::renderRaytrace(RenderState& rs, vk::CommandBuffer& cmd) {
 	memcpy(dbuf, &rtgd, sizeof(RtGlobalData::mvp) + sizeof(RtGlobalData::offset));
 	pooledTileData.globalBuffer.mem.unmapMemory();
 	*/
+	RtGlobalData rtgd;
+	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	RowMatrix4f new_mvp = (mvp_).cast<float>();
+	memcpy(rtgd.mvp, new_mvp.data(), 4*16);
+	rtgd.offset[0] = 0;
+	rtgd.offset[1] = 0;
+	rtgd.offset[2] = 0;
+	rtgd.offset[3] = 0;
+	void* dbuf_ = (void*) pooledTileData.globalBuffer.mem.mapMemory(0, sizeof(RtGlobalData), {});
+	memcpy(dbuf_, &rtgd, sizeof(RtGlobalData::mvp) + sizeof(RtGlobalData::offset));
+	pooledTileData.globalBuffer.mem.unmapMemory();
 
 	Eigen::Map<const RowMatrix4d> view_ { rs.camera->viewInv() };
 	Eigen::Map<const RowMatrix4d> proj_ { rs.proj() };
@@ -1132,8 +1157,8 @@ void RtRenderer::renderRaytrace(RenderState& rs, vk::CommandBuffer& cmd) {
 	// invProj.setIdentity();
 	// invView = view_.inverse().cast<float>();
 	// invProj = proj_.inverse().cast<float>();
-	fmt::print(" - invView:\n{}\n", invView);
-	fmt::print(" - invProj:\n{}\n", invProj);
+	// fmt::print(" - invView:\n{}\n", invView);
+	// fmt::print(" - invProj:\n{}\n", invProj);
 	assert(sizeof(RtRaytraceCameraData) == 16*2*4);
 	void* dbuf = (void*) raytraceCameraBuffer.mem.mapMemory(0, sizeof(RtRaytraceCameraData), {});
 	memcpy(dbuf, &rrcd, sizeof(RtRaytraceCameraData));
@@ -1141,6 +1166,7 @@ void RtRenderer::renderRaytrace(RenderState& rs, vk::CommandBuffer& cmd) {
 
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipelineLayout, 0, {1,&*raytraceDescSet}, nullptr);
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipelineLayout, 1, {1,&*pooledTileData.descSet}, nullptr);
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipelineLayout, 2, {1,&*globalDescSet}, nullptr);
 	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *raytracePipelineStuff.pipeline);
 
 	vk::StridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
@@ -1160,12 +1186,12 @@ void RtRenderer::renderRaytrace(RenderState& rs, vk::CommandBuffer& cmd) {
 
 	vk::StridedDeviceAddressRegionKHR callableShaderSbtEntry{};
 
-	fmt::print(" - TraceRays with {} {} {} {} size {}\n",
+	/*fmt::print(" - TraceRays with {} {} {} {} size {}\n",
 			raygenShaderSbtEntry.deviceAddress,
 			missShaderSbtEntry.deviceAddress,
 			hitShaderSbtEntry.deviceAddress,
 			callableShaderSbtEntry.deviceAddress,
-			raytracePipelineStuff.handleSizeAligned);
+			raytracePipelineStuff.handleSizeAligned);*/
 	
 	// For some reason, vkCmdTraceRaysKHR is not in the loader .so, so must do this
     auto _vkCmdTraceRaysKHR              = PFN_vkCmdTraceRaysKHR( vkGetDeviceProcAddr( *app->deviceGpu, "vkCmdTraceRaysKHR" ) );
@@ -1268,8 +1294,8 @@ void RtRenderer::init() {
 			td.inds.setAsIndexBuffer(sizeof(uint16_t)*cfg.maxInds, false);
 			// td.ubo.setAsUniformBuffer(sizeof(RtNodeData), false);
 
-			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+			if (cfg.raytrace) td.verts.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
+			if (cfg.raytrace) td.inds.usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
 
 			td.verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 			td.inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
@@ -1342,7 +1368,11 @@ void RtRenderer::init() {
 
 	{
 		vk::DescriptorSetLayoutBinding bindings[1] = { {
-			0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex } };
+			0, vk::DescriptorType::eUniformBuffer, 1,
+				cfg.raytrace ?
+					(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eClosestHitKHR) :
+					vk::ShaderStageFlagBits::eVertex
+		} };
 
 		vk::DescriptorSetLayoutCreateInfo layInfo { {}, 1, bindings };
 		globalDescSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));

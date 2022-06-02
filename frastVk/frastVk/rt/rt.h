@@ -246,8 +246,8 @@ struct TileData {
 	ResidentBuffer accel;
 	vk::raii::AccelerationStructureKHR accelStructure{nullptr};
 	vk::DeviceAddress accelAddress;
-	std::vector<float> modelMatf;
-	ResidentBuffer vertsFloatRemoveMe;
+	// std::vector<float> modelMatf;
+	// ResidentBuffer vertsFloatRemoveMe;
 
 	// Actually: limited amount of ubs in one DescSet, so have just one global UBO and index into it.
 	// ResidentBuffer ubo; // Holds RtNodeData
@@ -446,6 +446,7 @@ class RtRenderer : public Castable
 		vk::raii::DescriptorSetLayout raytraceTileDescSetLayout = {nullptr};
 		vk::raii::DescriptorSet raytraceTileDescSet = {nullptr};
 		void writeDescSetTlas();
+		void writeNewTileDescriptors(std::vector<RtTile*>& cands, PooledTileData& ptd);
 
 };
 

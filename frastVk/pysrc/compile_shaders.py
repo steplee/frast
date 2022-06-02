@@ -4,7 +4,8 @@ from argparse import ArgumentParser
 # targetEnv = '--target-env vulkan1.0'
 targetEnv = ''
 
-def compileSource(sourceFile, type, path="/tmp/shader"):
+def compileSource(sourceFile, type, path=""):
+    if path == "": path = "/tmp/shader_" + str(os.getpid())
     with open(sourceFile,'r') as fp: source = fp.read()
 
     # cmd = "glslangValidator --stdin -S {} -V -o {} << END\n".format(type, path) + source + "\nEND"
@@ -75,7 +76,7 @@ def main():
 
 
     # Prefer multithreaded version
-    if True:
+    if False:
         for file in args.srcFiles:
             name, tup = doWork(file)
             spirvs[name] = tup

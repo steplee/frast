@@ -282,8 +282,8 @@ struct RtApp : public VkApp {
 
 		if (readyToSave) {
 			// fmt::print(" - Copying finalImage.\n");
-			finalImage.copyFrom(copyCmd, srcImg, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
-			finalImageDepth.copyFrom(copyCmd, depthImg, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
+			finalImage.copyFrom(copyCmd, srcImg, vk::ImageLayout::eColorAttachmentOptimal, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+			finalImageDepth.copyFrom(copyCmd, depthImg, vk::ImageLayout::eDepthStencilAttachmentOptimal, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
 		} else {
 
 			// We still must signal scAcquireSema
