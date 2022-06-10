@@ -3,9 +3,11 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout: enable
 
+##include "1.common.glsl"
+
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(location = 0) rayPayloadInEXT vec4 hitValue;
-layout(location = 1) rayPayloadEXT vec4 hitValueNext;
+layout(location = 0) rayPayloadInEXT RayType payload;
+layout(location = 1) rayPayloadEXT RayType payloadNext;
 hitAttributeEXT vec2 attribs;
 
 struct RtVertex {
@@ -133,22 +135,31 @@ void main()
   /* hitValue = vec3(uv,0.); */
   vec3 samp = texture(texs[objIdx], uv).rgb;
 
-  vec3 origin = vec3(0.);
-  float tmin = .000000001;
-  float tmax = 9.0;
-  vec3 direction = vec3(0.,0.,1.);
 
-  /*
-  if (hitValue.w < 2.) {
-      hitValueNext = hitValue;
-	  hitValueNext.a += 1.;
-	  traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 1);
-	  hitValue.rgb = samp * (hitValueNext.rgb * .5 + .5);
+  if (payload.depth < 4u) {
+
+	  vec3 hitPos = .999 * gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
+	  float tmin = .000000001;
+	  float tmax = 9.0;
+	  vec3 direction = reflect(normalize(gl_WorldRayDirectionEXT), n);
+	  /*payload.color.rgb = hitPos;
+	  payload.depth = 10u;
+	  return;*/
+	  /* vec3 direction = vec3(0.,0.,1.); */
+
+      payloadNext = payload;
+	  payloadNext.color.rgb = vec3(0.);
+	  payloadNext.depth = payload.depth + 1u;
+	  traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, hitPos.xyz, tmin, direction.xyz, tmax, 1);
+	  payload.color.rgb = samp * (payloadNext.color.rgb);
   } else {
-	  hitValue = vec4(normalize(ctr), 1.);
+	  /* hitValue = vec4(normalize(ctr), 1.); */
+	  payload.color.rgb = samp;
+	  /* payload.color.rgb = vec3(0.3); */
+	  payload.color.a = 1.;
+	  payload.depth += 1u;
   }
-  */
      /* hitValue =  vec4(normalize(ctr), 1.); */
-     hitValue =  vec4(normalize(n), 1.);
+     /* hitValue =  vec4(normalize(n), 1.); */
 
 }

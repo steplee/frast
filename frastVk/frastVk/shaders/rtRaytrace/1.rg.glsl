@@ -2,6 +2,8 @@
 #extension GL_EXT_ray_tracing: enable
 #extension GL_EXT_scalar_block_layout: enable
 
+##include "1.common.glsl"
+
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0, rgba8) uniform image2D image;
 layout(std430, binding = 2, set = 0) uniform CameraProperties
@@ -11,7 +13,9 @@ layout(std430, binding = 2, set = 0) uniform CameraProperties
 } cam;
 layout(set = 1, binding = 0) uniform sampler2D texs[800];
 
-layout(location = 0) rayPayloadEXT vec4 hitValue;
+
+/* layout(location = 0) rayPayloadEXT vec4 hitValue; */
+layout(location = 0) rayPayloadEXT RayType payload;
 
 void main()
 {
@@ -31,9 +35,12 @@ void main()
 	float tmin = .000000001;
 	float tmax = 9.0;
 
-    hitValue = vec4(1.0);
+    /* payload.ro = origin; */
+    /* payload.rd = direction; */
+    payload.color = vec4(1.);
+	payload.depth = 0;
 
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 	/* imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue * .5 + .2*direction.xyz, 0.0)); */
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue.rgb, 1.0));
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.color.rgb, 1.0));
 }

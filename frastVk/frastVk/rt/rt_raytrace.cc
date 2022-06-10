@@ -206,7 +206,8 @@ bool RtRenderer::createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii
 			(uint32_t)i,
 			0xff,
 			0,
-			vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
+			//vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
+			{},
 			ptd.datas[i].accelAddress
 		};
 		// fmt::print(" - Tile {} is resident with {} inds\n", i, primCnts[j-1]);

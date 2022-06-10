@@ -1,4 +1,4 @@
-import os,sys,subprocess
+import os,sys,subprocess,re
 from argparse import ArgumentParser
 
 # targetEnv = '--target-env vulkan1.0'
@@ -7,6 +7,17 @@ targetEnv = ''
 def compileSource(sourceFile, type, path=""):
     if path == "": path = "/tmp/shader_" + str(os.getpid())
     with open(sourceFile,'r') as fp: source = fp.read()
+
+
+    result = re.search('##include.+"([a-zA-Z.0-9]+)"', source)
+    while result:
+        includeName = result.group(1)
+        searchPath = os.path.join(sourceFile.rsplit('/', 1)[0], includeName)
+        print(' INCLUDE NAME', includeName)
+        with open(searchPath, 'r') as fp: newSource = fp.read()
+        source = source[:result.span()[0]] + newSource + source[result.span()[1]:]
+        #print(' Modified source:\n', source)
+        result = re.search('##include.+"([a-zA-Z.0-9]+)"', source)
 
     # cmd = "glslangValidator --stdin -S {} -V -o {} << END\n".format(type, path) + source + "\nEND"
     # cmd = "glslangValidator --stdin -S {} -V -o {} {} << END\n".format(type, path, targetEnv) + source + "\nEND"
@@ -59,7 +70,8 @@ def doWork(file):
         print('uknown file ext:', file)
 
     # spirvs[name] = compileSource(file, type)
-    return name, compileSource(file, type)
+    if type != 'unk':
+        return name, compileSource(file, type)
 
 def main():
     parser = ArgumentParser()
@@ -84,8 +96,10 @@ def main():
         from multiprocessing import Pool
         with Pool(6) as pool:
             res = pool.map(doWork, args.srcFiles)
-            for name,tup in res:
-                spirvs[name] = tup
+            for name_tup in res:
+                if name_tup:
+                    name, tup = name_tup
+                    spirvs[name] = tup
 
 
     # Now write the file
