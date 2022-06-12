@@ -18,7 +18,7 @@ layout (location=3) out vec4 v_caster_uv; // uv1, uv2
 //       this should be packed correctly.
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
-	uint tileIds[128];
+	uint tileIds[256];
 } cameraData;
 
 layout(std430, set=2, binding=0) uniform CasterData {

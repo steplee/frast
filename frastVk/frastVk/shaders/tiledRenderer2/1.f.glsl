@@ -5,7 +5,7 @@ layout (location=1) in vec2 v_uv;
 //layout (location=2) in flat int v_lvl;
 layout (location=2) in flat uint v_tileId;
 
-layout(set = 1, binding = 0) uniform sampler2D tex[128];
+layout(set = 1, binding = 0) uniform sampler2D tex[256];
 
 //output write
 layout (location = 0) out vec4 outFragColor;

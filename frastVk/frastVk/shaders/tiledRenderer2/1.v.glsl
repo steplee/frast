@@ -17,7 +17,7 @@ layout (location=2) out flat uint v_tileId;
 //       this should be packed correctly.
 layout(std430, set=0, binding=0) uniform CameraData {
 	mat4 viewProj;
-	uint tileIds[128];
+	uint tileIds[256];
 } cameraData;
 
 /*

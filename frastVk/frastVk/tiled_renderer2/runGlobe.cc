@@ -105,7 +105,7 @@ struct GlobeApp : public BaseApp {
 		// TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/gmted/gmted.ft");
 		// TiledRendererCfg cfg ("/data/naip/ok/ok16.ft", "/data/elevation/srtm/usa.11.ft");
 		// TiledRendererCfg cfg ("/data/khop/whole.ft", "/data/elevation/srtm/usa.11.ft");
-		TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "/data/elevation/gmted/gmted.ft");
+		TiledRendererCfg cfg ("/data/tb/naip/mocoNaip/out.ft", "/data/tb/elevation/gmted/gmted.ft");
 		// TiledRendererCfg cfg ("/data/naip/mocoNaip/out.ft", "");
 		tiledRenderer = std::make_shared<TiledRenderer>(cfg, this);
 		tiledRenderer->init();

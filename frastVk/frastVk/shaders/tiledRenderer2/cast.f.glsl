@@ -6,7 +6,7 @@ layout (location=1) in vec2 v_uv;
 layout (location=2) in flat uint v_tileId;
 layout (location=3) in vec4 v_caster_uv; // uv1, uv2
 
-layout(set = 1, binding = 0) uniform sampler2D tex[128];
+layout(set = 1, binding = 0) uniform sampler2D tex[256];
 
 /*
 layout(std430, set=2, binding=0) uniform CasterData {
