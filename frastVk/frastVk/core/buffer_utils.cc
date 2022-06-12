@@ -237,9 +237,9 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 		if (posType == MeshDescription::ScalarType::UInt16_scaled) positionAttribute.format = vk::Format::eR16G16B16A16Uscaled;
 	} else {
 		if (posType == MeshDescription::ScalarType::Float)
-			positionAttribute.format = posDims == 3 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
+			positionAttribute.format = posDims == 2 ? vk::Format::eR32G32Sfloat : vk::Format::eR32G32B32Sfloat;
 		if (posType == MeshDescription::ScalarType::UInt8)
-			positionAttribute.format = posDims == 3 ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8Unorm;
+			positionAttribute.format = posDims == 2 ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8Unorm;
 		if (posType == MeshDescription::ScalarType::UInt16)
 			positionAttribute.format = posDims == 3 ? vk::Format::eR16G16B16Unorm : vk::Format::eR16G16Unorm;
 		if (posType == MeshDescription::ScalarType::UInt32)
