@@ -16,6 +16,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+namespace {
+	void make_dir(std::string& dir) {
+		if (mkdir(dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
+			printf("Error: %s\n", strerror(errno));
+		}
+	}
+}
+
 using namespace	nlohmann;
 
 using namespace rt;
@@ -186,7 +194,7 @@ struct RtApp : public VkApp {
 		bool advance = false;
 		bool debug = false;
 		bool readyToSave = true;
-		ResidentImage finalImage, finalImageDepth;
+		ResidentBuffer finalImageBuf, finalImageDepthBuf;
 		
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
@@ -229,8 +237,21 @@ struct RtApp : public VkApp {
 		cfg.sseThresholdClose = .5;
 		cfg.dbg = debug;
 
-		finalImage.createAsCpuVisible(uploader, windowHeight, windowWidth, vk::Format::eR8G8B8A8Uint, nullptr);
-		finalImageDepth.createAsDepthBuffer(uploader, windowHeight, windowWidth, true, vk::ImageUsageFlagBits::eTransferDst);
+		finalImageBuf.setAsStorageBuffer(windowHeight*windowWidth*4, true);
+		finalImageBuf.memPropFlags =
+			vk::MemoryPropertyFlagBits::eHostVisible
+			| vk::MemoryPropertyFlagBits::eHostCached
+			;
+		finalImageBuf.usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
+		finalImageBuf.create(deviceGpu, *pdeviceGpu, queueFamilyGfxIdxs);
+
+		finalImageDepthBuf.setAsStorageBuffer(windowWidth*windowHeight*4, true);
+		finalImageDepthBuf.memPropFlags =
+			vk::MemoryPropertyFlagBits::eHostVisible
+			| vk::MemoryPropertyFlagBits::eHostCached
+			;
+		finalImageDepthBuf.usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
+		finalImageDepthBuf.create(deviceGpu, *pdeviceGpu, queueFamilyGfxIdxs);
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();
@@ -238,6 +259,8 @@ struct RtApp : public VkApp {
 
 	inline virtual std::vector<vk::CommandBuffer> doRender(RenderState& rs) override {
 		auto cmd = *rs.frameData->cmd;
+		cmd.reset();
+		cmd.begin(vk::CommandBufferBeginInfo{});
 
 		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
 		vk::ClearValue clears_[2] = {
@@ -257,6 +280,18 @@ struct RtApp : public VkApp {
 		};
 
 		cmd.endRenderPass();
+
+		vk::ImageMemoryBarrier barrier;
+		barrier.image = sc.getImage(rs.frameData->scIndx);
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+		cmd.end();
 
 		return cmds;
 	}
@@ -282,8 +317,10 @@ struct RtApp : public VkApp {
 
 		if (readyToSave) {
 			// fmt::print(" - Copying finalImage.\n");
-			finalImage.copyFrom(copyCmd, srcImg, vk::ImageLayout::eColorAttachmentOptimal, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
-			finalImageDepth.copyFrom(copyCmd, depthImg, vk::ImageLayout::eDepthStencilAttachmentOptimal, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
+			//finalImage.copyFrom(copyCmd, srcImg, vk::ImageLayout::eColorAttachmentOptimal, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+			//finalImageDepth.copyFrom(copyCmd, depthImg, vk::ImageLayout::eDepthStencilAttachmentOptimal, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
+			finalImageBuf.copyFromImage(copyCmd, srcImg, vk::ImageLayout::eColorAttachmentOptimal, *deviceGpu, *queueGfx, &fence, &*fd.renderCompleteSema, 0, ex);
+			finalImageDepthBuf.copyFromImage(copyCmd, depthImg, vk::ImageLayout::eDepthStencilAttachmentOptimal, *deviceGpu, *queueGfx, &fence, 0, &*fd.scAcquireSema, ex, off, vk::ImageAspectFlagBits::eDepth);
 		} else {
 
 			// We still must signal scAcquireSema
@@ -351,7 +388,16 @@ int main(int argc, char** argv) {
 	// app.windowWidth = app.windowHeight = 1024;
 	app.headless = not debug;
 
-	std::ifstream ifs(argv[1]);
+	std::string entriesPath { argv[1] };
+	std::string outMetaPath { argv[1] };
+	std::string outImagesDir { argv[1] };
+	while (outMetaPath.back() != '/') outMetaPath.pop_back();
+	while (outImagesDir.back() != '/') outImagesDir.pop_back();
+	outMetaPath += "meta.json";
+	outImagesDir += "imgs/";
+	make_dir(outImagesDir);
+
+	std::ifstream ifs(entriesPath);
 	json jobj = json::parse(ifs);
 	auto &entries = jobj["entries"];
 	app.jobj = jobj;
@@ -362,8 +408,15 @@ int main(int argc, char** argv) {
 
 	const double EarthMajorRadius = jobj["earthMajorRadius"];
 
+	// Map once, and re-use
+	uint8_t* dbuf = (uint8_t*) app.finalImageBuf.mem.mapMemory(0, app.windowHeight*app.windowWidth*4, {});
+	float* dbufDepth = (float*) app.finalImageDepthBuf.mem.mapMemory(0, app.windowHeight*app.windowWidth*4, {});
+
+	json meta;
+
 		int i=0;
 		for (auto ent : entries) {
+			meta[std::to_string(i)] = json::object();
 			int j =0;
 			std::vector<double> camera8 = ent["camera"];
 			std::vector<double> base = ent["base"];
@@ -395,7 +448,7 @@ int main(int argc, char** argv) {
 					int okayInRow = 0;
 					for (k=0; k<40000; k++) {
 						app.render();
-						usleep(10'000);
+						usleep(5'000);
 						if (app.advance) {
 							app.rtr->allowUpdate = true;
 							app.advance = false;
@@ -430,16 +483,43 @@ int main(int argc, char** argv) {
 							// Map headless images.
 							// Save files.
 							
-							uint8_t* dbuf = (uint8_t*) app.finalImage.mem.mapMemory(0, app.windowHeight*app.windowWidth*4, {});
-							uint8_t* buf = (uint8_t*) malloc(app.windowWidth*app.windowHeight*3);
+							uint8_t* buf = (uint8_t*) malloc(app.windowWidth*app.windowHeight*4);
 							for (int y=0; y<app.windowHeight; y++)
 								for (int x=0; x<app.windowWidth; x++)
 									for (int c=0; c<3; c++) {
 										buf[y*app.windowWidth*3+x*3+c] = dbuf[y*app.windowWidth*4+x*4+c];
 									}
-							app.finalImage.mem.unmapMemory();
 							//int stbi_write_jpg(char const *filename, int w, int h, int comp, const void *data, int quality);
-							stbi_write_jpg("tst.jpg", app.windowWidth, app.windowHeight, 3, buf, 90);
+							char nameBuf[128];
+							sprintf(nameBuf, "%s%d_%d_c.jpg", outImagesDir.c_str(), i, j);
+							stbi_write_jpg(nameBuf, app.windowWidth, app.windowHeight, 3, buf, 90);
+
+							{
+								float min_d = 2.0f;
+								float max_d = -2.0f;
+								for (int y=0; y<app.windowHeight; y++)
+									for (int x=0; x<app.windowWidth; x++) {
+										float dd = dbufDepth[y*app.windowWidth+x];
+										if (dd > 0 and dd < 1) {
+											min_d = std::min(dd, min_d);
+											max_d = std::max(dd, max_d);
+										}
+									}
+
+								for (int y=0; y<app.windowHeight; y++)
+									for (int x=0; x<app.windowWidth; x++) {
+										float dd = dbufDepth[y*app.windowWidth+x];
+										buf[y*app.windowWidth+x] = 255. * ((dd - min_d) / (max_d-min_d));
+									}
+
+								meta[std::to_string(i)][std::to_string(j)] = json::object();
+								meta[std::to_string(i)][std::to_string(j)]["mind"] = min_d;
+								meta[std::to_string(i)][std::to_string(j)]["maxd"] = max_d;
+
+								sprintf(nameBuf, "%s%d_%d_d.png", outImagesDir.c_str(), i, j);
+								stbi_write_png(nameBuf, app.windowWidth, app.windowHeight, 1, buf, app.windowWidth);
+							}
+
 							free(buf);
 
 							// Next pose.
@@ -451,7 +531,15 @@ int main(int argc, char** argv) {
 				j++;
 			}
 			i++;
+
+			if (i % 10 == 0) {
+				std::ofstream ofs(outMetaPath);
+				ofs << meta;
+			}
 	}
+
+	app.finalImageBuf.mem.unmapMemory();
+	app.finalImageDepthBuf.mem.unmapMemory();
 
 	return 0;
 }
