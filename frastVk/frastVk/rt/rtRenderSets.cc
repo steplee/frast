@@ -512,9 +512,13 @@ int main(int argc, char** argv) {
 										buf[y*app.windowWidth+x] = 255. * ((dd - min_d) / (max_d-min_d));
 									}
 
-								meta[std::to_string(i)][std::to_string(j)] = json::object();
-								meta[std::to_string(i)][std::to_string(j)]["mind"] = min_d;
-								meta[std::to_string(i)][std::to_string(j)]["maxd"] = max_d;
+								auto theMeta = json::object();
+								theMeta["mind"] = min_d;
+								theMeta["maxd"] = max_d;
+								std::vector<float> proj(16,0);
+								for (int i=0; i<16; i++) proj[i] = (float) app.camera->proj()[i];
+								theMeta["proj"] = proj;
+								meta[std::to_string(i)][std::to_string(j)] = theMeta;
 
 								sprintf(nameBuf, "%s%d_%d_d.png", outImagesDir.c_str(), i, j);
 								stbi_write_png(nameBuf, app.windowWidth, app.windowHeight, 1, buf, app.windowWidth);
