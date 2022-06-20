@@ -234,9 +234,9 @@ class Generator():
         res.base = np.hstack((R,p[:,np.newaxis]))
 
 
-        for i in range(1):
-            chaos = 1 + i
-            rvec = generate_random_rvec(.1 * chaos)
+        for i in range(4):
+            chaos = 2 + i * .1
+            rvec = generate_random_rvec(.2 * chaos)
             dp = (np.random.normal(size=3) * .2).clip(-1,1) * extent * chaos
             # print(' - dp', dp)
 
@@ -269,6 +269,7 @@ class Generator():
             entries.append(ent)
 
         d = {'srcDir': self.args.srcDir, 'entries': [ent.pre_serialize() for ent in entries]}
+        d['earthMajorRadius'] = R1
         try: os.makedirs(self.args.outDir)
         except: pass
         with open(os.path.join(self.args.outDir, 'entries.json'), 'w') as fp:
