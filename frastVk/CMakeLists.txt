@@ -104,14 +104,7 @@ add_library(frastVk
 	frastVk/core/render_state.cc
 	frastVk/core/window.cc
 
-	# frastVk/clipmap1/clipmap1.cc
-	# frastVk/clipmap1/clipmap1_load.cc
-
-	# frastVk/tiled_renderer/tiled_renderer.cc
-	frastVk/tiled_renderer2/tiled_renderer.cc
-
 	frastVk/rt/rt.cc
-	frastVk/rt/rt_raytrace.cc
 	frastVk/rt/protos/rocktree.pb.cc
 
 	frastVk/extra/particleCloud/particleCloud.cc
@@ -162,11 +155,6 @@ target_precompile_headers(frastVk PUBLIC
 	)
 
 
-add_executable(runGlobe frastVk/tiled_renderer2/runGlobe.cc)
-target_link_libraries(runGlobe frastVk)
-target_precompile_headers(runGlobe REUSE_FROM frastVk)
-
-
 add_executable(testParseRt frastVk/rt/parse.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(testParseRt frastVk)
 target_precompile_headers(testParseRt REUSE_FROM frastVk)
@@ -175,9 +163,9 @@ add_executable(runRt frastVk/rt/run.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)
 
-add_executable(rtGenSets frastVk/rt/rtRenderSets.cc frastVk/rt/protos/rocktree.pb.cc)
-target_link_libraries(rtGenSets frastVk)
-target_precompile_headers(rtGenSets REUSE_FROM frastVk)
+#add_executable(rtGenSets frastVk/rt/rtRenderSets.cc frastVk/rt/protos/rocktree.pb.cc)
+#target_link_libraries(rtGenSets frastVk)
+#target_precompile_headers(rtGenSets REUSE_FROM frastVk)
 
 ##################
 #   Install

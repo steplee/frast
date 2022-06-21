@@ -64,8 +64,8 @@ struct RtApp : public VkApp {
 		cfg.sseThresholdOpen = 1.0;
 		cfg.sseThresholdClose = .5;
 		cfg.dbg = true;
-		cfg.raytrace = doRaytrace;
-		cfg.forceTriangleList = doRaytrace;
+		//cfg.raytrace = doRaytrace;
+		//cfg.forceTriangleList = doRaytrace;
 
 		rtr = std::make_shared<RtRenderer>(cfg, this);
 		rtr->init();

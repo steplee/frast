@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 using Eigen::Vector2f;
 using Eigen::Vector2d;

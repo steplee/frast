@@ -316,9 +316,7 @@ struct RtDataLoader {
 
 		~RtDataLoader();
 		inline RtDataLoader(BaseVkApp* app_, RtCfg& cfg_, PooledTileData& p) : app(app_), pooledTileData(p), cfg(cfg_),
-			myUploader(cfg_.raytrace ?
-				vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer :
-				vk::BufferUsageFlagBits::eTransferSrc)
+			myUploader(vk::BufferUsageFlagBits::eTransferSrc)
 		{}
 		bool tileExists(const NodeCoordinate& nc);
 
@@ -379,7 +377,6 @@ class RtRenderer : public Castable
 
 		void update(RenderState& rs);
 		void render(RenderState& rs, vk::CommandBuffer&);
-		void renderRaytrace(RenderState& rs, vk::CommandBuffer&);
 		void stepAndRender(RenderState& rs, vk::CommandBuffer&);
 		inline void setDataLoaderSleepMicros(int64_t t) { dataLoader.sleepMicros = t; }
 
@@ -415,39 +412,6 @@ class RtRenderer : public Castable
 
 
 		void init_caster_stuff();
-
-		// -----------------------------------------
-		//      Raytracing stuff
-		// -----------------------------------------
-
-		vk::raii::CommandPool cmdPool { nullptr };
-		std::vector<vk::raii::CommandBuffer> cmdBuffers;
-		std::vector<vk::raii::Fence> fences;
-		ResidentBuffer nextTlasBuf;
-		vk::raii::AccelerationStructureKHR nextTlas{nullptr};
-		vk::DeviceAddress nextTlasAddr;
-		ResidentBuffer currTlasBuf;
-		vk::raii::AccelerationStructureKHR currTlas{nullptr};
-		vk::DeviceAddress currTlasAddr;
-		bool tlasIsSet = false;
-		bool createThenSwapTopLevelAS(vk::raii::CommandBuffer& cmd, vk::raii::Queue& q, vk::raii::Fence& fence);
-
-		RaytracePipelineStuff raytracePipelineStuff;
-		bool setupRaytracePipelines();
-		bool setupRaytraceDescriptors();
-
-		struct RtRaytraceCameraData {
-			alignas(8) float invView[16];
-			alignas(8) float invProj[16];
-		};
-		ResidentBuffer raytraceCameraBuffer;
-		vk::raii::DescriptorSetLayout raytraceDescSetLayout = {nullptr};
-		vk::raii::DescriptorSet raytraceDescSet = {nullptr};
-		vk::raii::DescriptorSetLayout raytraceTileDescSetLayout = {nullptr};
-		vk::raii::DescriptorSet raytraceTileDescSet = {nullptr};
-		void writeDescSetTlas();
-		void writeNewTileDescriptors(std::vector<RtTile*>& cands, PooledTileData& ptd);
-
 };
 
 
