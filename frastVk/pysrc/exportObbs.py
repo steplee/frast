@@ -1,5 +1,5 @@
 import sys, os, numpy as np
-from .transformAuthalicToGeodetic import authalic_to_geodetic_corners, authalic_to_wgs84_pt
+from .transformAuthalicToGeodetic import authalic_to_geodetic_corners, authalic_to_wgs84_pt, EarthGeodetic
 from .proto import rocktree_pb2 as RT
 
 # Version 1 Format:
@@ -131,8 +131,8 @@ def export_rt_version1(outFp, root, transformToWGS84=True):
                         #print('R0\n', R)
                         #print('ctr0', ctr)
 
-                        ext = ext @ T[:3,:3].T
-                        ctr = authalic_to_wgs84_pt(ctr)
+                        ext = ext @ T[:3,:3].T / EarthGeodetic.R1
+                        ctr = authalic_to_wgs84_pt(ctr) / EarthGeodetic.R1
                         R = T[:3,:3] @ R
 
                     q = R_to_quat(R)
@@ -141,7 +141,7 @@ def export_rt_version1(outFp, root, transformToWGS84=True):
 
                     keybuf = np.zeros(26, dtype=np.uint8) + 255
                     for i in range(len(path)):
-                        keybuf[i] = int(path[i])
+                        keybuf[i] = ord(path[i]) if path[i] != 255 else 0
                     # print(keybuf)
 
 

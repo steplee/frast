@@ -62,22 +62,24 @@ uint64_t scalarSizeOfFormat(const vk::Format& f) {
 /* ===================================================
  *
  *
- *                  ResidentBuffer
+ *                  ExBuffer
  *
  *
  * =================================================== */
 
 
-void* ResidentBuffer::map() {
-	mapped = (void*) mem.mapMemory(0, residentSize, {});
-	return mapped;
+void* ExBuffer::map() {
+	assert(mappedAddr == nullptr);
+	mappedAddr = (void*) mem.mapMemory(0, residentSize, {});
+	return mappedAddr;
 }
-void ResidentBuffer::unmap() {
-	assert(mapped);
+void ExBuffer::unmap() {
+	assert(mappedAddr);
 	mem.unmapMemory();
 }
 
-void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices) {
+//void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices) {
+void ExBuffer::create(QueueDeviceSpec& spec) {
 	assert(givenSize>0);
 
 	uint32_t idx = 0;
@@ -86,16 +88,16 @@ void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, c
 	vk::BufferCreateInfo binfo {
 		{}, givenSize,
 		usageFlags,
-		sharingMode, queueFamilyIndices
+		sharingMode, spec.queueFamilyIndices
 	};
-	buffer = std::move(d.createBuffer(binfo));
+	buffer = std::move(vk::raii::Buffer{spec.dev.createBuffer(binfo)});
 
 	auto req = buffer.getMemoryRequirements();
 	residentSize = req.size;
 	//printf(" - allocating buffer to memory type idx %u, givenSize %lu, residentSize %lu\n", idx, givenSize, residentSize);
 
 	uint32_t memMask = req.memoryTypeBits;
-	idx = findMemoryTypeIndex(pd, memPropFlags, memMask);
+	idx = findMemoryTypeIndex(*spec.pdev, memPropFlags, memMask);
 
 	vk::MemoryAllocateInfo allocInfo { residentSize, idx };
 
@@ -104,34 +106,23 @@ void ResidentBuffer::create(vk::raii::Device& d, const vk::PhysicalDevice& pd, c
 		allocInfo.pNext = &memAllocInfo;
 	}
 
-	mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
+	mem = std::move(vk::raii::DeviceMemory(spec.dev, allocInfo));
 
 	buffer.bindMemory(*mem, 0);
 }
 
-void ResidentBuffer::upload(void* cpuData, uint64_t len, uint64_t offset) {
+void ExBuffer::uploadNow(void* cpuData, uint64_t len, uint64_t offset) {
 	assert(len <= residentSize);
-	void* dbuf = (void*) mem.mapMemory(0, residentSize, {});
-	memcpy(dbuf, cpuData, len);
-	mem.unmapMemory();
+	if (not mappedAddr) {
+		void* dbuf = (void*) mem.mapMemory(0, residentSize, {});
+		memcpy(dbuf, cpuData, len);
+		mem.unmapMemory();
+	} else {
+		memcpy(mappedAddr, cpuData, len);
+	}
 }
 
-void ResidentBuffer::setAsVertexBuffer(uint64_t len, bool mappable, vk::BufferUsageFlags extraFlags) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eVertexBuffer | extraFlags);
-}
-void ResidentBuffer::setAsIndexBuffer(uint64_t len, bool mappable) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eIndexBuffer);
-}
-void ResidentBuffer::setAsUniformBuffer(uint64_t len, bool mappable) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eUniformBuffer);
-}
-void ResidentBuffer::setAsStorageBuffer(uint64_t len, bool mappable) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eStorageBuffer);
-}
-void ResidentBuffer::setAsAccelBuffer(uint64_t len, bool mappable) {
-	setAsBuffer(len,mappable,vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
-}
-void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage) {
+void ExBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage) {
 	givenSize = len;
 	memPropFlags = mappable ? vk::MemoryPropertyFlagBits::eHostVisible
 		                    : vk::MemoryPropertyFlagBits::eDeviceLocal;
@@ -139,7 +130,7 @@ void ResidentBuffer::setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::Buff
 	if (not mappable) usageFlags |= vk::BufferUsageFlagBits::eTransferDst;
 }
 
-bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& other,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+bool ExBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& other, vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
 		vk::ImageCopy region {
 			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
 				off,
@@ -210,7 +201,7 @@ bool ResidentBuffer::copyFromImage(const vk::CommandBuffer &copyCmd, const vk::I
 /* ===================================================
  *
  *
- *                  ResidentMesh
+ *                  ExMesh
  *
  *
  * =================================================== */
@@ -326,6 +317,7 @@ VertexInputDescription MeshDescription::getVertexDescription() {
 	return description;
 }
 
+/*
 ResidentMesh::~ResidentMesh() {
 	freeCpu();
 }
@@ -410,18 +402,19 @@ void ResidentMesh::createAndUpload(Uploader& uploader) {
 
 	freeCpu();
 }
+*/
 
 
 /* ===================================================
  *
  *
- *                  ResidentImage
+ *                  ExImage
  *
  *
  * =================================================== */
 
 
-void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w, bool cpuVisible, vk::ImageUsageFlagBits extraFlags) {
+void ExImage::createAsDepthBuffer(Uploader& uploader, int h, int w, bool cpuVisible, vk::ImageUsageFlagBits extraFlags) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	aspectFlags = vk::ImageAspectFlagBits::eDepth;
 	if (cpuVisible) {
@@ -437,7 +430,7 @@ void ResidentImage::createAsDepthBuffer(Uploader& uploader, int h, int w, bool c
 	}
 	create_(uploader);
 }
-void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
+void ExImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
@@ -458,7 +451,7 @@ void ResidentImage::createAsTexture(Uploader& uploader, int h, int w, vk::Format
 		uploader.uploadSync(*this, data, size(), 0);
 }
 
-void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
+void ExImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::Format f, uint8_t* data, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
@@ -480,11 +473,12 @@ void ResidentImage::createAsCpuVisible(Uploader& uploader, int h, int w, vk::For
 		uploader.uploadSync(*this, data, size(), 0);
 }
 
-void ResidentImage::create_(Uploader& uploader) {
+void ExImage::create_(Uploader& uploader) {
 
 	vk::raii::Device& d = uploader.app->deviceGpu;
 	vk::PhysicalDevice pd = *uploader.app->pdeviceGpu;
 
+	layout = vk::ImageLayout::eUndefined;
 
 	// Image
 	vk::ImageCreateInfo imageInfo = { };
@@ -540,7 +534,7 @@ void ResidentImage::create_(Uploader& uploader) {
 	//return false;
 }
 
-void ResidentImage::createAsStorage(vk::raii::Device& d, vk::raii::PhysicalDevice& pd, int h, int w, vk::Format f, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
+void ExImage::createAsStorage(vk::raii::Device& d, vk::raii::PhysicalDevice& pd, int h, int w, vk::Format f, vk::ImageUsageFlags extraFlags, vk::SamplerAddressMode addr) {
 	extent = vk::Extent3D { (uint32_t)w, (uint32_t)h, 1 };
 	format = f;
 	if (viewFormat == vk::Format::eUndefined) viewFormat = f;
@@ -607,7 +601,7 @@ void ResidentImage::createAsStorage(vk::raii::Device& d, vk::raii::PhysicalDevic
 	sampler = std::move(vk::raii::Sampler{d, samplerInfo});
 }
 
-bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
+bool ExImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence, const vk::Semaphore* waitSema, const vk::Semaphore* signalSema, vk::Extent3D ex, vk::Offset3D off, vk::ImageAspectFlagBits aspect) {
 		vk::ImageCopy region {
 			vk::ImageSubresourceLayers { aspect, 0, 0, 1 },
 				off,
@@ -663,6 +657,19 @@ bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& 
 		return false;
 }
 
+vk::ImageMemoryBarrier ExImage::barrierTo(vk::ImageLayout to, const ImageBarrierDetails& details) {
+	layout = to;
+	return
+			vk::ImageMemoryBarrier {
+				{},{},
+				layout, to,
+				{}, {},
+				*this->image,
+				vk::ImageSubresourceRange { aspect, 0, 1, 0, 1}
+			}
+
+}
+
 
 /* ===================================================
  *
@@ -673,7 +680,7 @@ bool ResidentImage::copyFrom(const vk::CommandBuffer &copyCmd, const vk::Image& 
  * =================================================== */
 
 
-Uploader::Uploader(BaseVkApp* app_, vk::Queue q_) : app(app_), q(q_)
+Uploader::Uploader(BaseVkApp* app_, QueueDeviceSpec& qds_) : app(app_), qds(qds_)
 {
 	fence = std::move(app->deviceGpu.createFence({}));
 
@@ -691,23 +698,23 @@ Uploader::Uploader(BaseVkApp* app_, vk::Queue q_) : app(app_), q(q_)
 
 void Uploader::uploadScratch(void* data, size_t len) {
 	if (len > scratchBuffer.residentSize) {
-			scratchBuffer.setAsStorageBuffer(len, true);
+			scratchBuffer.setAsBuffer(len, true, vk::BufferUsageFlagBits::eStorageBuffer);
 			scratchBuffer.usageFlags = scratchFlags;
-			scratchBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+			scratchBuffer.create(qds);
 		//}
 	}
 	if (data)
-		scratchBuffer.upload(data, len);
+		scratchBuffer.uploadNow(data, len);
 }
 
-void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, uint64_t off) {
+void Uploader::uploadSync(ExBuffer& dstBuffer, void *data, uint64_t len, uint64_t off) {
 	assert(app != nullptr);
 
 	vk::CommandBufferBeginInfo beginInfo { vk::CommandBufferUsageFlagBits::eOneTimeSubmit, {} };
 	//vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
 	/*
-	ResidentBuffer tmpBuffer;
+	ExBuffer tmpBuffer;
 	//tmpBuffer.setAsUniformBuffer(len, true);
 	tmpBuffer.setAsStorageBuffer(len, true);
 	tmpBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
@@ -727,12 +734,12 @@ void Uploader::uploadSync(ResidentBuffer& dstBuffer, void *data, uint64_t len, u
 	//vk::PipelineStageFlags waitMask = vk::PipelineStageFlagBits::eAllCommands;
 	//vk::SubmitInfo submitInfo { nullptr, {1,&waitMask}, nullptr, nullptr, };
 	vk::SubmitInfo submitInfo { nullptr, nullptr, {1,&*cmd}, nullptr };
-	q.submit(submitInfo, *fence);
+	qds.q.submit(submitInfo, *fence);
 	app->deviceGpu.waitForFences({1, &*fence}, true, 9999999999);
 	app->deviceGpu.resetFences({1, &*fence});
 }
 
-void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uint64_t off) {
+void Uploader::uploadSync(ExImage& dstImage, void *data, uint64_t len, uint64_t off) {
 	assert(app != nullptr);
 	assert(data != nullptr);
 
@@ -740,7 +747,7 @@ void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uin
 	//vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
 	/*
-	ResidentBuffer tmpBuffer;
+	ExBuffer tmpBuffer;
 	//tmpBuffer.setAsUniformBuffer(len, true);
 	tmpBuffer.setAsStorageBuffer(len, true);
 	tmpBuffer.usageFlags = vk::BufferUsageFlagBits::eTransferSrc;
@@ -798,7 +805,7 @@ void Uploader::uploadSync(ResidentImage& dstImage, void *data, uint64_t len, uin
 	cmd.end();
 
 	vk::SubmitInfo submitInfo { nullptr, nullptr, {1,&*cmd}, nullptr };
-	q.submit(submitInfo, *fence);
+	qds.q.submit(submitInfo, *fence);
 	app->deviceGpu.waitForFences({1, &*fence}, true, 99999999999);
 	app->deviceGpu.resetFences({1, &*fence});
 }

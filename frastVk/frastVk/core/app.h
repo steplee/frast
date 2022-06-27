@@ -11,7 +11,6 @@
 #include "frastVk/core/window.h"
 #include "frastVk/core/render_state.h"
 
-struct ResidentMesh;
 class BaseVkApp;
 
 uint32_t findMemoryTypeIndex(const vk::PhysicalDevice& pdev, const vk::MemoryPropertyFlags& flags, uint32_t maskOrZero=0);
@@ -20,8 +19,8 @@ struct SimpleRenderPass {
 	vk::raii::RenderPass pass { nullptr };
 	std::vector<vk::raii::Framebuffer> framebuffers;
 
-	std::vector<ResidentImage> depthImages;
-	//ResidentImage depthImage;
+	std::vector<ExImage> depthImages;
+	//ExImage depthImage;
 };
 
 // Temporary data used for pipeline creation. Contains no 'real' data.
@@ -71,8 +70,8 @@ struct RaytracePipelineStuff {
 	std::vector<vk::PushConstantRange> pushConstants;
 	std::vector<vk::DescriptorSetLayout> setLayouts;
 
-	ResidentImage storageImage;
-	ResidentBuffer genSBT, missSBT, chitSBT;
+	ExImage storageImage;
+	ExBuffer genSBT, missSBT, chitSBT;
 	uint32_t handleSizeAligned;
 
 	bool setup_viewport(float w, float h, float x=0, float y=0);
@@ -110,8 +109,8 @@ struct FrameData {
 };
 
 struct RenderContext {
-	ResidentImage* colorImage = nullptr;
-	ResidentImage* depthImage = nullptr;
+	ExImage* colorImage = nullptr;
+	ExImage* depthImage = nullptr;
 	double* mvp = 0;
 	uint32_t colorAoi[4] = {0}; // xy, wh
 	uint32_t depthAoi[4] = {0}; // xy, wh
@@ -224,7 +223,7 @@ struct BaseVkApp : public Window {
 
 	bool isDone();
 
-	bool getDepthImage(ResidentImage& out, const FrameData& fd, const RenderState& rs);
+	bool getDepthImage(ExImage& out, const FrameData& fd, const RenderState& rs);
 
 	// Subclass should set flags in here if desired before calling initVk();
 	RayTracingInfo rti;
@@ -292,28 +291,17 @@ class VkApp : public BaseVkApp {
 		// virtual bool handleKey(uint8_t key, uint8_t mod, bool isDown) override;
 		virtual bool handleKey(int key, int scancode, int action, int mods) override;
 
-		ResidentMesh simpleMesh;
-
 		vk::raii::DescriptorPool descPool { nullptr };
 		vk::raii::DescriptorSetLayout globalDescLayout { nullptr };
 		vk::raii::DescriptorSet globalDescSet { nullptr };
 
 	public:
+		// void initDescriptors();
+		// ExImage myTex;
+		// vk::raii::DescriptorSetLayout texDescLayout { nullptr };
+		// vk::raii::DescriptorSet texDescSet { nullptr };
 
-		PipelineStuff simplePipelineStuff;
-		bool createSimplePipeline(PipelineStuff& out, vk::RenderPass pass);
-
-		PipelineStuff texturedPipelineStuff;
-		bool createTexturedPipeline(PipelineStuff& out, ResidentMesh& mesh, vk::RenderPass pass);
-
-
-		void initDescriptors();
-
-		ResidentImage myTex;
-		vk::raii::DescriptorSetLayout texDescLayout { nullptr };
-		vk::raii::DescriptorSet texDescSet { nullptr };
-
-		ResidentBuffer camBuffer;
+		//ExBuffer camBuffer;
 		std::shared_ptr<Camera> camera = nullptr;
 
 

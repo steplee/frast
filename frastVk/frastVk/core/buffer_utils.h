@@ -26,18 +26,23 @@ MeshPushContants {
 	alignas(16) float model[16];
 };
 
-class ResidentImage;
+class ExImage;
 
-struct ResidentBuffer {
+struct QueueDeviceSpec {
+	vk::raii::Queue& q;
+	vk::raii::Device& dev;
+	vk::raii::PhysicalDevice& pdev;
+	std::vector<uint32_t> queueFamilyIndices;
+};
+
+struct ExBuffer {
 	vk::raii::Buffer buffer { nullptr };
 	vk::raii::BufferView view { nullptr };
 	vk::raii::DeviceMemory mem { nullptr };
 
 	void* map();
 	void unmap();
-	void* mapped = nullptr;
-
-
+	void* mappedAddr = nullptr;
 
 	// Buffer details
 	uint64_t givenSize = 0;
@@ -46,19 +51,12 @@ struct ResidentBuffer {
 	vk::BufferUsageFlags usageFlags;
 	// Memory details: easy way to upload is to mapMemory, which requires host visible.
 	vk::MemoryPropertyFlags memPropFlags;
-	// BufferView details : TODO
-	//vk::ImageAspectFlags aspectFlags;
 
 	// If mappable, make sure it's host accessible. Otherwise its device local, but eTransferDst.
-	void setAsVertexBuffer(uint64_t len, bool mappable=false, vk::BufferUsageFlags extraFlags={});
-	void setAsIndexBuffer(uint64_t len, bool mappable=false);
-	void setAsUniformBuffer(uint64_t len, bool mappable=false);
-	void setAsOtherBuffer(uint64_t len, bool mappable=false);
-	void setAsStorageBuffer(uint64_t len, bool mappable=false);
-	void setAsAccelBuffer(uint64_t len, bool mappable=false);
 	void setAsBuffer(uint64_t len, bool mappable, vk::Flags<vk::BufferUsageFlagBits> usage);
-	void create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices);
-	void upload(void* cpuData, uint64_t len, uint64_t offset=0);
+	// void create(vk::raii::Device& d, const vk::PhysicalDevice& pd, const std::vector<uint32_t>& queueFamilyIndices);
+	void create(QueueDeviceSpec& spec);
+	void uploadNow(void* cpuData, uint64_t len, uint64_t offset=0);
 
 	//void copyFromImage(ResidentImage& other);
 	bool copyFromImage(const vk::CommandBuffer &copyCmd, const vk::Image& srcImg,  vk::ImageLayout prevLayout, const vk::Device& d, const vk::Queue& q, const vk::Fence* fence,
@@ -69,7 +67,8 @@ struct ResidentBuffer {
 };
 
 struct Uploader {
-	vk::Queue q;
+	//vk::Queue q;
+	QueueDeviceSpec qds;
 	vk::raii::Fence fence { nullptr };
 	vk::raii::CommandPool pool { nullptr };
 	vk::raii::CommandBuffer cmd { nullptr };
@@ -77,29 +76,25 @@ struct Uploader {
 	BaseVkApp* app = nullptr;
 
 
-	inline Uploader(vk::BufferUsageFlags scratchFlags_ = vk::BufferUsageFlagBits::eTransferSrc) : scratchFlags(scratchFlags_) {
+	inline Uploader(
+			QueueDeviceSpec &qds_, vk::BufferUsageFlags scratchFlags_ = vk::BufferUsageFlagBits::eTransferSrc) : qds(qds_), scratchFlags(scratchFlags_) {
 	}
-	Uploader(BaseVkApp* app, vk::Queue q_);
+	Uploader(BaseVkApp* app, QueueDeviceSpec& qds);
 
 	Uploader(const Uploader&) = delete;
 	Uploader& operator=(const Uploader&) = delete;
-	inline Uploader(Uploader&& o) {
+	inline Uploader(Uploader&& o) : qds(std::move(o.qds)) {
 		fence = std::move(o.fence), pool = std::move(o.pool), cmd = std::move(o.cmd);
 		app = o.app;
-		q = o.q;
 	}
-	inline Uploader& operator=(Uploader&& o) {
-		fence = std::move(o.fence), pool = std::move(o.pool), cmd = std::move(o.cmd);
-		app = o.app;
-		q = o.q;
-		return *this;
-	}
+	inline Uploader& operator=(Uploader&& o) = delete;
+
 	vk::BufferUsageFlags scratchFlags;
-	ResidentBuffer scratchBuffer;
+	ExBuffer scratchBuffer;
 	void uploadScratch(void* data, size_t len);
 
-	void uploadSync(ResidentBuffer& buffer, void *data, uint64_t len, uint64_t off);
-	void uploadSync(ResidentImage& image, void *data, uint64_t len, uint64_t off);
+	void uploadSync(ExBuffer& buffer, void *data, uint64_t len, uint64_t off);
+	void uploadSync(ExImage& image, void *data, uint64_t len, uint64_t off);
 };
 
 struct MeshDescription {
@@ -133,6 +128,7 @@ struct MeshDescription {
 	VertexInputDescription getVertexDescription();
 };
 
+/*
 // Must call fill(), then createAndUpload().
 // fill() will copy planar vertex data to packed vertex data.
 // Destructor or calling freeCpu() will delete cpu copied data.
@@ -172,16 +168,18 @@ struct ResidentMesh : public MeshDescription {
 	void freeCpu();
 
 };
+*/
 
 
 
+struct ImageBarrierDetails {};
 
 /*
  * The view and sampler may or may not exist, depending on
  * which createAs*() func is called.
  *
  */
-struct ResidentImage {
+struct ExImage {
 	vk::raii::Image image { nullptr };
 	vk::raii::DeviceMemory mem { nullptr };
 	vk::raii::ImageView view { nullptr };
@@ -216,5 +214,9 @@ struct ResidentImage {
 			const vk::Semaphore* waitSema, const vk::Semaphore* signalSema,
 			vk::Extent3D ex, vk::Offset3D off={},
 			vk::ImageAspectFlagBits aspect=vk::ImageAspectFlagBits::eColor);
+
+	vk::ImageMemoryBarrier barrierTo(vk::ImageLayout to, const ImageBarrierDetails& details={});
+
+	vk::ImageLayout layout;
 };
 

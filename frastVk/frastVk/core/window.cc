@@ -108,15 +108,17 @@ void Window::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
 std::vector<std::string> Window::getWindowExtensions() {
 
 	if (headless) {
-		return { VK_KHR_SURFACE_EXTENSION_NAME };
+		// return { VK_KHR_SURFACE_EXTENSION_NAME };
+		return { "VK_KHR_surface" };
 	}
 
 	__window_mtx.lock();
-    if (!__didInit)
+    if (!__didInit) {
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW." << std::endl;
             glfwTerminate();
-        } else __didInit = true;
+        } else { __didInit = true; }
+	}
 	__window_mtx.unlock();
 
 	std::vector<std::string> out;
