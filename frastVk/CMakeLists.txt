@@ -99,25 +99,26 @@ endif()
 
 add_library(frastVk
 	SHARED
-	frastVk/core/app.cc
-	frastVk/core/buffer_utils.cc
-	frastVk/core/render_state.cc
+	#frastVk/core/app.cc
+	#frastVk/core/buffer_utils.cc
+	#frastVk/core/render_state.cc
+	#frastVk/core/window.cc
+	#frastVk/rt/rt.cc
+	#frastVk/rt/protos/rocktree.pb.cc
+	#frastVk/extra/particleCloud/particleCloud.cc
+	#frastVk/extra/frustum/frustum.cc
+	#frastVk/extra/text/textSet.cc
+	#frastVk/extra/caster/castable.cc
+	#frastVk/extra/primitives/earthEllipsoid.cc
+	#frastVk/extra/primitives/ellipsoid.cc
+
+	frastVk/core/fvkApi.cc
+	frastVk/core/fvkApi_detail.cc
+	frastVk/core/fvkShaders.cc
 	frastVk/core/window.cc
+	frastVk/core/render_state.cc
 
-	frastVk/rt/rt.cc
-	frastVk/rt/protos/rocktree.pb.cc
-
-	frastVk/extra/particleCloud/particleCloud.cc
-	frastVk/extra/frustum/frustum.cc
-	frastVk/extra/text/textSet.cc
-	frastVk/extra/caster/castable.cc
-	frastVk/extra/primitives/earthEllipsoid.cc
-	frastVk/extra/primitives/ellipsoid.cc
-
-	# frastVk/shaders/compiled/all.cc
-	frastVk/core/load_shader_funcs.cc
-
-  ${IMGUI_SOURCES}
+    ${IMGUI_SOURCES}
 )
 
 
@@ -141,13 +142,14 @@ target_link_libraries(frastVk
 target_precompile_headers(frastVk PUBLIC
 	${VULKAN_INC}/vk_platform.h
 	${VULKAN_INC}/vulkan_core.h
-	${VULKAN_INC}/vulkan_raii.hpp
-	${VULKAN_INC}/vulkan.hpp
-	${VULKAN_INC}/vulkan_enums.hpp
-	${VULKAN_INC}/vulkan_handles.hpp
-	${VULKAN_INC}/vulkan_structs.hpp
-	${VULKAN_INC}/vulkan_hash.hpp
-	${VULKAN_INC}/vulkan_funcs.hpp
+	${VULKAN_INC}/vulkan.h
+	#${VULKAN_INC}/vulkan_raii.hpp
+	#${VULKAN_INC}/vulkan.hpp
+	#${VULKAN_INC}/vulkan_enums.hpp
+	#${VULKAN_INC}/vulkan_handles.hpp
+	#${VULKAN_INC}/vulkan_structs.hpp
+	#${VULKAN_INC}/vulkan_hash.hpp
+	#${VULKAN_INC}/vulkan_funcs.hpp
 	${EIGEN_INC}/Eigen/Core
 	${EIGEN_INC}/Eigen/Dense
 	${EIGEN_INC}/Eigen/Geometry
@@ -155,6 +157,10 @@ target_precompile_headers(frastVk PUBLIC
 	)
 
 
+add_executable(fvkTestApp frastVk/core/fvkTestApp.cc)
+target_link_libraries(fvkTestApp frastVk)
+
+#[[
 add_executable(testParseRt frastVk/rt/parse.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(testParseRt frastVk)
 target_precompile_headers(testParseRt REUSE_FROM frastVk)
@@ -163,16 +169,15 @@ add_executable(runRt frastVk/rt/run.cc frastVk/rt/protos/rocktree.pb.cc)
 target_link_libraries(runRt frastVk)
 target_precompile_headers(runRt REUSE_FROM frastVk)
 
-#add_executable(rtGenSets frastVk/rt/rtRenderSets.cc frastVk/rt/protos/rocktree.pb.cc)
-#target_link_libraries(rtGenSets frastVk)
-#target_precompile_headers(rtGenSets REUSE_FROM frastVk)
+add_executable(rtGenSets frastVk/rt/rtRenderSets.cc frastVk/rt/protos/rocktree.pb.cc)
+target_link_libraries(rtGenSets frastVk)
+target_precompile_headers(rtGenSets REUSE_FROM frastVk)
+#]]
 
 ##################
 #   Install
 ##################
 
 install(TARGETS frastVk LIBRARY DESTINATION /usr/local/lib)
-#install(FILES "frastVk/core/app.h" "frastVk/core/buffer_utils.h" "frastVk/core/render_state.h" "frastVk/core/window.hpp" DESTINATION /usr/local/include/frastVk/core)
-#install(FILES "frastVk/rt/rt.h" "frastVk/rt/rt_decode.hpp" "frastVk/rt/protos/window.hpp" DESTINATION /usr/local/include/frastVk/core)
-install(DIRECTORY frastVk/core frastVk/entity frastVk/extra frastVk/rt frastVk/tiled_renderer2 frastVk/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+install(DIRECTORY frastVk/core frastVk/entity frastVk/extra frastVk/gt frastVk/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 install(DIRECTORY frastVk/shaders/compiled DESTINATION /usr/local/include/frastVk/shaders/ FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")

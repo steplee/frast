@@ -2,6 +2,7 @@
 
 // #include "frastVk/core/window.hpp"
 #include "frastVk/core/window.h"
+#include <cassert>
 
 class FrameData;
 

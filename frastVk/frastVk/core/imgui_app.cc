@@ -10,15 +10,15 @@ static void check_vk_result(VkResult err)
         abort();
 }
 
-ImguiApp::ImguiApp() {
-}
+ImguiApp::ImguiApp(const AppConfig& cfg) : BaseApp(cfg) {}
 
 ImguiApp::~ImguiApp() {
 	//if (not headless) ImGui_ImplVulkanH_DestroyWindow(*instance, *deviceGpu, &imguiWindow, nullptr);
-	deviceGpu.waitIdle();
+	// deviceGpu.waitIdle();
 	// ImGui_ImplVulkan_DestroyDeviceObjects();
     ImGui_ImplVulkan_Shutdown();
-	uiFramebuffers.clear();
+
+	// uiFramebuffers.clear();
 	uiPass = nullptr;
 	uiDescPool = nullptr;
 }
@@ -26,154 +26,89 @@ ImguiApp::~ImguiApp() {
 extern void ImGui_ImplVulkanH_CreateWindowCommandBuffers(VkPhysicalDevice physical_device, VkDevice device, ImGui_ImplVulkanH_Window* wd, uint32_t queue_family, const VkAllocationCallbacks* allocator);
 
 void ImguiApp::initVk() {
-	BaseVkApp::initVk();
+	BaseApp::initVk();
 
-	if (headless) return;
-
-	vk::CommandPoolCreateInfo poolInfo { vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamilyGfxIdxs[0] };
-	cmdPool = std::move(deviceGpu.createCommandPool(poolInfo));
-	vk::CommandBufferAllocateInfo bufInfo { *cmdPool, vk::CommandBufferLevel::ePrimary, (uint32_t)scNumImages };
-	cmdBuffers = std::move(deviceGpu.allocateCommandBuffers(bufInfo));
+	if (cfg.headless()) return;
 
 	{
-		vk::DescriptorPoolSize pool_sizes[] =
+		VkDescriptorPoolSize pool_sizes[] =
         {
-            { vk::DescriptorType::eSampler, 100 },
-            { vk::DescriptorType::eCombinedImageSampler, 100 },
-            { vk::DescriptorType::eSampledImage, 100 },
-            { vk::DescriptorType::eStorageImage, 100 },
-            { vk::DescriptorType::eUniformTexelBuffer, 100 },
-            { vk::DescriptorType::eStorageTexelBuffer, 100 },
-            { vk::DescriptorType::eUniformBuffer, 100 },
-            { vk::DescriptorType::eUniformBufferDynamic, 100 },
-            { vk::DescriptorType::eStorageBufferDynamic, 100 },
-            { vk::DescriptorType::eInputAttachment, 100 },
-            { vk::DescriptorType::eStorageBuffer, 100 }
+            { VK_DESCRIPTOR_TYPE_SAMPLER, 100 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 },
+            { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 },
+            { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 }
         };
-		vk::DescriptorPoolCreateInfo pool_info = {};
-        // pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+		VkDescriptorPoolCreateInfo pool_info { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, nullptr };
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = 100 * std::size(pool_sizes);
         pool_info.poolSizeCount = (uint32_t)std::size(pool_sizes);
         pool_info.pPoolSizes = pool_sizes;
-		uiDescPool = std::move(vk::raii::DescriptorPool(deviceGpu, pool_info));
-		/*
-        auto err = vkCreateDescriptorPool(*deviceGpu, &pool_info, nullptr, (VkDescriptorPool*)&*uiDescPool);
-        check_vk_result(err);
-		*/
+        assertCallVk(vkCreateDescriptorPool(mainDevice, &pool_info, nullptr, (VkDescriptorPool*)&uiDescPool));
 	}
 
 	auto wd = &imguiWindow;
-    wd->Surface = *surface;
-    wd->SurfaceFormat = static_cast<VkSurfaceFormatKHR>(scSurfaceFormat);
+    wd->Surface = swapchain.surface;
+    wd->SurfaceFormat = static_cast<VkSurfaceFormatKHR>(swapchain.surfFormat);
     // wd->PresentMode = VkPresentModeKHR { (int) presentMode };
-    wd->PresentMode = static_cast<VkPresentModeKHR> ( presentMode );
-	wd->ImageCount = scNumImages;
-	wd->RenderPass = (VkRenderPass) *simpleRenderPass.pass;
+    wd->PresentMode = static_cast<VkPresentModeKHR> ( swapchain.presentMode );
+	wd->ImageCount = swapchain.numImages;
+	wd->RenderPass = (VkRenderPass) simpleRenderPass.pass;
+	// wd->RenderPass = (VkRenderPass) uiPass;
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     ImGui::StyleColorsDark();
 
+	uint32_t width = cfg.width;
+	uint32_t height = cfg.height;
+
 	{
-		vk::AttachmentDescription colorAttachment {
-			{},
-				scSurfaceFormat.format,
-				vk::SampleCountFlagBits::e1,
-				vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore,
-				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-				vk::ImageLayout::eColorAttachmentOptimal,
-				// vk::ImageLayout::eColorAttachmentOptimal
-				vk::ImageLayout::ePresentSrcKHR
-		};
+		RenderPassDescription descriptionCopy = simpleRenderPass.description;
+		// descriptionCopy.attDescriptions[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		// descriptionCopy.attDescriptions[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		// descriptionCopy.colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		// descriptionCopy.subpassDescriptions[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		auto rpInfo = descriptionCopy.makeCreateInfo();
+		assertCallVk(vkCreateRenderPass(mainDevice, &rpInfo, nullptr, &uiPass));
 
-		vk::AttachmentReference colorAttachmentRef { 0, vk::ImageLayout::eColorAttachmentOptimal };
-
-		///*
-		// Depth
-		for (int i=0; i<scNumImages; i++) {
-			ResidentImage dimg;
-			dimg.createAsDepthBuffer(uploader, windowHeight, windowWidth);
-			//dimg.create(deviceGpu, *pdeviceGpu);
-			simpleRenderPass.depthImages.push_back(std::move(dimg));
-		}
-		vk::AttachmentDescription depthAttachment {
-			{},
-				vk::Format { simpleRenderPass.depthImages[0].format },
-				vk::SampleCountFlagBits::e1,
-				vk::AttachmentLoadOp::eNoneEXT,
-				vk::AttachmentStoreOp::eStore,
-				vk::AttachmentLoadOp::eClear,
-				vk::AttachmentStoreOp::eDontCare,
-				vk::ImageLayout::eUndefined,
-				vk::ImageLayout::eDepthStencilAttachmentOptimal };
-
-		vk::AttachmentReference depthAttachmentRef {
-			1,
-				vk::ImageLayout::eDepthStencilAttachmentOptimal
-		};
-
-		std::vector<vk::SubpassDependency> dependencies = {
-			// Depth
-			{
-				VK_SUBPASS_EXTERNAL, 0,
-				vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
-				vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+		uiFramebuffers.resize(swapchain.numImages);
+		for (int i=0; i<swapchain.numImages; i++) {
+			VkImageView views[2] = { swapchain.images[i].view, simpleRenderPass.depthImages[i].view };
+			VkFramebufferCreateInfo fbInfo {
+				VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, nullptr,
 				{},
-				vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-				{}
-			},
-		};
-		//*/
-
-		std::vector<vk::SubpassDescription> subpasses {
-			// { {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, {} },
-			{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef },
-				//{ {}, vk::PipelineBindPoint::eGraphics, { }, { 1, &colorAttachmentRef }, { }, &depthAttachmentRef }
-		};
-
-		std::vector<vk::AttachmentDescription> atts = {
-		 colorAttachment, depthAttachment
-		 // colorAttachment
-		};
-		vk::RenderPassCreateInfo rpInfo {
-			{},
-				{ (uint32_t)atts.size(), atts.data() },
-				// { 1, &subpass0 },
-				subpasses,
-				{ dependencies }
-				// { 2u, dependencies }
-				// {}
-		};
-		uiPass = std::move(deviceGpu.createRenderPass(rpInfo));
-
-		for (int i=0; i<scNumImages; i++) {
-			std::vector<vk::ImageView> views = { getSwapChainImageView(i), *simpleRenderPass.depthImages[i].view };
-			// std::vector<vk::ImageView> views = { getSwapChainImageView(i) };
-			vk::FramebufferCreateInfo fbInfo {
-				{},
-					*uiPass,
-					{ views },
-					windowWidth, windowHeight,
-					1
+				simpleRenderPass.pass,
+				2,
+				views,
+				width, height,
+				1
 			};
-			uiFramebuffers.push_back(std::move(deviceGpu.createFramebuffer(fbInfo)));
+			assertCallVk(vkCreateFramebuffer(mainDevice, &fbInfo, nullptr, &uiFramebuffers[i]));
 		}
 	}
 
-    ImGui_ImplGlfw_InitForVulkan(glfwWindow, true);
+
+    ImGui_ImplGlfw_InitForVulkan(glfwWindow->glfwWindow, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = *instance;
-    init_info.PhysicalDevice = *pdeviceGpu;
-    init_info.Device = *deviceGpu;
-    init_info.QueueFamily = queueFamilyGfxIdxs[0];
-    init_info.Queue = *queueGfx;
+    init_info.Instance = instance;
+    init_info.PhysicalDevice = mainDevice.pdevice;
+    init_info.Device = mainDevice.device;
+    init_info.QueueFamily = mainDevice.queueFamilyGfxIdxs[0];
+    init_info.Queue = mainQueue;
+    init_info.PipelineCache = nullptr;
     // init_info.PipelineCache = *uiPipelineCache;
     init_info.PipelineCache = nullptr;
-    init_info.DescriptorPool = *uiDescPool;
+    init_info.DescriptorPool = uiDescPool;
     init_info.Subpass = 0;
-    init_info.MinImageCount = scNumImages;
+    init_info.MinImageCount = swapchain.numImages;
     init_info.ImageCount = wd->ImageCount;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.Allocator = nullptr;
@@ -189,7 +124,7 @@ void ImguiApp::initVk() {
         // Use any command queue
         //VkCommandPool command_pool = wd->Frames[wd->FrameIndex].CommandPool;
         //VkCommandBuffer command_buffer = wd->Frames[wd->FrameIndex].CommandBuffer;
-        VkCommandBuffer command_buffer = *frameDatas[0].cmd;
+        VkCommandBuffer command_buffer = frameDatas[0].cmd;
 
         // auto err0 = vkResetCommandPool(*deviceGpu, command_pool, 0);
         // check_vk_result(err0);
@@ -207,10 +142,10 @@ void ImguiApp::initVk() {
         end_info.pCommandBuffers = &command_buffer;
         err = vkEndCommandBuffer(command_buffer);
         check_vk_result(err);
-        err = vkQueueSubmit(*queueGfx, 1, &end_info, VK_NULL_HANDLE);
+        err = vkQueueSubmit(mainQueue, 1, &end_info, VK_NULL_HANDLE);
         check_vk_result(err);
 
-        err = vkDeviceWaitIdle(*deviceGpu);
+        err = vkDeviceWaitIdle(mainDevice);
         check_vk_result(err);
         ImGui_ImplVulkan_DestroyFontUploadObjects();
     }
@@ -223,8 +158,8 @@ void ImguiApp::render() {
 		return;
 	}
 
-	if (not headless) {
-		bool proc = pollWindowEvents();
+	if (not cfg.headless()) {
+		bool proc = glfwWindow->pollWindowEvents();
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
@@ -235,68 +170,60 @@ void ImguiApp::render() {
 
 
 
-	FrameData& fd = acquireFrame();
+	FrameData& fd = acquireNextFrame();
 	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
 
 	// Update Camera Buffer
 	if (1) {
+		renderState.camera = camera.get();
 		renderState.frameBegin(&fd);
 	}
-	auto cmds = doRender(renderState);
+
+	doRender(renderState);
 
 
+	if (not cfg.headless()) {
+		auto &uiCmd = fd.cmd;
+		//uiCmd.reset();
+		// uiCmd.begin({});
 
-	if (not headless) {
-		vk::raii::CommandBuffer &uiCmd = cmdBuffers[fd.scIndx];
-		uiCmd.reset();
-		uiCmd.begin({});
-
-		vk::Rect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
-		vk::RenderPassBeginInfo rpInfo {
-			*uiPass, *uiFramebuffers[renderState.frameData->scIndx],
-			aoi, {}
+		VkClearValue clearValues[2] = {
+			VkClearValue { .color = VkClearColorValue { .float32 = {0.f,0.f,0.f,0.f} } },
+			VkClearValue { .depthStencil = VkClearDepthStencilValue { 0.f, 0 } }
 		};
 
+		VkRect2D aoi { { 0, 0 }, { windowWidth, windowHeight } };
+		VkRenderPassBeginInfo rpInfo {
+			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr,
+			// uiPass, uiFramebuffers[renderState.frameData->scIndx],
+			uiPass, simpleRenderPass.framebuffers[fd.scIndx],
+			aoi, 2, clearValues
+		};
+
+
 		if (showMenu) {
-			uiCmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
-			renderUi(renderState, *uiCmd);
-			uiCmd.endRenderPass();
+			vkCmdBeginRenderPass(uiCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+			renderUi(renderState, uiCmd);
+			vkCmdEndRenderPass(uiCmd);
 
 		} else {
 
 			ImGui::Render();
 
-			vk::ImageMemoryBarrier barrier;
-			barrier.image = sc.getImage(renderState.frameData->scIndx);
-			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-			barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-			barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-			uiCmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
+			/*
+			Barriers barriers;
+			auto& img = swapchain.images[renderState.frameData->scIndx];
+			barriers.append(img, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+			cmd.barriers(barriers);
+			*/
 		}
 
-		uiCmd.end();
-		cmds.push_back(*uiCmd);
+		// uiCmd.end();
+		// cmds.push_back(*uiCmd);
 	}
 
-	/*
-	vk::ImageMemoryBarrier barrier;
-	barrier.image = sc.getImage(renderState.frameData->scIndx);
-	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-	barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-	barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {1, &barrier});
-	*/
-
-
-	executeCommandsThenPresent(cmds, renderState);
+	DeviceQueueSpec dqs { mainDevice, mainQueue };
+	fd.cmd.executeAndPresent(dqs, swapchain, fd);
 
 	postRender();
 }
@@ -314,9 +241,10 @@ bool ImguiApp::handleMousePress(int button, int action, int mods) {
 void ImguiApp::prepareUi(RenderState& rs) {
     ImGui::ShowDemoWindow(&showMenu);
 }
-void ImguiApp::renderUi(RenderState& rs, vk::CommandBuffer cmd) {
+void ImguiApp::renderUi(RenderState& rs, Command& cmd) {
     ImGui::Render();
 	ImDrawData* draw_data = ImGui::GetDrawData();
 	const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
     ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
 }
+

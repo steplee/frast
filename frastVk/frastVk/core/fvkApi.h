@@ -6,9 +6,11 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <memory>
 
 #include <fmt/core.h>
 
+#include "render_state.h"
 #include "window.h"
 #include "fvkUtils.hpp"
 
@@ -69,6 +71,7 @@ struct AppConfig {
 	} descriptorPoolConfig;
 
 	uint32_t width=512, height=512;
+	bool depth = true;
 
 	enum class WindowSys {
 		eGlfw,
@@ -90,6 +93,8 @@ struct AppConfig {
 		return {};
 	}
 
+	inline bool headless() const { return windowSys == WindowSys::eHeadless; }
+
 };
 
 struct Device {
@@ -99,21 +104,31 @@ struct Device {
 
 	Device(const Device& d) = delete;
 	Device& operator=(const Device& d) = delete;
+	inline Device(Device&& d) { moveFrom(d); }
+	inline Device& operator= (Device&& d) { moveFrom(d); return *this; }
 	~Device();
 
-	VkDevice device;
-	VkPhysicalDevice pdevice;
+	VkDevice device { nullptr };
+	VkPhysicalDevice pdevice { nullptr };
 	std::vector<uint32_t> queueFamilyGfxIdxs;
 
 	inline operator VkDevice&() { return device; }
 	inline operator const VkDevice&() const { return device; }
+	inline void moveFrom(Device& o) {
+		device = o.device;
+		pdevice = o.pdevice;
+		queueFamilyGfxIdxs = std::move(o.queueFamilyGfxIdxs);
+		o.device = nullptr;
+		o.pdevice = nullptr;
+	}
 };
 
 struct Queue {
-	Queue(Device& dev, int family, int idx);
+	inline Queue() : queue{nullptr}, family(0) {}
+	Queue(Device& dev, uint32_t family, int idx);
 	~Queue();
 
-	VkQueue queue;
+	VkQueue queue { nullptr };
 	int family;
 	inline operator VkQueue&() { return queue; }
 	inline operator const VkQueue&() const { return queue; }
@@ -130,23 +145,29 @@ struct DeviceQueueSpec {
 
 // Either a real KHR swaphcain, or a fake one used with headless rendering
 struct SwapChain {
+	inline SwapChain() {};
 	SwapChain(BaseApp& app);
 	inline ~SwapChain() {
 		if (displaySwapchain != nullptr)
-			vkDestroySwapchainKHR(device, displaySwapchain, nullptr);
+			vkDestroySwapchainKHR(*device, displaySwapchain, nullptr);
 	}
 
 
-	Device& device;
+	Device* device { nullptr };
 	VkSurfaceKHR surface = nullptr;
 	VkSwapchainKHR displaySwapchain = nullptr;
-	VkExtent2D size;
+	VkExtent2D size{0,0};
 	VkSurfaceFormatKHR surfFormat;
 	VkPresentModeKHR presentMode;
 	uint32_t numImages=0;
-	std::vector<VkImage> images;
+	std::vector<ExImage> images;
 	//std::vector<ExImage> depthImages;
-	std::vector<VkImageView> imageViews;
+	// std::vector<VkImageView> imageViews;
+
+	inline SwapChain(const SwapChain& o) =delete;
+	inline SwapChain& operator=(const SwapChain& o) =delete;
+	inline SwapChain(SwapChain&& o) =default;
+	inline SwapChain& operator=(SwapChain&& o) =default;
 };
 
 struct ExImage {
@@ -184,6 +205,29 @@ struct ExImage {
 	void* mappedAddr = nullptr;
 	bool own = true;
 
+	inline ExImage() {};
+	inline ExImage(const ExImage& o) =delete;
+	inline ExImage& operator=(const ExImage& o) =delete;
+	inline ExImage& operator=(ExImage&& o) { moveFrom(o); return *this; }
+	inline ExImage(ExImage&& o) { moveFrom(o); }
+	inline void moveFrom(ExImage& o) {
+		img = o.img;
+		own = o.own;
+		device = o.device;
+		view = o.view;
+		mem = o.mem;
+		prevLayout = o.prevLayout;
+		extent = o.extent;
+		format = o.format;
+		capacity = o.capacity;
+		memPropFlags = o.memPropFlags;
+		usageFlags = o.usageFlags;
+		aspect = o.aspect;
+		unnormalizedCoordinates = o.unnormalizedCoordinates;
+		mappedAddr = o.mappedAddr;
+		o.img = nullptr;
+		o.mappedAddr = nullptr;
+	}
 	~ExImage();
 };
 
@@ -217,13 +261,25 @@ struct Barriers {
 
 struct Command;
 struct CommandPool {
-	Device& device;
-	VkCommandPool pool = nullptr;
+	Device* device { nullptr };
+	VkCommandPool pool { nullptr };
 
-	CommandPool(Device& d, int queueFamily);
+	inline CommandPool() {};
+	CommandPool(Device& d, uint32_t queueFamily);
+	CommandPool& operator=(const CommandPool& p) = delete;
+	inline CommandPool& operator=(CommandPool&& p) { moveFrom(p); return *this; }
+	inline CommandPool(CommandPool&& other) { moveFrom(other); }
 	~CommandPool();
 
 	std::vector<Command> allocate(int n);
+
+	inline void moveFrom(CommandPool& o) {
+		device = o.device;
+		pool = o.pool;
+		o.device = nullptr;
+		o.pool = nullptr;
+	}
+
 };
 
 struct Command {
@@ -256,7 +312,7 @@ struct Submission {
 	inline Submission(const DeviceQueueSpec& dqs) :
 		device(dqs), q(dqs) {}
 
-	void submit(VkCommandBuffer* cmds, uint32_t n);
+	void submit(VkCommandBuffer* cmds, uint32_t n, bool block=true);
 };
 
 struct FrameData {
@@ -272,7 +328,8 @@ struct FrameData {
 	VkSemaphore renderCompleteSema { nullptr };
 
 	// The image in the swapchain. Set in BaseApp::acquireNext
-	ExImage swapchainImg { nullptr };
+	ExImage* swapchainImg { nullptr };
+	//inline ExImage& swapchainImg(SwapChain& sc) { return sc.images[scIndx]; }
 
 	Command cmd { nullptr };
 	uint32_t scIndx=0, n=0;
@@ -281,7 +338,18 @@ struct FrameData {
 	// bool useAcquireSema = true;
 };
 
+class TheDescriptorPool;
 struct DescriptorSet {
+	VkDescriptorSet dset { nullptr };
+	VkDescriptorSetLayout layout { nullptr };
+	TheDescriptorPool* pool { nullptr };
+
+    uint32_t              descriptorCount = 0;
+    VkShaderStageFlags    stageFlags;
+
+	void create(TheDescriptorPool& pool);
+
+	inline operator VkDescriptorSet&() { return dset; }
 };
 
 // Unlike my previous code, where components had to allocate there own descriptor pools,
@@ -289,18 +357,21 @@ struct DescriptorSet {
 // This means that allocating/freeing descriptor sets could have problems in a multithread situation,
 // but probably not an issue.
 struct TheDescriptorPool {
-	Device& device;
+	Device* device { nullptr };
 	VkDescriptorPool pool = nullptr;
 
+	inline TheDescriptorPool() {}
 	TheDescriptorPool(BaseApp& app);
 	~TheDescriptorPool();
+
+	inline operator VkDescriptorPool&() { return pool; }
 };
 
 
 struct VertexInputDescription {
 	std::vector<VkVertexInputBindingDescription> bindings;
 	std::vector<VkVertexInputAttributeDescription> attributes;
-	VkPipelineVertexInputStateCreateFlags flags;
+	VkPipelineVertexInputStateCreateFlags flags=0;
 };
 
 // Holds temporary data needed to build a GraphicsPipeline, but not needed afterward
@@ -325,15 +396,65 @@ struct PipelineBuilder {
 			VkShaderModule vs, VkShaderModule fs);
 };
 
+// TODO: This only supports having exactly one depth and exactly one color attachment right now...
+struct RenderPassDescription {
+	std::vector<VkAttachmentDescription> attDescriptions;
+	// std::vector<VkAttachmentReference> attRefs;
+	// VkAttachmentDescription colorDesc, depthDesc;
+	VkAttachmentReference colorRef, depthRef;
+	std::vector<VkSubpassDescription> subpassDescriptions;
+	std::vector<VkSubpassDependency> subpassDeps;
+
+	//VkRenderPassCreateInfo rpInfo;
+
+	inline RenderPassDescription() {};
+
+	// No move operators/ctor
+	RenderPassDescription& operator=(RenderPassDescription&& o) = delete;
+	RenderPassDescription(RenderPassDescription&& o) = delete;
+
+	// Copy op/ctor must replace pointers in Vk structs!
+	inline RenderPassDescription& operator=(const RenderPassDescription& o) { copyFrom(o); return *this; }
+	RenderPassDescription(const RenderPassDescription& o) { copyFrom(o); }
+	inline void copyFrom(const RenderPassDescription& o) {
+		attDescriptions = o.attDescriptions;
+		colorRef = o.colorRef;
+		depthRef = o.depthRef;
+		subpassDescriptions = o.subpassDescriptions;
+		subpassDeps = o.subpassDeps;
+		for (int i=0; i<subpassDescriptions.size(); i++) {
+			auto& sp = subpassDescriptions[i];
+			// for (int j=0; j<sp.inputAttachmentCount; j++) sd.pInputAttachments = &inputAttachments[i];
+			// for (int j=0; j<sp.colorAttachmentCount; j++) sd.pColorAttachments = &attRefs[i];
+			assert(sp.inputAttachmentCount == 0);
+			assert(sp.colorAttachmentCount == 0 or sp.colorAttachmentCount == 1);
+			if (sp.colorAttachmentCount == 1) sp.pColorAttachments = &colorRef;
+			if (sp.pDepthStencilAttachment) sp.pDepthStencilAttachment = &depthRef;
+		}
+	}
+
+	VkRenderPassCreateInfo makeCreateInfo();
+};
+
 struct SimpleRenderPass {
 	VkDevice device { nullptr };
 	VkRenderPass pass { nullptr };
 	std::vector<VkFramebuffer> framebuffers;
 	std::vector<ExImage> depthImages;
+	VkImageLayout inputLayout, outputLayout;
+
+	inline operator VkRenderPass&() { return pass; }
+
+	void begin(Command& cmd, FrameData& fd);
+	void end(Command& cmd, FrameData& fd);
+
+	uint32_t framebufferWidth, framebufferHeight;
+
+	RenderPassDescription description;
 };
 
 struct GraphicsPipeline {
-	Device& device;
+	Device* device { nullptr };
 	VkPipeline pipeline { nullptr };
 	std::vector<VkPushConstantRange> pushConstants;
 	std::vector<VkDescriptorSetLayout> setLayouts;
@@ -342,8 +463,11 @@ struct GraphicsPipeline {
 	VkPipelineLayout layout { nullptr };
 	VkShaderModule vs{nullptr}, fs{nullptr};
 
-	void create(float viewportXYWH[4], PipelineBuilder& builder, VkRenderPass pass, int subpass);
+	void create(Device& d, float viewportXYWH[4], PipelineBuilder& builder, VkRenderPass pass, int subpass);
 
+	~GraphicsPipeline();
+
+	inline operator VkPipeline&() { return pipeline; }
 };
 
 
@@ -353,7 +477,9 @@ struct GraphicsPipeline {
 
 
 
-struct BaseApp {
+struct BaseApp : public UsesIO {
+	public:
+
 	AppConfig cfg;
 
 	VkInstance instance = nullptr;
@@ -366,18 +492,34 @@ struct BaseApp {
 	CommandPool mainCommandPool;
 
 	BaseApp(const AppConfig& cfg);
-	~BaseApp();
+	virtual ~BaseApp();
 
 
 	std::vector<FrameData> frameDatas;
 
 	FrameData& acquireNextFrame();
 
+	virtual void render();
+	virtual void doRender(RenderState& rs) =0;
+	inline virtual void postRender() {}
+
+		// inline virtual bool handleKey(int key, int scancode, int action, int mods) override { return false; }
+		// inline virtual bool handleMousePress(int button, int action, int mods) override { return false; }
+		// inline virtual bool handleMouseMotion(double x, double y) override { return false; }
+
+	virtual void initVk();
+
 	protected:
 
+	// RenderPassDescription simpleRenderPassDescription;
 	SimpleRenderPass simpleRenderPass;
 	bool make_basic_render_stuff();
 
+	std::shared_ptr<Camera> camera = nullptr;
+
+	inline bool isDone() const { return isDone_; }
+
+	uint32_t windowWidth, windowHeight;
 
 	private:
 
@@ -392,5 +534,14 @@ struct BaseApp {
 	void destroyFrameDatas();
 
 	float timeZero = 0;
+
+	private:
+		int renders = 0;
+		float time0 = 0;
+		float lastTime = 0;
+	protected:
+		float fpsMeter = 0;
+		RenderState renderState;
+		bool isDone_ = false;
 };
 

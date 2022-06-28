@@ -27,19 +27,20 @@ Device::Device(VkPhysicalDevice pdev) {
 }
 */
 Device::~Device() {
-	fmt::print(" - Destroying device!\n");
-	if (device != nullptr)
+	if (device != nullptr) {
+		fmt::print(" - Destroying device!\n");
 		vkDestroyDevice(device, nullptr);
+	}
 }
 
-Queue::Queue(Device& d, int family, int idx) {
+Queue::Queue(Device& d, uint32_t family, int idx) {
 	vkGetDeviceQueue(d.device, family, idx, &queue);
 }
 Queue::~Queue() {
 	queue = nullptr;
 }
 
-CommandPool::CommandPool(Device& d, int queueFamily) : device(d) {
+CommandPool::CommandPool(Device& d, uint32_t queueFamily) : device(&d) {
 	VkCommandPoolCreateInfo ci;
 	ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	ci.pNext = nullptr;
@@ -49,7 +50,7 @@ CommandPool::CommandPool(Device& d, int queueFamily) : device(d) {
 }
 CommandPool::~CommandPool() {
 	if (pool != nullptr)
-		vkDestroyCommandPool(device.device, pool, nullptr);
+		vkDestroyCommandPool(device->device, pool, nullptr);
 }
 std::vector<Command> CommandPool::allocate(int n) {
 	std::vector<VkCommandBuffer> buffers_(n);
@@ -60,7 +61,7 @@ std::vector<Command> CommandPool::allocate(int n) {
 	ai.commandPool = this->pool;
 	ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	ai.commandBufferCount = n;
-	assertCallVk(vkAllocateCommandBuffers(device.device, &ai, buffers_.data()));
+	assertCallVk(vkAllocateCommandBuffers(device->device, &ai, buffers_.data()));
 	for (int i=0; i<n; i++) out[i].cmdBuf = buffers_[i];
 	return out;
 }
@@ -69,6 +70,9 @@ Command::~Command() {
 }
 
 void Command::begin(VkCommandBufferUsageFlags flags) {
+
+	assertCallVk(vkResetCommandBuffer(cmdBuf, {}));
+
 	VkCommandBufferBeginInfo bi;
 	bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	bi.pNext = nullptr;
@@ -101,7 +105,7 @@ void Command::clearImage(ExImage& image, const std::vector<float>& color) {
 	vkCmdClearColorImage(cmdBuf, image.img, image.prevLayout, (VkClearColorValue*)color.data(), 1, &range);
 }
 
-void Submission::submit(VkCommandBuffer* cmds, uint32_t n) {
+void Submission::submit(VkCommandBuffer* cmds, uint32_t n, bool block) {
 		VkSubmitInfo si {
 				VK_STRUCTURE_TYPE_SUBMIT_INFO,
 				nullptr,
@@ -112,17 +116,17 @@ void Submission::submit(VkCommandBuffer* cmds, uint32_t n) {
 		};
 
 		vkQueueSubmit(q, 1, &si, fence);
-		if (fence) {
+		if (block and fence) {
 			vkWaitForFences(device, 1, &fence, true, timeout);
 			vkResetFences(device, 1, &fence);
 		}
 }
 
 
-SwapChain::SwapChain(BaseApp& app) : device(app.mainDevice) {
+SwapChain::SwapChain(BaseApp& app) : device(&app.mainDevice) {
 }
 
-TheDescriptorPool::TheDescriptorPool(BaseApp& app) : device(app.mainDevice) {
+TheDescriptorPool::TheDescriptorPool(BaseApp& app) : device(&app.mainDevice) {
 	std::vector<VkDescriptorPoolSize> sizes(app.cfg.descriptorPoolConfig.poolSizes.size());
 	for (int i=0; i<sizes.size(); i++) {
 		sizes[i] = VkDescriptorPoolSize {
@@ -141,10 +145,10 @@ TheDescriptorPool::TheDescriptorPool(BaseApp& app) : device(app.mainDevice) {
 	ci.poolSizeCount = sizes.size();
 	ci.pPoolSizes = sizes.data();
 
-	assertCallVk(vkCreateDescriptorPool(device.device, &ci, nullptr, &pool));
+	assertCallVk(vkCreateDescriptorPool(device->device, &ci, nullptr, &pool));
 }
 TheDescriptorPool::~TheDescriptorPool() {
-	if (pool != nullptr) vkDestroyDescriptorPool(device, pool, {});
+	if (pool != nullptr) vkDestroyDescriptorPool(*device, pool, {});
 }
 
 static VkInstance makeInstance(const AppConfig& cfg) {
@@ -174,6 +178,7 @@ static VkInstance makeInstance(const AppConfig& cfg) {
 	}
 #endif
 
+
 	for (auto ext : cfg.extraInstanceExtensions()) exts.push_back(ext);
 
 
@@ -200,20 +205,9 @@ static Device createStandardDevice(const AppConfig& cfg, VkInstance instance) {
 }
 
 BaseApp::BaseApp(const AppConfig& cfg)
-	:   cfg(cfg),
-		instance(makeInstance(cfg)),
-		mainDevice(createStandardDevice(cfg, instance)),
-		mainQueue(mainDevice, mainDevice.queueFamilyGfxIdxs[0], 0),
-		dpool(*this), swapchain(*this),
-		mainCommandPool(mainDevice, mainDevice.queueFamilyGfxIdxs[0])
+	:   cfg(cfg)
 {
 
-	if (cfg.windowSys == AppConfig::WindowSys::eGlfw) {
-		makeGlfwWindow();
-		makeRealSwapChain();
-	}
-
-	makeFrameDatas();
 }
 
 BaseApp::~BaseApp() {
@@ -235,8 +229,10 @@ FrameData& BaseApp::acquireNextFrame() {
 
 	// Spec seemed to indicate after acquire img will be presentSrcKhr, but actuall is undefined...
 	// fd.swapchainImg.setFromSwapchain(mainDevice, swapchain.images[fd.scIndx], swapchain.size, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
-	fd.swapchainImg.setFromSwapchain(mainDevice, swapchain.images[fd.scIndx], swapchain.imageViews[fd.scIndx], swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
-	fmt::print(" - using frameDatas[{}] (scIndx {}) fence {}, img {}\n", frameIdx, fd.scIndx, (void*)fd.frameAvailableFence, (void*)fd.swapchainImg.img);
+	// fd.swapchainImg(swapchain).setFromSwapchain(mainDevice, swapchain.images[fd.scIndx], swapchain.imageViews[fd.scIndx], swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
+	fd.swapchainImg = &swapchain.images[fd.scIndx];
+	//fd.swapchainImg->setFromSwapchain(mainDevice, swapchain.images[fd.scIndx].img, swapchain.images[fd.scIndx].view, swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
+	fmt::print(" - using frameDatas[{}] (scIndx {}) fence {}, img {}\n", frameIdx, fd.scIndx, (void*)fd.frameAvailableFence, (void*)fd.swapchainImg->img);
 
 	// TODO I don't think you need this
 	if (1) {
@@ -250,28 +246,81 @@ FrameData& BaseApp::acquireNextFrame() {
 	return fd;
 }
 
+void BaseApp::render() {
+	assert(camera);
 
-
-
-int main() {
-
-	AppConfig cfg;
-
-	BaseApp app(cfg);
-
-	for (int i=0; i<5; i++) {
-
-		auto &fd = app.acquireNextFrame();
-		fmt::print(" - (render here)\n");
-		fd.cmd.begin();
-
-		fd.cmd.clearImage(fd.swapchainImg, {(float)(i%3==0), (float)(i%3==1), (float)(i%3==2), 1.f});
-
-		DeviceQueueSpec dqs { app.mainDevice, app.mainQueue };
-		fmt::print(" - (present)\n");
-		fd.cmd.executeAndPresent(dqs, app.swapchain, fd);
-		sleep(1);
+	if (isDone() or frameDatas.size() == 0) {
+		return;
 	}
 
-	return 0;
+	FrameData& fd = acquireNextFrame();
+	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
+
+	// Update Camera Buffer
+	if (1) {
+		renderState.camera = camera.get();
+		renderState.frameBegin(&fd);
+	}
+
+	doRender(renderState);
+
+
+	DeviceQueueSpec dqs { mainDevice, mainQueue };
+	fd.cmd.executeAndPresent(dqs, swapchain, fd);
+
+	postRender();
 }
+
+void BaseApp::initVk() {
+
+		// instance(makeInstance(cfg)),
+		// mainDevice(createStandardDevice(cfg, instance)),
+		// mainQueue(mainDevice, mainDevice.queueFamilyGfxIdxs[0], 0),
+		// dpool(*this), swapchain(*this),
+		// mainCommandPool(mainDevice, mainDevice.queueFamilyGfxIdxs[0])
+	instance = makeInstance(cfg);
+	mainDevice = std::move(createStandardDevice(cfg, instance));
+	mainQueue = std::move(Queue{mainDevice, mainDevice.queueFamilyGfxIdxs[0], 0});
+	dpool = std::move(TheDescriptorPool(*this));
+	swapchain = std::move(SwapChain(*this));
+	mainCommandPool = std::move(CommandPool{mainDevice, mainDevice.queueFamilyGfxIdxs[0]});
+
+	if (cfg.windowSys == AppConfig::WindowSys::eGlfw) {
+		makeGlfwWindow();
+		makeRealSwapChain();
+	}
+
+	makeFrameDatas();
+	make_basic_render_stuff();
+}
+
+void SimpleRenderPass::begin(Command& cmd, FrameData& fd) {
+	VkClearValue clearValues[2] = {
+		VkClearValue { .color = VkClearColorValue { .float32 = {0.f,0.f,0.f,0.f} } },
+		VkClearValue { .depthStencil = VkClearDepthStencilValue { 0.f, 0 } }
+	};
+
+	// clearValues[0].color.float32[0] = 1.f;
+
+	VkRenderPassBeginInfo bi { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr };
+	bi.renderPass = pass;
+	bi.framebuffer = framebuffers[fd.scIndx];
+	bi.renderArea = VkRect2D { VkOffset2D{0,0}, VkExtent2D{framebufferWidth,framebufferHeight} };
+	bi.clearValueCount = 2;
+	bi.pClearValues = clearValues;
+	vkCmdBeginRenderPass(cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+void SimpleRenderPass::end(Command& cmd, FrameData& fd) {
+	vkCmdEndRenderPass(cmd);
+	fd.swapchainImg->prevLayout = outputLayout;
+}
+
+
+
+
+/*
+int main() {
+
+}
+*/

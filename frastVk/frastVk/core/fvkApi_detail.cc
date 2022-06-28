@@ -350,8 +350,12 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 
 
 void BaseApp::makeGlfwWindow() {
+	windowWidth = cfg.width;
+	windowHeight = cfg.height;
 	glfwWindow = new Window(cfg.height, cfg.width, false);
 	glfwWindow->setupWindow();
+
+	glfwWindow->ioUsers.push_back(this);
 }
 
 void BaseApp::makeRealSwapChain() {
@@ -435,14 +439,18 @@ void BaseApp::makeRealSwapChain() {
 	assertCallVk(vkCreateSwapchainKHR(mainDevice.device, &sc_ci_, nullptr, &swapchain.displaySwapchain));
 	fmt::print(" - created swapchain with {} images\n", swapchain.numImages);
 
-	vkGetSwapchainImagesKHR(mainDevice, swapchain.displaySwapchain, &swapchain.numImages, swapchain.images.data());
+	
+	std::vector<VkImage> rawImages(swapchain.numImages);
+	std::vector<VkImageView> rawImageViews(swapchain.numImages);
 
-	swapchain.imageViews.resize(swapchain.numImages);
+	vkGetSwapchainImagesKHR(mainDevice, swapchain.displaySwapchain, &swapchain.numImages, rawImages.data());
+
+	// swapchain.imageViews.resize(swapchain.numImages);
 	for (int i=0; i<swapchain.numImages; i++) {
 		VkImageViewCreateInfo viewInfo {
 			VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, nullptr,
 			{},
-			swapchain.images[i],
+			rawImages[i],
 			VK_IMAGE_VIEW_TYPE_2D,
 			surfFormat.format,
 			{},
@@ -451,7 +459,12 @@ void BaseApp::makeRealSwapChain() {
 				0, 1, 0, 1 }
 		};
 		// swapchain.imageViews.push_back(std::move(deviceGpu.createImageView(viewInfo)));
-		assertCallVk(vkCreateImageView(mainDevice, &viewInfo, nullptr, &swapchain.imageViews[i]));
+		assertCallVk(vkCreateImageView(mainDevice, &viewInfo, nullptr, &rawImageViews[i]));
+	}
+
+	for (int i=0; i<swapchain.numImages; i++) {
+		swapchain.images[i].setFromSwapchain(mainDevice, rawImages[i], rawImageViews[i], VkExtent2D{windowWidth,windowHeight},
+				VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
 	}
 }
 
@@ -526,6 +539,10 @@ bool BaseApp::make_basic_render_stuff() {
 
 	uint32_t width = cfg.width;
 	uint32_t height = cfg.height;
+	simpleRenderPass.framebufferWidth = width;
+	simpleRenderPass.framebufferHeight = height;
+	simpleRenderPass.inputLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	simpleRenderPass.outputLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	// Color
 	VkAttachmentDescription colorAttachment {
@@ -538,8 +555,8 @@ bool BaseApp::make_basic_render_stuff() {
 			VK_ATTACHMENT_STORE_OP_STORE,
 			VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 			VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			simpleRenderPass.inputLayout,
+			simpleRenderPass.outputLayout
 	};
 
 	VkAttachmentReference colorAttachmentRef {
@@ -552,6 +569,7 @@ bool BaseApp::make_basic_render_stuff() {
 		dimg.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 		dimg.extent = VkExtent2D { width, height };
 		dimg.format = VK_FORMAT_D32_SFLOAT;
+		dimg.usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		dimg.create(mainDevice);
 
 		//dimg.create(deviceGpu, *pdeviceGpu);
@@ -616,20 +634,23 @@ bool BaseApp::make_basic_render_stuff() {
 		*/
 	};
 
-	VkAttachmentDescription atts[2] = { colorAttachment, depthAttachment };
-	VkRenderPassCreateInfo rpInfo {
-		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr,
-		{},
-		2, atts,
-		(uint32_t)subpasses.size(), subpasses.data(),
-		(uint32_t)dependencies.size(), dependencies.data()
-	};
+	simpleRenderPass.description.attDescriptions.push_back(colorAttachment);
+	simpleRenderPass.description.attDescriptions.push_back(depthAttachment);
+	// simpleRenderPass.description.attRefs.push_back(colorAttachmentRef);
+	// simpleRenderPass.description.attRefs.push_back(depthAttachmentRef);
+	simpleRenderPass.description.colorRef = colorAttachmentRef;
+	simpleRenderPass.description.depthRef = depthAttachmentRef;
+	simpleRenderPass.description.subpassDescriptions = subpasses;
+	simpleRenderPass.description.subpassDeps = dependencies;
+	auto rpInfo = simpleRenderPass.description.makeCreateInfo();
 	assertCallVk(vkCreateRenderPass(mainDevice, &rpInfo, nullptr, &simpleRenderPass.pass));
 
+	simpleRenderPass.framebuffers.resize(swapchain.numImages);
 	for (int i=0; i<swapchain.numImages; i++) {
 
 		// VkImageView views[2] = { getSwapChainImageView(i), *simpleRenderPass.depthImages[i].view };
-		VkImageView views[2] = { swapchain.imageViews[i], simpleRenderPass.depthImages[i].view };
+		// VkImageView views[2] = { swapchain.imageViews[i], simpleRenderPass.depthImages[i].view };
+		VkImageView views[2] = { swapchain.images[i].view, simpleRenderPass.depthImages[i].view };
 
 		VkFramebufferCreateInfo fbInfo {
 			VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, nullptr,
@@ -641,6 +662,7 @@ bool BaseApp::make_basic_render_stuff() {
 			1
 		};
 		//simpleRenderPass.framebuffers.push_back(std::move(deviceGpu.createFramebuffer(fbInfo)));
+		assertCallVk(vkCreateFramebuffer(mainDevice, &fbInfo, nullptr, &simpleRenderPass.framebuffers[i]));
 	}
 
 	printf(" - Created %zu framebuffers.\n", simpleRenderPass.framebuffers.size());
@@ -649,6 +671,87 @@ bool BaseApp::make_basic_render_stuff() {
 }
 
 
+/*
+    VkStructureType                 sType;
+    const void*                     pNext;
+    VkDescriptorPool                descriptorPool;
+    uint32_t                        descriptorSetCount;
+    const VkDescriptorSetLayout*    pSetLayouts;
+} VkDescriptorSetAllocateInfo;
+
+typedef struct VkDescriptorSetLayoutBinding {
+    uint32_t              binding;
+    VkDescriptorType      descriptorType;
+    uint32_t              descriptorCount;
+    VkShaderStageFlags    stageFlags;
+    const VkSampler*      pImmutableSamplers;
+} VkDescriptorSetLayoutBinding;
+*/
+void DescriptorSet::create(TheDescriptorPool& pool_, GraphicsPipeline& pipeline) {
+	assert(descriptorCount > 0);
+
+	this->pool = &pool_;
+	VkDescriptorSetAllocateInfo ai { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr };
+	ai.descriptorPool = *pool;
+	ai.descriptorCount = descriptorCount;
+	ai.stageFlags = stageFlags;
+	ai.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayout setLayout;
+	assertCallVk(vkCreateDescriptorSetLayout(pool_.device, &slci, nullptr, &setLayout));
+	pipeline.setLayouts.push_back(setLayout);
+
+	assertCallVk(vkAllocateDescriptorSets(pool->device, &ai, &dset));
+
+	VkDescriptorSetLayoutCreateInfo slci { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr };
+	slci.flags = {};
+	slci.bindingCount = bindings.size();
+	slci.pBindings = bindings.data();
+
+
+		/*{
+			std::vector<vk::DescriptorSetLayoutBinding> bindings;
+			// Texture array binding
+			vk::ShaderStageFlags usedStages = vk::ShaderStageFlagBits::eFragment;
+			bindings.push_back({
+					0, vk::DescriptorType::eCombinedImageSampler,
+					cfg.maxTiles, usedStages });
+
+			vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
+			pooledTileData.descSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
+
+			vk::DescriptorSetAllocateInfo allocInfo {
+				*descPool, 1, &*pooledTileData.descSetLayout
+			};
+			pooledTileData.descSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
+
+			// descSet is allocated, now make the arrays point correctly on the gpu side.
+			std::vector<vk::DescriptorImageInfo> i_infos;
+
+			for (int j=0; j<cfg.maxTiles; j++) {
+				i_infos.push_back(vk::DescriptorImageInfo{
+						*pooledTileData.datas[j].tex.sampler,
+						*pooledTileData.datas[j].tex.view,
+						vk::ImageLayout::eShaderReadOnlyOptimal
+				});
+			}
+
+
+			std::vector<vk::WriteDescriptorSet> writeDesc = {
+				{
+					*pooledTileData.descSet,
+					0, 0, (uint32_t)i_infos.size(),
+					vk::DescriptorType::eCombinedImageSampler,
+					i_infos.data(),
+					nullptr,
+					nullptr
+				}
+			};
+			app->deviceGpu.updateDescriptorSets({(uint32_t)writeDesc.size(), writeDesc.data()}, nullptr);
+		}*/
+
+
+}
 
 
 
@@ -819,9 +922,9 @@ void Barriers::append(ExImage& img, VkImageLayout to) {
 
 void Command::executeAndPresent(DeviceQueueSpec& qds, SwapChain& sc, FrameData& fd) {
 
-	if (fd.swapchainImg.prevLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+	if (fd.swapchainImg->prevLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
 		Barriers barrier;
-		barrier.append(fd.swapchainImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		barrier.append(*fd.swapchainImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 		this->barriers(barrier);
 	}
 
@@ -850,28 +953,44 @@ void Command::executeAndPresent(DeviceQueueSpec& qds, SwapChain& sc, FrameData& 
 
 
 
+VkRenderPassCreateInfo RenderPassDescription::makeCreateInfo() {
+	VkRenderPassCreateInfo rpInfo {
+		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr,
+		{},
+		(uint32_t)attDescriptions.size(), attDescriptions.data(),
+		(uint32_t)subpassDescriptions.size(), subpassDescriptions.data(),
+		(uint32_t)subpassDeps.size(), subpassDeps.data()
+	};
+	return rpInfo;
+}
 
 
 void PipelineBuilder::init(
 		const VertexInputDescription& vertexDesc,
 		VkPrimitiveTopology topo,
 		VkShaderModule vs, VkShaderModule fs) {
+
 	{
 		VkPipelineShaderStageCreateInfo pss_ci { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr };
 
+		pss_ci.flags = {};
 		pss_ci.stage = VK_SHADER_STAGE_VERTEX_BIT;
 		pss_ci.module = vs;
 		pss_ci.pName = "main";
+		pss_ci.pSpecializationInfo = nullptr;
 		shaderStages.push_back(pss_ci);
 
+		pss_ci.flags = {};
 		pss_ci.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 		pss_ci.module = fs;
 		pss_ci.pName = "main";
+		pss_ci.pSpecializationInfo = nullptr;
 		shaderStages.push_back(pss_ci);
 	}
 
 	{
 		VkPipelineVertexInputStateCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, nullptr };
+		info.flags = 0;
 		info.vertexBindingDescriptionCount = vertexDesc.bindings.size();
 		info.pVertexBindingDescriptions = vertexDesc.bindings.data();
 		info.vertexAttributeDescriptionCount = vertexDesc.attributes.size();
@@ -881,7 +1000,8 @@ void PipelineBuilder::init(
 
 	{
 		VkPipelineInputAssemblyStateCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, nullptr };
-		
+
+		info.flags = 0;
 		info.topology = topo;
 		info.primitiveRestartEnable = VK_FALSE;
 		inputAssembly = info;
@@ -889,15 +1009,15 @@ void PipelineBuilder::init(
 
 	{
 		VkPipelineRasterizationStateCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, nullptr };
+		info.flags = 0;
 		info.depthClampEnable = VK_FALSE;
 		info.rasterizerDiscardEnable = VK_FALSE; //discards all primitives before the rasterization stage if enabled which we don't want
 
-		auto polygonMode = VK_POLYGON_MODE_FILL;
-
-		info.polygonMode = polygonMode;
+		info.polygonMode = VK_POLYGON_MODE_FILL;
 		info.lineWidth = 1.0f;
 		//info.cullMode = vk::CullModeFlagBits::eNone; //no backface cull
-		info.cullMode = VK_CULL_MODE_BACK_BIT;
+		// info.cullMode = VK_CULL_MODE_BACK_BIT;
+		info.cullMode = VK_CULL_MODE_NONE;
 		info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		info.depthBiasEnable = VK_FALSE; //no depth bias
 		info.depthBiasConstantFactor = 0.0f;
@@ -917,12 +1037,17 @@ void PipelineBuilder::init(
 		info.minDepthBounds = 0.0f;
 		info.maxDepthBounds = 1.0f;
 		info.stencilTestEnable = VK_FALSE;
+		info.flags = 0;
+		info.front = VkStencilOpState { VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_NEVER, {}, {}, {} };
+		info.back = VkStencilOpState { VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_NEVER, {}, {}, {} };
 		depthState = info;
 	}
+
 
 	{
 		VkPipelineMultisampleStateCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, nullptr };
 
+		info.flags = 0;
 		info.sampleShadingEnable = VK_FALSE;
 		info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 		info.minSampleShading = 1.0f;
@@ -965,13 +1090,30 @@ void PipelineBuilder::init(
 	}
 }
 
-void GraphicsPipeline::create(float viewportXYWH[4], PipelineBuilder& builder, VkRenderPass pass, int subpass) {
+void GraphicsPipeline::create(Device& device_, float viewportXYWH[4], PipelineBuilder& builder, VkRenderPass pass, int subpass) {
+	device = &device_;
 
 	VkGraphicsPipelineCreateInfo ci { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, nullptr };
 
-	VkPipelineViewportStateCreateInfo viewportInfo;
+	VkPipelineViewportStateCreateInfo viewportInfo { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr };
+	/*
+    VkStructureType                       sType;
+    const void*                           pNext;
+    VkPipelineViewportStateCreateFlags    flags;
+    uint32_t                              viewportCount;
+    const VkViewport*                     pViewports;
+    uint32_t                              scissorCount;
+    const VkRect2D*                       pScissors;*/
+	VkViewport viewport { viewportXYWH[0], viewportXYWH[1], viewportXYWH[2], viewportXYWH[3], 0, 1 };
+	VkRect2D rect { {0, 0}, { (uint32_t) viewportXYWH[2], (uint32_t) viewportXYWH[3] } };
+	viewportInfo.flags = {};
+	viewportInfo.viewportCount = 1;
+	viewportInfo.pViewports = &viewport;
+	viewportInfo.scissorCount = 1;
+	viewportInfo.pScissors = &rect;
 
 	VkPipelineColorBlendStateCreateInfo colorBlending = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, nullptr };
+	colorBlending.flags = 0;
 	colorBlending.logicOpEnable = VK_FALSE;
 	//colorBlending.logicOpEnable = VK_TRUE;
 	colorBlending.logicOp = VK_LOGIC_OP_COPY;
@@ -988,7 +1130,7 @@ void GraphicsPipeline::create(float viewportXYWH[4], PipelineBuilder& builder, V
 		info.pSetLayouts = setLayouts.data();
 
 		// pipelineLayout = std::move(device.createPipelineLayout(info));
-		assertCallVk(vkCreatePipelineLayout(device, &info, nullptr, &layout));
+		assertCallVk(vkCreatePipelineLayout(*device, &info, nullptr, &layout));
 	}
 
 
@@ -1010,5 +1152,10 @@ void GraphicsPipeline::create(float viewportXYWH[4], PipelineBuilder& builder, V
 	ci.basePipelineHandle = nullptr;
 	ci.basePipelineIndex = 0;
 
-	assertCallVk(vkCreateGraphicsPipelines(device, nullptr, 1, &ci, nullptr, &pipeline));
+	assertCallVk(vkCreateGraphicsPipelines(*device, nullptr, 1, &ci, nullptr, &pipeline));
+}
+
+GraphicsPipeline::~GraphicsPipeline() {
+	if (pipeline)
+		vkDestroyPipeline(*device, pipeline, nullptr);
 }
