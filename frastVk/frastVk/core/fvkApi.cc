@@ -33,7 +33,7 @@ Device::~Device() {
 	}
 }
 
-Queue::Queue(Device& d, uint32_t family, int idx) {
+Queue::Queue(Device& d, uint32_t family_, int idx) : family(family_) {
 	vkGetDeviceQueue(d.device, family, idx, &queue);
 }
 Queue::~Queue() {
@@ -76,7 +76,7 @@ void Command::begin(VkCommandBufferUsageFlags flags) {
 	VkCommandBufferBeginInfo bi;
 	bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	bi.pNext = nullptr;
-	bi.flags = {};
+	bi.flags = flags;
 	bi.pInheritanceInfo = nullptr;
 	assertCallVk(vkBeginCommandBuffer(cmdBuf, &bi));
 }
@@ -232,7 +232,7 @@ FrameData& BaseApp::acquireNextFrame() {
 	// fd.swapchainImg(swapchain).setFromSwapchain(mainDevice, swapchain.images[fd.scIndx], swapchain.imageViews[fd.scIndx], swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
 	fd.swapchainImg = &swapchain.images[fd.scIndx];
 	//fd.swapchainImg->setFromSwapchain(mainDevice, swapchain.images[fd.scIndx].img, swapchain.images[fd.scIndx].view, swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
-	fmt::print(" - using frameDatas[{}] (scIndx {}) fence {}, img {}\n", frameIdx, fd.scIndx, (void*)fd.frameAvailableFence, (void*)fd.swapchainImg->img);
+	// fmt::print(" - using frameDatas[{}] (scIndx {}) fence {}, img {}\n", frameIdx, fd.scIndx, (void*)fd.frameAvailableFence, (void*)fd.swapchainImg->img);
 
 	// TODO I don't think you need this
 	if (1) {
@@ -255,6 +255,7 @@ void BaseApp::render() {
 
 	FrameData& fd = acquireNextFrame();
 	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
+	fd.n = renders++;
 
 	// Update Camera Buffer
 	if (1) {
@@ -314,6 +315,18 @@ void SimpleRenderPass::begin(Command& cmd, FrameData& fd) {
 void SimpleRenderPass::end(Command& cmd, FrameData& fd) {
 	vkCmdEndRenderPass(cmd);
 	fd.swapchainImg->prevLayout = outputLayout;
+}
+
+SimpleRenderPass::~SimpleRenderPass() {
+	for (int i=0; i<framebuffers.size(); i++) {
+		vkDestroyFramebuffer(device, framebuffers[i], nullptr);
+	}
+
+	depthImages.clear();
+
+	if (pass) {
+		vkDestroyRenderPass(device, pass, nullptr);
+	}
 }
 
 

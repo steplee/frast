@@ -18,9 +18,13 @@ ImguiApp::~ImguiApp() {
 	// ImGui_ImplVulkan_DestroyDeviceObjects();
     ImGui_ImplVulkan_Shutdown();
 
+	if (uiPass) vkDestroyRenderPass(mainDevice, uiPass, nullptr);
+	if (uiDescPool) vkDestroyDescriptorPool(mainDevice, uiDescPool, nullptr);
+
 	// uiFramebuffers.clear();
 	uiPass = nullptr;
 	uiDescPool = nullptr;
+
 }
 
 extern void ImGui_ImplVulkanH_CreateWindowCommandBuffers(VkPhysicalDevice physical_device, VkDevice device, ImGui_ImplVulkanH_Window* wd, uint32_t queue_family, const VkAllocationCallbacks* allocator);
@@ -70,15 +74,26 @@ void ImguiApp::initVk() {
 	uint32_t width = cfg.width;
 	uint32_t height = cfg.height;
 
+	// Copy the App's simpleRenderPass, but we since we render UI after app does doRender(), and we use the same framebuffers,
+	// we don't want to clear them. So we have to modify the RenderPassDescription.
+	// Also, the initial layout for simpleRenderPass is undefined, but here it should be color or depth attachment optimal.
 	{
 		RenderPassDescription descriptionCopy = simpleRenderPass.description;
-		// descriptionCopy.attDescriptions[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		// descriptionCopy.attDescriptions[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		// descriptionCopy.colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		// descriptionCopy.subpassDescriptions[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		for (auto &d : descriptionCopy.attDescriptions) {
+			if (d.format == VK_FORMAT_D16_UNORM or
+				d.format == VK_FORMAT_D32_SFLOAT or
+				d.format == VK_FORMAT_D16_UNORM or
+				d.format == VK_FORMAT_D24_UNORM_S8_UINT or
+				d.format == VK_FORMAT_D32_SFLOAT)
+				d.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			else
+				d.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			d.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		}
 		auto rpInfo = descriptionCopy.makeCreateInfo();
 		assertCallVk(vkCreateRenderPass(mainDevice, &rpInfo, nullptr, &uiPass));
 
+		/*
 		uiFramebuffers.resize(swapchain.numImages);
 		for (int i=0; i<swapchain.numImages; i++) {
 			VkImageView views[2] = { swapchain.images[i].view, simpleRenderPass.depthImages[i].view };
@@ -93,6 +108,7 @@ void ImguiApp::initVk() {
 			};
 			assertCallVk(vkCreateFramebuffer(mainDevice, &fbInfo, nullptr, &uiFramebuffers[i]));
 		}
+		*/
 	}
 
 
@@ -197,7 +213,9 @@ void ImguiApp::render() {
 			VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr,
 			// uiPass, uiFramebuffers[renderState.frameData->scIndx],
 			uiPass, simpleRenderPass.framebuffers[fd.scIndx],
-			aoi, 2, clearValues
+			aoi,
+			// 2, clearValues
+			0, nullptr
 		};
 
 

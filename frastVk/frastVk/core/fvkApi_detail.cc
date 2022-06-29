@@ -686,77 +686,75 @@ typedef struct VkDescriptorSetLayoutBinding {
     VkShaderStageFlags    stageFlags;
     const VkSampler*      pImmutableSamplers;
 } VkDescriptorSetLayoutBinding;
+
+typedef struct VkDescriptorSetLayoutCreateInfo {
+    VkStructureType                        sType;
+    const void*                            pNext;
+    VkDescriptorSetLayoutCreateFlags       flags;
+    uint32_t                               bindingCount;
+    const VkDescriptorSetLayoutBinding*    pBindings;
+} VkDescriptorSetLayoutCreateInfo;
+
+typedef struct VkWriteDescriptorSet {
+    VkStructureType                  sType;
+    const void*                      pNext;
+    VkDescriptorSet                  dstSet;
+    uint32_t                         dstBinding;
+    uint32_t                         dstArrayElement;
+    uint32_t                         descriptorCount;
+    VkDescriptorType                 descriptorType;
+    const VkDescriptorImageInfo*     pImageInfo;
+    const VkDescriptorBufferInfo*    pBufferInfo;
+    const VkBufferView*              pTexelBufferView;
+} VkWriteDescriptorSet;
 */
 void DescriptorSet::create(TheDescriptorPool& pool_, GraphicsPipeline& pipeline) {
-	assert(descriptorCount > 0);
+	assert(bindings.size() > 0);
 
 	this->pool = &pool_;
-	VkDescriptorSetAllocateInfo ai { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr };
-	ai.descriptorPool = *pool;
-	ai.descriptorCount = descriptorCount;
-	ai.stageFlags = stageFlags;
-	ai.pImmutableSamplers = nullptr;
-
-	VkDescriptorSetLayout setLayout;
-	assertCallVk(vkCreateDescriptorSetLayout(pool_.device, &slci, nullptr, &setLayout));
-	pipeline.setLayouts.push_back(setLayout);
-
-	assertCallVk(vkAllocateDescriptorSets(pool->device, &ai, &dset));
 
 	VkDescriptorSetLayoutCreateInfo slci { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr };
 	slci.flags = {};
 	slci.bindingCount = bindings.size();
 	slci.pBindings = bindings.data();
+	assertCallVk(vkCreateDescriptorSetLayout(*pool->device, &slci, nullptr, &layout));
+	pipeline.setLayouts.push_back(layout);
 
+	VkDescriptorSetAllocateInfo ai { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr };
+	ai.descriptorPool = *pool;
+	ai.descriptorSetCount = 1;
+	ai.pSetLayouts = &layout;
+	assertCallVk(vkAllocateDescriptorSets(*pool->device, &ai, &dset));
 
-		/*{
-			std::vector<vk::DescriptorSetLayoutBinding> bindings;
-			// Texture array binding
-			vk::ShaderStageFlags usedStages = vk::ShaderStageFlagBits::eFragment;
-			bindings.push_back({
-					0, vk::DescriptorType::eCombinedImageSampler,
-					cfg.maxTiles, usedStages });
-
-			vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
-			pooledTileData.descSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
-
-			vk::DescriptorSetAllocateInfo allocInfo {
-				*descPool, 1, &*pooledTileData.descSetLayout
-			};
-			pooledTileData.descSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
-
-			// descSet is allocated, now make the arrays point correctly on the gpu side.
-			std::vector<vk::DescriptorImageInfo> i_infos;
-
-			for (int j=0; j<cfg.maxTiles; j++) {
-				i_infos.push_back(vk::DescriptorImageInfo{
-						*pooledTileData.datas[j].tex.sampler,
-						*pooledTileData.datas[j].tex.view,
-						vk::ImageLayout::eShaderReadOnlyOptimal
-				});
-			}
-
-
-			std::vector<vk::WriteDescriptorSet> writeDesc = {
-				{
-					*pooledTileData.descSet,
-					0, 0, (uint32_t)i_infos.size(),
-					vk::DescriptorType::eCombinedImageSampler,
-					i_infos.data(),
-					nullptr,
-					nullptr
-				}
-			};
-			app->deviceGpu.updateDescriptorSets({(uint32_t)writeDesc.size(), writeDesc.data()}, nullptr);
-		}*/
-
-
+	// Descriptors allocated.
+	// Now set pointers.
+}
+void DescriptorSet::update(const std::vector<VkWriteDescriptorSet>& writes) {
+	vkUpdateDescriptorSets(*pool->device, writes.size(), writes.data(), 0, nullptr);
+}
+void DescriptorSet::update(const VkWriteDescriptorSet& write) {
+	vkUpdateDescriptorSets(*pool->device, 1, &write, 0, nullptr);
+}
+uint32_t DescriptorSet::addBinding(VkDescriptorType type, uint32_t cnt, VkShaderStageFlags shaderFlags) {
+	uint32_t i = bindings.size();
+	bindings.push_back(VkDescriptorSetLayoutBinding{ i, type, cnt, shaderFlags, nullptr });
+	return i;
 }
 
+
+void Sampler::create(Device& d, const VkSamplerCreateInfo& ci) {
+	assertCallVk(vkCreateSampler(d, &ci, nullptr, &sampler));
+}
+void Sampler::destroy(Device& d) {
+	if (sampler) vkDestroySampler(d, sampler, nullptr);
+	sampler = nullptr;
+}
 
 
 void* ExBuffer::map(VkDeviceSize offset, VkDeviceSize size) {
 	assert(not mappedAddr);
+	fmt::print(" - map with (d {}) (mem {}) (off {}) (size {} / {})\n",
+			(void*)device, (void*)mem, offset, size, capacity_);
 	assertCallVk(vkMapMemory(device, mem, offset, size, {}, &mappedAddr));
 	return mappedAddr;
 }
@@ -767,7 +765,7 @@ void ExBuffer::unmap() {
 }
 void* ExImage::map() {
 	assert(not mappedAddr);
-	assertCallVk(vkMapMemory(device, mem, 0, capacity, {}, &mappedAddr));
+	assertCallVk(vkMapMemory(device, mem, 0, capacity_, {}, &mappedAddr));
 	return mappedAddr;
 }
 void ExImage::unmap() {
@@ -776,15 +774,25 @@ void ExImage::unmap() {
 	mappedAddr = nullptr;
 }
 
-void ExImage::setFromSwapchain(VkDevice device, VkImage& img, VkImageView& view, const VkExtent2D& ex, const VkImageLayout& layout, const VkImageAspectFlags& flags, const VkFormat& fmt) {
+void ExImage::setFromSwapchain(VkDevice device_, VkImage& img, VkImageView& view, const VkExtent2D& ex, const VkImageLayout& layout, const VkImageAspectFlags& flags, const VkFormat& fmt) {
 	own = false;
-	device = device;
+	ownView = true; // still own the view!
+	device = device_;
 	this->img = img;
 	this->view = view;
 	extent = ex;
 	prevLayout = layout;
 	aspect = flags;
 	format = fmt;
+}
+
+void ExImage::set(VkExtent2D extent, VkFormat fmt, VkMemoryPropertyFlags memFlags, VkImageUsageFlags usageFlags, VkImageAspectFlags aspect) {
+
+	this->extent = extent;
+	this->format = fmt;
+	this->memPropFlags = memFlags;
+	this->usageFlags = usageFlags;
+	this->aspect = aspect;
 }
 
 void ExImage::create(Device& theDevice) {
@@ -824,8 +832,9 @@ void ExImage::create(Device& theDevice) {
 	uint32_t idx = 0;
 	uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
 	idx = findMemoryTypeIndex(pd, memPropFlags_, memMask);
+	capacity_ = std::max(minSize,size());
 	// printf(" - creating image buffers to memory type idx %u\n", idx);
-	VkMemoryAllocateInfo allocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, std::max(minSize,size()), idx };
+	VkMemoryAllocateInfo allocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, capacity_, idx };
 	//mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
 	assertCallVk(vkAllocateMemory(d, &allocInfo, nullptr, &mem));
 
@@ -854,8 +863,11 @@ void ExImage::create(Device& theDevice) {
 	}
 }
 
-void ExBuffer::create(Device& device) {
+void ExBuffer::create(Device& device_) {
 	assert(givenSize>0);
+	assert(memPropFlags != 0);
+	assert(usageFlags != 0);
+	device = device_;
 
 	uint32_t idx = 0;
 
@@ -873,13 +885,13 @@ void ExBuffer::create(Device& device) {
 	// auto req = buffer.getMemoryRequirements();
 	VkMemoryRequirements req;
 	vkGetBufferMemoryRequirements(device, buf, &req);
-	capacity = req.size;
+	capacity_ = req.size;
 	//printf(" - allocating buffer to memory type idx %u, givenSize %lu, residentSize %lu\n", idx, givenSize, residentSize);
 
 	uint32_t memMask = req.memoryTypeBits;
-	idx = findMemoryTypeIndex(device.pdevice, memPropFlags, memMask);
+	idx = findMemoryTypeIndex(device_.pdevice, memPropFlags, memMask);
 
-	VkMemoryAllocateInfo allocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, capacity, idx };
+	VkMemoryAllocateInfo allocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, capacity_, idx };
 
 	VkMemoryAllocateFlagsInfo memAllocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT };
 	if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
@@ -891,9 +903,35 @@ void ExBuffer::create(Device& device) {
 	assertCallVk(vkBindBufferMemory(device, buf, mem, 0));
 }
 
+void ExBuffer::set(uint32_t size, VkMemoryPropertyFlags memFlags, VkBufferUsageFlags bufFlags) {
+	givenSize = size;
+	memPropFlags = memFlags;
+	usageFlags = bufFlags;
+}
+
+void ExBuffer::deallocate() {
+	if (mappedAddr) unmap();
+	if (own and buf) vkDestroyBuffer(device, buf, nullptr);
+	if (own and mem) vkFreeMemory(device, mem, nullptr);
+	buf = nullptr;
+	mem = nullptr;
+}
+
+ExBuffer::~ExBuffer() {
+	deallocate();
+}
+
 ExImage::~ExImage() {
+	deallocate();
+}
+void ExImage::deallocate() {
+	if (mappedAddr) unmap();
+	if (ownView and view) vkDestroyImageView(device, view, nullptr);
 	if (own and img) vkDestroyImage(device, img, nullptr);
+	if (own and mem) vkFreeMemory(device, mem, nullptr);
 	img = nullptr;
+	view = nullptr;
+	mem = nullptr;
 }
 
 
@@ -1057,8 +1095,11 @@ void PipelineBuilder::init(
 		multisampling = info;
 	}
 
+	VkPipelineColorBlendAttachmentState colorBlendAttachment;
+	memset(&colorBlendAttachment, 0, sizeof(VkPipelineColorBlendAttachmentState));
+	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	if (not additiveBlending) {
-		VkPipelineColorBlendAttachmentState colorBlendAttachment;
 		colorBlendAttachment.colorWriteMask =
 			VK_COLOR_COMPONENT_R_BIT |
 			VK_COLOR_COMPONENT_G_BIT |
@@ -1070,11 +1111,9 @@ void PipelineBuilder::init(
 		colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 		colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		this->colorBlendAttachment = colorBlendAttachment;
 	} else if (replaceBlending) {
 		// TODO
 	} else {
-		VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
 		colorBlendAttachment.colorWriteMask =
 			VK_COLOR_COMPONENT_R_BIT |
 			VK_COLOR_COMPONENT_G_BIT |
@@ -1086,8 +1125,8 @@ void PipelineBuilder::init(
 		colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-		this->colorBlendAttachment = colorBlendAttachment;
 	}
+	this->colorBlendAttachment = colorBlendAttachment;
 }
 
 void GraphicsPipeline::create(Device& device_, float viewportXYWH[4], PipelineBuilder& builder, VkRenderPass pass, int subpass) {
@@ -1156,6 +1195,116 @@ void GraphicsPipeline::create(Device& device_, float viewportXYWH[4], PipelineBu
 }
 
 GraphicsPipeline::~GraphicsPipeline() {
+
+	for (auto &layout : setLayouts) {
+		vkDestroyDescriptorSetLayout(*device, layout, nullptr);
+	}
+
+	if (vs) vkDestroyShaderModule(*device, vs, nullptr);
+	if (fs) vkDestroyShaderModule(*device, fs, nullptr);
+
+	if (layout) vkDestroyPipelineLayout(*device, layout, nullptr);
+
 	if (pipeline)
 		vkDestroyPipeline(*device, pipeline, nullptr);
+}
+
+
+
+
+
+
+void ExUploader::create(Device* device_, Queue* queue_, VkBufferUsageFlags scratchFlags_) {
+	device = device_;
+	queue = queue_;
+	scratchFlags = scratchFlags_;
+
+	cmdPool = std::move(CommandPool(*device, queue_->family));
+	cmd = std::move(cmdPool.allocate(1)[0]);
+
+	VkFenceCreateInfo fci { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, {} };
+	assertCallVk(vkCreateFence(*device, &fci, nullptr, &fence));
+}
+
+void ExUploader::enqueueUpload(ExBuffer& dstBuffer, void* data, uint64_t len, uint64_t off) {
+	assert(device);
+
+	if (frontIdx == 0) {
+		cmd.begin({});
+	}
+	uploadScratch(data, len);
+
+	VkBufferCopy regions[1] = { {0,0,len} };
+	vkCmdCopyBuffer(cmd, scratchBuffers[frontIdx-1], dstBuffer, 1, regions);
+}
+
+void ExUploader::enqueueUpload(ExImage& dstImage, void* data, uint64_t len, uint64_t off, VkImageLayout finalLayout) {
+	VkImageSubresourceLayers subres {
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
+			0,
+			1 };
+	// vk::ImageSubresourceRange subresRange {
+		// vk::ImageAspectFlagBits::eColor,
+		// 0, 1, 0, 1 };
+
+
+	VkBufferImageCopy regions[1] = {
+		{ 0, dstImage.extent.width, dstImage.extent.height, subres, VkOffset3D{}, VkExtent3D{dstImage.extent.width, dstImage.extent.height, 1} }
+	};
+
+	if (frontIdx == 0) {
+		cmd.begin({});
+	}
+	uploadScratch(data, len);
+
+	Barriers into, outof;
+	into.append(dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	outof.append(dstImage, finalLayout);
+
+	cmd.barriers(into);
+	vkCmdCopyBufferToImage(cmd, scratchBuffers[frontIdx-1], dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, regions);
+	cmd.barriers(outof);
+}
+
+void ExUploader::execute() {
+	assert(frontIdx > 0);
+	cmd.end();
+
+	Submission submission { DeviceQueueSpec { *device, *queue } };
+	submission.fence = fence;
+	submission.submit(&cmd.cmdBuf, 1, true);
+
+	assertCallVk(vkResetCommandBuffer(cmd, {}));
+	frontIdx = 0;
+}
+
+void ExUploader::uploadScratch(void* data, size_t len) {
+	if (frontIdx >= scratchBuffers.size()) {
+		ExBuffer newBuffer;
+		newBuffer.set(len * 2,
+				scratchFlags,
+				VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+		newBuffer.create(*device);
+		scratchBuffers.push_back(std::move(newBuffer));
+		scratchBuffers.back().map();
+	}
+	auto &scratchBuffer = scratchBuffers[frontIdx++];
+
+	if (len > scratchBuffer.capacity_) {
+		scratchBuffer.deallocate();
+		scratchBuffer.set(len * 2,
+				scratchFlags,
+				VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+		scratchBuffer.create(*device);
+		scratchBuffer.map();
+	}
+
+	if (data)
+		// scratchBuffer.uploadNow(data, len);
+		memcpy(scratchBuffer.mappedAddr, data, len);
+}
+
+ExUploader::~ExUploader() {
+	vkDestroyFence(*device, fence, nullptr);
 }

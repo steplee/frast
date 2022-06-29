@@ -30,7 +30,7 @@ class ImguiApp : public BaseApp {
 
 		VkDescriptorPool uiDescPool { nullptr };
 		VkRenderPass uiPass { nullptr };
-		std::vector<VkFramebuffer> uiFramebuffers;
+		// std::vector<VkFramebuffer> uiFramebuffers;
 
 		bool showMenu = true;
 

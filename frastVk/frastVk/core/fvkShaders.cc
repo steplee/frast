@@ -88,6 +88,8 @@ bool loadShader(
 		VkDevice& dev,
 		VkShaderModule& vs, VkShaderModule& fs,
 		const std::string& baseName) {
+	assert(vs == nullptr);
+	assert(fs == nullptr);
 	return loadShader(dev, vs,fs, baseName, baseName);
 }
 

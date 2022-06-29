@@ -170,95 +170,7 @@ struct SwapChain {
 	inline SwapChain& operator=(SwapChain&& o) =default;
 };
 
-struct ExImage {
-	VkDevice device { nullptr };
-	VkImage img { nullptr };
-	VkImageView view { nullptr };
-	VkDeviceMemory mem { nullptr };
-	VkImageLayout prevLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VkExtent2D extent {0,0};
-	VkFormat format { VK_FORMAT_UNDEFINED };
-	uint32_t capacity = 0;
-
-	// Memory details
-	VkMemoryPropertyFlags memPropFlags;
-	VkImageUsageFlags usageFlags;
-	// ImageView details
-	VkImageAspectFlags aspect;
-	// Passed to sampler.
-	bool unnormalizedCoordinates = false;
-
-	inline uint32_t channels() const {
-		return scalarSizeOfFormat(format);
-	}
-	inline uint64_t size() const {
-		return scalarSizeOfFormat(format) * extent.width * extent.height;
-	}
-
-	void create(Device& device);
-
-	// will not own!
-	void setFromSwapchain(VkDevice device, VkImage& img, VkImageView& view, const VkExtent2D& ex, const VkImageLayout& layout, const VkImageAspectFlags& flags, const VkFormat& fmt);
-
-	void* map();
-	void unmap();
-	void* mappedAddr = nullptr;
-	bool own = true;
-
-	inline ExImage() {};
-	inline ExImage(const ExImage& o) =delete;
-	inline ExImage& operator=(const ExImage& o) =delete;
-	inline ExImage& operator=(ExImage&& o) { moveFrom(o); return *this; }
-	inline ExImage(ExImage&& o) { moveFrom(o); }
-	inline void moveFrom(ExImage& o) {
-		img = o.img;
-		own = o.own;
-		device = o.device;
-		view = o.view;
-		mem = o.mem;
-		prevLayout = o.prevLayout;
-		extent = o.extent;
-		format = o.format;
-		capacity = o.capacity;
-		memPropFlags = o.memPropFlags;
-		usageFlags = o.usageFlags;
-		aspect = o.aspect;
-		unnormalizedCoordinates = o.unnormalizedCoordinates;
-		mappedAddr = o.mappedAddr;
-		o.img = nullptr;
-		o.mappedAddr = nullptr;
-	}
-	~ExImage();
-};
-
-struct ExBuffer {
-	VkDevice device { nullptr };
-	VkBuffer buf { nullptr };
-	VkDeviceMemory mem { nullptr };
-	uint32_t capacity = 0;
-	uint32_t givenSize = 0;
-	VkMemoryPropertyFlags memPropFlags;
-	VkBufferUsageFlags usageFlags;
-	VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	void create(Device& device);
-
-	void* map(VkDeviceSize offset=0, VkDeviceSize size=VK_WHOLE_SIZE);
-	void unmap();
-	void* mappedAddr = nullptr;
-};
-
-struct Barriers {
-	VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
-	VkDependencyFlags depFlags = VK_DEPENDENCY_DEVICE_GROUP_BIT;
-
-	std::vector<VkMemoryBarrier>       memBarriers;
-	std::vector<VkBufferMemoryBarrier> bufBarriers;
-	std::vector<VkImageMemoryBarrier>  imgBarriers;
-
-	void append(ExImage& img, VkImageLayout to);
-};
-
+struct Barriers;
 struct Command;
 struct CommandPool {
 	Device* device { nullptr };
@@ -297,6 +209,168 @@ struct Command {
 
 	// noop
 	~Command();
+};
+
+
+struct Sampler {
+	VkSampler sampler { nullptr };
+
+	void create(Device& d, const VkSamplerCreateInfo& ci);
+	void destroy(Device& d); // Must call this!
+
+	inline ~Sampler() {
+		assert(sampler == nullptr && "sampler must be manually destroyed since it doesn't hold a device pointer");
+	}
+	inline operator VkSampler&() { return sampler; }
+};
+
+struct ExImage {
+	VkDevice device { nullptr };
+	VkImage img { nullptr };
+	VkImageView view { nullptr };
+	VkDeviceMemory mem { nullptr };
+	VkImageLayout prevLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkExtent2D extent {0,0};
+	VkFormat format { VK_FORMAT_UNDEFINED };
+	uint32_t capacity_ = 0;
+
+	// Memory details
+	VkMemoryPropertyFlags memPropFlags;
+	VkImageUsageFlags usageFlags;
+	// ImageView details
+	VkImageAspectFlags aspect;
+	// Passed to sampler.
+	// bool unnormalizedCoordinates = false;
+
+	inline uint32_t channels() const {
+		return scalarSizeOfFormat(format);
+	}
+	inline uint64_t size() const {
+		return scalarSizeOfFormat(format) * extent.width * extent.height;
+	}
+
+	void set(VkExtent2D extent, VkFormat fmt, VkMemoryPropertyFlags memFlags, VkImageUsageFlags usageFlags, VkImageAspectFlags aspect=VK_IMAGE_ASPECT_COLOR_BIT);
+	void create(Device& device);
+	void deallocate();
+
+	// will not own!
+	void setFromSwapchain(VkDevice device, VkImage& img, VkImageView& view, const VkExtent2D& ex, const VkImageLayout& layout, const VkImageAspectFlags& flags, const VkFormat& fmt);
+
+	void* map();
+	void unmap();
+	void* mappedAddr = nullptr;
+	bool own = true, ownView = true;
+
+	inline ExImage() {};
+	inline ExImage(const ExImage& o) =delete;
+	inline ExImage& operator=(const ExImage& o) =delete;
+	inline ExImage& operator=(ExImage&& o) { moveFrom(o); return *this; }
+	inline ExImage(ExImage&& o) { moveFrom(o); }
+	inline void moveFrom(ExImage& o) {
+		img = o.img;
+		own = o.own;
+		ownView = o.ownView;
+		device = o.device;
+		view = o.view;
+		mem = o.mem;
+		prevLayout = o.prevLayout;
+		extent = o.extent;
+		format = o.format;
+		capacity_ = o.capacity_;
+		memPropFlags = o.memPropFlags;
+		usageFlags = o.usageFlags;
+		aspect = o.aspect;
+		// unnormalizedCoordinates = o.unnormalizedCoordinates;
+		mappedAddr = o.mappedAddr;
+		o.view = nullptr;
+		o.img = nullptr;
+		o.mappedAddr = nullptr;
+		o.mem = nullptr;
+	}
+	~ExImage();
+	inline operator VkImage&() { return img; }
+};
+
+struct ExBuffer {
+	VkDevice device { nullptr };
+	VkBuffer buf { nullptr };
+	VkDeviceMemory mem { nullptr };
+	uint32_t capacity_ = 0;
+	uint32_t givenSize = 0;
+	VkMemoryPropertyFlags memPropFlags = 0;
+	VkBufferUsageFlags usageFlags = 0;
+	VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	bool own = true;
+
+	void set(uint32_t size, VkMemoryPropertyFlags memFlags, VkBufferUsageFlags bufFlags);
+	void create(Device& device);
+	void deallocate();
+
+	void* map(VkDeviceSize offset=0, VkDeviceSize size=VK_WHOLE_SIZE);
+	void unmap();
+	void* mappedAddr = nullptr;
+
+	inline operator VkBuffer&() { return buf; }
+
+	inline ExBuffer() {};
+	inline ExBuffer(const ExBuffer& o) =delete;
+	inline ExBuffer& operator=(const ExBuffer& o) =delete;
+	inline ExBuffer& operator=(ExBuffer&& o) { moveFrom(o); return *this; }
+	inline ExBuffer(ExBuffer&& o) { moveFrom(o); }
+	inline void moveFrom(ExBuffer& o) {
+		buf = o.buf;
+		own = o.own;
+		device = o.device;
+		mem = o.mem;
+		givenSize = o.givenSize;
+		capacity_ = o.capacity_;
+		memPropFlags = o.memPropFlags;
+		usageFlags = o.usageFlags;
+		sharingMode = o.sharingMode;
+		mappedAddr = o.mappedAddr;
+		o.buf = nullptr;
+		o.mappedAddr = nullptr;
+		o.mem = nullptr;
+	}
+	~ExBuffer();
+};
+
+struct ExUploader {
+	Device* device { nullptr };
+	Queue* queue { nullptr };
+
+	VkFence fence { nullptr };
+	CommandPool cmdPool;
+	Command cmd;
+
+	void create(Device* device, Queue* queue,
+			VkBufferUsageFlags scratchFlags=VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	void enqueueUpload(ExBuffer& buffer, void* data, uint64_t len, uint64_t off);
+	void enqueueUpload(ExImage& img,  void* data, uint64_t len, uint64_t off, VkImageLayout finalLayout);
+
+	// Actually submit the command
+	void execute();
+
+	~ExUploader();
+
+	private:
+		// Used by both enqueueUpload
+		void uploadScratch(void* data, size_t len);
+		std::vector<ExBuffer> scratchBuffers;
+		uint32_t frontIdx = 0;
+		VkBufferUsageFlags scratchFlags;
+};
+
+struct Barriers {
+	VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+	VkDependencyFlags depFlags = VK_DEPENDENCY_DEVICE_GROUP_BIT;
+
+	std::vector<VkMemoryBarrier>       memBarriers;
+	std::vector<VkBufferMemoryBarrier> bufBarriers;
+	std::vector<VkImageMemoryBarrier>  imgBarriers;
+
+	void append(ExImage& img, VkImageLayout to);
 };
 
 // Temporary type used to submit a cmdbuf, with optional fences and semaphores
@@ -339,15 +413,23 @@ struct FrameData {
 };
 
 class TheDescriptorPool;
+class GraphicsPipeline;
 struct DescriptorSet {
+	// This struct owns @dset, but not @layout. The GraphicsPipeline passed will own @layout.
+	// So the lifetimes must be similar.
 	VkDescriptorSet dset { nullptr };
 	VkDescriptorSetLayout layout { nullptr };
 	TheDescriptorPool* pool { nullptr };
 
-    uint32_t              descriptorCount = 0;
+    uint32_t              descriptorCount = 1;
     VkShaderStageFlags    stageFlags;
+	std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-	void create(TheDescriptorPool& pool);
+	void create(TheDescriptorPool& pool, GraphicsPipeline& pipeline);
+	void update(const std::vector<VkWriteDescriptorSet>& writes);
+	void update(const VkWriteDescriptorSet& write);
+
+	uint32_t addBinding(VkDescriptorType type, uint32_t cnt, VkShaderStageFlags shaderFlags);
 
 	inline operator VkDescriptorSet&() { return dset; }
 };
@@ -365,6 +447,16 @@ struct TheDescriptorPool {
 	~TheDescriptorPool();
 
 	inline operator VkDescriptorPool&() { return pool; }
+
+	inline TheDescriptorPool(const TheDescriptorPool&) = delete;
+	inline TheDescriptorPool& operator=(const TheDescriptorPool&) = delete;
+	inline TheDescriptorPool(TheDescriptorPool&& o) { moveFrom(o); }
+	inline TheDescriptorPool& operator=(TheDescriptorPool&& o) { moveFrom(o); return *this; };
+	inline void moveFrom(TheDescriptorPool& o) {
+		pool = o.pool;
+		device = o.device;
+		o.pool = nullptr;
+	}
 };
 
 
@@ -388,7 +480,7 @@ struct PipelineBuilder {
 	bool replaceBlending = false;
 	bool depthTest = true, depthWrite = true;
 
-    VkPipelineCreateFlags                            flags;
+    VkPipelineCreateFlags                            flags = {};
 
 	virtual void init(
 			const VertexInputDescription& vertexDesc,
@@ -451,6 +543,8 @@ struct SimpleRenderPass {
 	uint32_t framebufferWidth, framebufferHeight;
 
 	RenderPassDescription description;
+
+	~SimpleRenderPass();
 };
 
 struct GraphicsPipeline {
@@ -508,6 +602,8 @@ struct BaseApp : public UsesIO {
 		// inline virtual bool handleMouseMotion(double x, double y) override { return false; }
 
 	virtual void initVk();
+
+	inline Camera* getCamera() { return camera.get(); }
 
 	protected:
 

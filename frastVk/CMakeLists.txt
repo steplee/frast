@@ -118,6 +118,10 @@ add_library(frastVk
 	frastVk/core/window.cc
 	frastVk/core/render_state.cc
 
+	#frastVk/gt/gt.cc
+	frastVk/gt/rt/rt.cc
+	frastVk/rt/protos/rocktree.pb.cc
+
     ${IMGUI_SOURCES}
 )
 
@@ -159,6 +163,9 @@ target_precompile_headers(frastVk PUBLIC
 
 add_executable(fvkTestApp frastVk/core/fvkTestApp.cc)
 target_link_libraries(fvkTestApp frastVk)
+
+add_executable(fvkRunRt frastVk/gt/rt/runRt.cc)
+target_link_libraries(fvkRunRt frastVk)
 
 #[[
 add_executable(testParseRt frastVk/rt/parse.cc frastVk/rt/protos/rocktree.pb.cc)
