@@ -10,6 +10,13 @@ So this suite of several programs and one static library attempts to be better f
 
 It offers tools to convert from a GDAL supported format to an internal one (using gdal itself), and a library that amongst others, allows something equivalent to `RasterIO`.
 
+# FrastVk
+Besides the frast data storage code, there is a completely seperate Vulkan framework to help build applications, called `fvk`. This should really be its own repo. There are basic Vulkan wrapper types that take care of handling tedious Vulkan structs and object management. There are also some classes to help render various things. The most substantive is the `GtRenderer` class, which is a generic tree-based level-of-detailing renderer. There are two specializations: `rt` and `ftr`. `ftr` stands for "frast tiled renderer", it renders 2.5 WebMercator color and DTED tiles. `rt` renders google-earth data. The downloader is elsewhere...
+
+Both `rt` and `ftr` support "casting", which uses a seperate shader that takes upto two more textures and projection matrices and renders those textures from the perspective of the projeciton matrices. This can be used to overlay a video from a camera that was on an aircraft for example, while also rendering the true data underneath. You could do this in multiple passes, but the way its implemented is with one pass that takes all the matrices and textures up front and blends the overlaid video directly in one shader.
+
+My original code had two different implementations for `rt` and `ftr`, but this had a lot of near-duplicate code. So I tried to find what was common and what was unique and how to share as much code as possible. `GtRenderer` makes use of CRTP. This is my first time using it for anything non-trivial. You need to specialize a bunch of stuff, and I ended up having to add things as I went, but overall I'm happy with how it turned out.
+
 
 ### Dependencies
   - Eigen
