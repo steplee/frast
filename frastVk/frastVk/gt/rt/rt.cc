@@ -2,7 +2,7 @@
 #include "../gt_impl.hpp"
 #include "frastVk/core/fvkShaders.h"
 
-#include "rt_decode.hpp"
+#include "decode/rt_decode.hpp"
 
 #include <fmt/color.h>
 #include <fmt/ostream.h>

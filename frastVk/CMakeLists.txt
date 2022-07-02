@@ -74,11 +74,11 @@ if (VULKAN_DEBUG)
 endif()
 
 add_custom_command(
-	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/rt/protos/rocktree.pb.cc
+	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/gt/rt/protos/rocktree.pb.cc
   #COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
   COMMAND cp ${PROJECT_SOURCE_DIR}/protos/* .
   COMMAND protoc rocktree.proto --cpp_out=.
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/frastVk/rt/protos)
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/frastVk/gt/rt/protos)
 
 set(IMGUI_SOURCES "")
 option(USE_IMGUI "Use ImGUI" ON)
@@ -120,7 +120,7 @@ add_library(frastVk
 
 	frastVk/gt/gt.cc
 	frastVk/gt/rt/rt.cc
-	frastVk/rt/protos/rocktree.pb.cc
+	frastVk/gt/rt/protos/rocktree.pb.cc
 
 	frastVk/gt/ftr/ftr.cc
 
