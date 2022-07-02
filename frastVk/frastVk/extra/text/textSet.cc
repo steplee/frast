@@ -1,108 +1,120 @@
 #include "textSet.h"
 #include "font.hpp"
-#include "frastVk/core/load_shader.hpp"
+#include "frastVk/core/fvkShaders.h"
 
-void SimpleTextSet::render(RenderState& rs, vk::CommandBuffer &cmd) {
+SimpleTextSet::~SimpleTextSet() {
+	sampler.destroy(app->mainDevice);
+}
+
+void SimpleTextSet::render(RenderState& rs, Command &cmd) {
+	/*
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*descSet}, nullptr);
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipeline);
 	for (int i=0; i<maxStrings; i++)
 		if (stringLengths[i] > 0)
 			cmd.draw(6*stringLengths[i], 1, 0, i);
+	*/
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &descSet.dset, 0, 0);
+	for (int i=0; i<maxStrings; i++)
+		if (stringLengths[i] > 0)
+			vkCmdDraw(cmd, 6*stringLengths[i], 1, 0, i);
+
 }
 
-SimpleTextSet::SimpleTextSet(BaseVkApp* app_) {
+SimpleTextSet::SimpleTextSet(BaseApp* app_) {
 	ww = app_->windowWidth;
 	hh = app_->windowHeight;
 	app = app_;
 
 
-
-	// Load texture
-	int full_width  = _texWidth * _cols;
-	int full_height = _texHeight * _rows;
-	fontTex.unnormalizedCoordinates = true;
-	fontTex.createAsTexture(app->uploader, full_height, full_width, vk::Format::eR8Unorm, (uint8_t*)_image);
-	// fontTex.createAsTexture(app->uploader, full_width, full_height, vk::Format::eR8Unorm, (uint8_t*)_image);
-
-	std::vector<vk::DescriptorPoolSize> poolSizes = {
-		vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
-		vk::DescriptorPoolSize { vk::DescriptorType::eCombinedImageSampler, 2 },
-	};
-	vk::DescriptorPoolCreateInfo poolInfo {
-		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, // allow raii to free the owned sets
-			1,
-			(uint32_t)poolSizes.size(), poolSizes.data()
-	};
-	descPool = std::move(vk::raii::DescriptorPool(app->deviceGpu, poolInfo));
-
-	std::vector<vk::DescriptorSetLayoutBinding> bindings;
-	bindings.push_back({ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment });
-	bindings.push_back({ 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment });
-
-	vk::DescriptorSetLayoutCreateInfo layInfo { {}, (uint32_t)bindings.size(), bindings.data() };
-	descSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
-
-	vk::DescriptorSetAllocateInfo allocInfo {
-		*descPool, 1, &*descSetLayout
-	};
-	descSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
+	// void set(VkExtent2D extent, VkFormat fmt, VkMemoryPropertyFlags memFlags, VkImageUsageFlags usageFlags, VkImageAspectFlags aspect=VK_IMAGE_ASPECT_COLOR_BIT);
+	// void create(Device& device, VkImageLayout initialLayout=VK_IMAGE_LAYOUT_UNDEFINED);
 
 	// Create buffers
-	ubo.setAsUniformBuffer(sizeof(TextBufferData)*maxStrings, true);
-	ubo.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+	ubo.set(sizeof(TextBufferData)*maxStrings,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	ubo.create(app->mainDevice);
+	ubo.map();
 
-	// Bind it
-	vk::DescriptorImageInfo i_info = vk::DescriptorImageInfo{
-			*fontTex.sampler,
-			*fontTex.view,
-			vk::ImageLayout::eShaderReadOnlyOptimal
-	};
-	vk::DescriptorBufferInfo b_info {
-		*ubo.buffer, 0, VK_WHOLE_SIZE
-	};
-	std::vector<vk::WriteDescriptorSet> writeDesc = {
-		{
-			*descSet,
-			0, 0, 1u,
-			vk::DescriptorType::eUniformBuffer,
-			nullptr,
-			&b_info,
-			nullptr
-		},
-		{
-		 *descSet,
-		 1, 0, 1u,
-		 vk::DescriptorType::eCombinedImageSampler,
-		 &i_info,
-		 nullptr,
-		 nullptr
-		 }
-	};
-	app->deviceGpu.updateDescriptorSets({(uint32_t)writeDesc.size(), writeDesc.data()}, nullptr);
 
+	// Load texture
+	uint32_t full_width  = _texWidth * _cols;
+	uint32_t full_height = _texHeight * _rows;
+	fontTex.set(VkExtent2D{full_width,full_height}, VK_FORMAT_R8_UNORM,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	fontTex.create(app->mainDevice);
+
+	app->generalUploader.enqueueUpload(fontTex, (uint8_t*)_image, full_height*full_width, 0, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+	app->generalUploader.execute();
+
+	uint32_t a = descSet.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+	uint32_t b = descSet.addBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT);
+	descSet.create(app->dpool, {&pipeline});
+
+	// Create sampler
+
+	sampler.create(app->mainDevice, VkSamplerCreateInfo{
+			VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			nullptr, 0,
+			VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+			VK_SAMPLER_MIPMAP_MODE_NEAREST,
+			VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+
+			0.f,
+			VK_FALSE, 0.f,
+			VK_FALSE, VK_COMPARE_OP_NEVER,
+			0, 0,
+			VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+			true
+	});
+
+
+	VkDescriptorBufferInfo bufferInfo { ubo, 0, sizeof(TextBufferData) };
+	descSet.update(VkWriteDescriptorSet{
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+			descSet, 0,
+			0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			nullptr, &bufferInfo, nullptr
+			});
+
+	VkDescriptorImageInfo imgInfo { sampler, fontTex.view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL };
+	descSet.update(VkWriteDescriptorSet{
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+			descSet, 1,
+			0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			&imgInfo, 0, nullptr
+			});
+
+
+
+	// Setup pipeline
 	{
-		// Setup pipeline
-		pipelineStuff.setup_viewport(ww, hh);
-		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "extra/textSet");
+		loadShader(app->mainDevice, pipeline.vs, pipeline.fs, "extra/textSet");
 
-		pipelineStuff.setLayouts.push_back(*descSetLayout);
-
-		/*
-		pipelineStuff.pushConstants.push_back(vk::PushConstantRange{
-				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-				0,
-				sizeof(ParticleCloudPushConstants) });
-		*/
+		VertexInputDescription vid;
+		// VkVertexInputAttributeDescription attrPos       { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
+		// VkVertexInputAttributeDescription attrIntensity { 1, 0, VK_FORMAT_R32_SFLOAT, 3*4 };
+		// vid.attributes = { attrPos, attrIntensity };
+		// vid.bindings = { VkVertexInputBindingDescription { 0, 4*4, VK_VERTEX_INPUT_RATE_VERTEX } };
 
 		PipelineBuilder builder;
-		builder.additiveBlending = false;
 		builder.depthTest = false;
 		builder.depthWrite = false;
-		builder.init(
-				{},
-				vk::PrimitiveTopology::eTriangleList,
-				*pipelineStuff.vs, *pipelineStuff.fs);
-		pipelineStuff.build(builder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
+		builder.additiveBlending = true;
+		// builder.replaceBlending = true;
+		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, pipeline.vs, pipeline.fs);
+
+
+		float viewportXYWH[4] = {
+			0,0,
+			(float)app->windowWidth,
+			(float)app->windowHeight
+		};
+		pipeline.create(app->mainDevice, viewportXYWH, builder, app->simpleRenderPass, 0);
 	}
 	
 }
@@ -114,17 +126,19 @@ void SimpleTextSet::reset() {
 void SimpleTextSet::setText(int i, const std::string& text, const float matrix[16], const float color[4]) {
 	stringLengths[i] = text.length();
 
-	TextBufferData* tbd = (TextBufferData*) ubo.mem.mapMemory(sizeof(TextBufferHeader)+sizeof(TextBufferData)*i, sizeof(TextBufferData), {});
+	// TextBufferData* tbd = (TextBufferData*) ubo.mem.mapMemory(sizeof(TextBufferHeader)+sizeof(TextBufferData)*i, sizeof(TextBufferData), {});
+	TextBufferData* tbd = (TextBufferData*)( static_cast<char*>(ubo.mappedAddr)+sizeof(TextBufferHeader)+sizeof(TextBufferData)*i );
 	memcpy(tbd->matrix, matrix, 4*16);
 	for (int j=0; j<4; j++) tbd->color[j] = color[j];
 	for (int j=0; j<stringLengths[i]; j++)
 		tbd->chars[j] = _charIndices[text[j]];
-	ubo.mem.unmapMemory();
+	// ubo.mem.unmapMemory();
 
 }
 
 void SimpleTextSet::setAreaAndSize(float offx, float offy, float ww, float hh, float scale, const float mvp[16]) {
-	TextBufferHeader* tbh = (TextBufferHeader*) ubo.mem.mapMemory(0, sizeof(TextBufferHeader), {});
+
+	// TextBufferHeader* tbh = (TextBufferHeader*) ubo.mem.mapMemory(0, sizeof(TextBufferHeader), {});
 	/*
 	tbh->offset[0] = offx;
 	tbh->offset[1] = offy;
@@ -133,6 +147,10 @@ void SimpleTextSet::setAreaAndSize(float offx, float offy, float ww, float hh, f
 	*/
 	// tbh->size[0] = scale;
 	// tbh->size[1] = scale;
+	// memcpy(tbh->matrix, mvp, 4*16);
+	// ubo.mem.unmapMemory();
+
+	
+	TextBufferHeader* tbh = (TextBufferHeader*) ubo.mappedAddr;
 	memcpy(tbh->matrix, mvp, 4*16);
-	ubo.mem.unmapMemory();
 }

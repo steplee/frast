@@ -169,10 +169,14 @@ void ImguiApp::initVk() {
 }
 
 void ImguiApp::render() {
+	assert(camera);
+
+	if (glfwWindow) bool proc = glfwWindow->pollWindowEvents();
 
 	if (isDone() or frameDatas.size() == 0) {
 		return;
 	}
+
 
 	if (not cfg.headless()) {
 		bool proc = glfwWindow->pollWindowEvents();
@@ -184,10 +188,25 @@ void ImguiApp::render() {
 		}
 	}
 
-
-
 	FrameData& fd = acquireNextFrame();
+
+	fd.time = getSeconds(renders==0);
+	if (renders == 0) time0 = fd.time;
+	fd.dt = fd.time - lastTime;
+	fd.n = renders++;
+
+	if (renders > 2)
+		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
+	else
+		fpsMeter = 1./fd.dt;
+
+	// fmt::print(" - [BaseApp::render] time {}\n", fd.time);
+
+	// Step the camera with a smoothed dt
 	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
+	else camera->step(0.);
+	lastTime = fd.time;
+
 
 	// Update Camera Buffer
 	if (1) {

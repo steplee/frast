@@ -9,8 +9,8 @@ void main()
 		/* vec3(1.f,1.f, 0.1f), */
 		/* vec3(-1.f,1.f, 0.1f), */
 		/* vec3(0.f,-1.f, 0.1f) */
-		vec3(0.1f,0.1f, 0.1f),
 		vec3(0.8f,0.5f, 0.1f),
+		vec3(0.1f,0.1f, 0.1f),
 		vec3(0.f,0.9f, 0.1f)
 	);
 	const vec4 colors[3] = vec4[3](

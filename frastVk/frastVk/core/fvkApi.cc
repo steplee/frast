@@ -1,5 +1,17 @@
 #include "fvkApi.h"
 
+#include <chrono>
+namespace {
+static std::chrono::time_point<std::chrono::high_resolution_clock> __tp0;
+}
+float getSeconds(bool first) {
+	if (first) {
+		__tp0 = std::chrono::high_resolution_clock::now();
+	}
+	auto tp = std::chrono::high_resolution_clock::now();
+	return static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(tp - __tp0).count()) * .000001f;
+}
+
 /////////////////////////////////////////////////////////////////////
 //         Implementation
 /////////////////////////////////////////////////////////////////////
@@ -69,7 +81,7 @@ std::vector<Command> CommandPool::allocate(int n) {
 Command::~Command() {
 }
 
-void Command::begin(VkCommandBufferUsageFlags flags) {
+Command& Command::begin(VkCommandBufferUsageFlags flags) {
 
 	assertCallVk(vkResetCommandBuffer(cmdBuf, {}));
 
@@ -79,20 +91,23 @@ void Command::begin(VkCommandBufferUsageFlags flags) {
 	bi.flags = flags;
 	bi.pInheritanceInfo = nullptr;
 	assertCallVk(vkBeginCommandBuffer(cmdBuf, &bi));
+	return *this;
 }
-void Command::end() {
+Command& Command::end() {
 	assertCallVk(vkEndCommandBuffer(cmdBuf));
+	return *this;
 }
 
-void Command::barriers(Barriers& b) {
+Command& Command::barriers(Barriers& b) {
 	if (b.memBarriers.size() or b.bufBarriers.size() or b.imgBarriers.size())
 		vkCmdPipelineBarrier(cmdBuf, b.srcStageMask, b.dstStageMask, b.depFlags,
 				(uint32_t)b.memBarriers.size(), b.memBarriers.data(),
 				(uint32_t)b.bufBarriers.size(), b.bufBarriers.data(),
 				(uint32_t)b.imgBarriers.size(), b.imgBarriers.data());
+	return *this;
 }
 
-void Command::clearImage(ExImage& image, const std::vector<float>& color) {
+Command& Command::clearImage(ExImage& image, const std::vector<float>& color) {
 
 	// Might have to transition
 	if (image.prevLayout != VK_IMAGE_LAYOUT_GENERAL and image.prevLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
@@ -103,6 +118,8 @@ void Command::clearImage(ExImage& image, const std::vector<float>& color) {
 
 	VkImageSubresourceRange range { image.aspect, 0, 1, 0, 1};
 	vkCmdClearColorImage(cmdBuf, image.img, image.prevLayout, (VkClearColorValue*)color.data(), 1, &range);
+
+	return *this;
 }
 
 void Submission::submit(VkCommandBuffer* cmds, uint32_t n, bool block) {
@@ -249,13 +266,30 @@ FrameData& BaseApp::acquireNextFrame() {
 void BaseApp::render() {
 	assert(camera);
 
+	if (glfwWindow) bool proc = glfwWindow->pollWindowEvents();
+
 	if (isDone() or frameDatas.size() == 0) {
 		return;
 	}
 
 	FrameData& fd = acquireNextFrame();
-	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
+
+	fd.time = getSeconds(renders==0);
+	if (renders == 0) time0 = fd.time;
+	fd.dt = fd.time - lastTime;
 	fd.n = renders++;
+
+	if (renders > 2)
+		fpsMeter = fpsMeter * .95 + .05 * (1. / fd.dt);
+	else
+		fpsMeter = 1./fd.dt;
+
+	// fmt::print(" - [BaseApp::render] time {}\n", fd.time);
+
+	// Step the camera with a smoothed dt
+	if (fpsMeter > .0000001) camera->step(1.0 / fpsMeter);
+	else camera->step(0.);
+	lastTime = fd.time;
 
 	// Update Camera Buffer
 	if (1) {
@@ -293,12 +327,14 @@ void BaseApp::initVk() {
 
 	makeFrameDatas();
 	make_basic_render_stuff();
+
+	generalUploader.create(&mainDevice, &mainQueue);
 }
 
 void SimpleRenderPass::begin(Command& cmd, FrameData& fd) {
 	VkClearValue clearValues[2] = {
 		VkClearValue { .color = VkClearColorValue { .float32 = {0.f,0.f,0.f,0.f} } },
-		VkClearValue { .depthStencil = VkClearDepthStencilValue { 0.f, 0 } }
+		VkClearValue { .depthStencil = VkClearDepthStencilValue { 1.f, 0 } }
 	};
 
 	// clearValues[0].color.float32[0] = 1.f;
@@ -307,7 +343,22 @@ void SimpleRenderPass::begin(Command& cmd, FrameData& fd) {
 	bi.renderPass = pass;
 	bi.framebuffer = framebuffers[fd.scIndx];
 	bi.renderArea = VkRect2D { VkOffset2D{0,0}, VkExtent2D{framebufferWidth,framebufferHeight} };
-	bi.clearValueCount = 2;
+	bi.clearValueCount = clearCount;
+	bi.pClearValues = clearValues;
+	vkCmdBeginRenderPass(cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+void SimpleRenderPass::beginWithExternalFbo(Command& cmd, FrameData& fd, VkFramebuffer fbo) {
+	VkClearValue clearValues[2] = {
+		VkClearValue { .color = VkClearColorValue { .float32 = {0.f,0.f,0.f,0.f} } },
+		VkClearValue { .depthStencil = VkClearDepthStencilValue { 1.f, 0 } }
+	};
+
+	VkRenderPassBeginInfo bi { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr };
+	bi.renderPass = pass;
+	bi.framebuffer = fbo;
+	bi.renderArea = VkRect2D { VkOffset2D{0,0}, VkExtent2D{framebufferWidth,framebufferHeight} };
+	bi.clearValueCount = clearCount;
 	bi.pClearValues = clearValues;
 	vkCmdBeginRenderPass(cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
 }

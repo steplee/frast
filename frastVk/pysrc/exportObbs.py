@@ -1,6 +1,9 @@
 import sys, os, numpy as np
 from .transformAuthalicToGeodetic import authalic_to_geodetic_corners, authalic_to_wgs84_pt, EarthGeodetic
 from .proto import rocktree_pb2 as RT
+from .utils import unit_wm_to_ecef
+
+from argparse import ArgumentParser
 
 # Version 1 Format:
 #     - Just a bunch of rows with binary data
@@ -36,8 +39,8 @@ def R_to_quat(R):
         q =  np.array((
             (R[1,0] - R[0,1]) / S,
             (R[0,2] + R[2,0]) / S,
-            (R[1,2] + R[2,1]) / S),
-            .25*S)
+            (R[1,2] + R[2,1]) / S,
+            .25*S))
     return q / np.linalg.norm(q)
 
 
@@ -85,9 +88,12 @@ def rt_decode_obb(bites, headNodeCtr, metersPerTexel):
         -c0*s2-c2*c1*s0, c0*c1*c2-s0*s2, c2*s1,
         s1*s0, -c0*s1, c1), dtype=np.float32).reshape(3,3)
 
-def export_rt_version1(outFp, root, transformToWGS84=True):
+def export_rt_version1(outFp, root, transformToWGS84=True, bulkOverride=''):
 
-    bulkDir = os.path.join(root, 'bulk')
+    if bulkOverride:
+        bulkDir = bulkOverride
+    else:
+        bulkDir = os.path.join(root, 'bulk')
     nodeDir = os.path.join(root, 'node')
 
     nodeSet = set()
@@ -154,7 +160,88 @@ def export_rt_version1(outFp, root, transformToWGS84=True):
                     nodesSeen += 1
 
 
+def export_frast_version1(outFp, colorPath, elevPath):
+    import frastpy
+    o = frastpy.DatasetReaderOptions()
+    c_dset = frastpy.DatasetReader(colorPath, o)
+    e_dset = frastpy.DatasetReader(elevPath, o)
+
+    minElev0 = 0 / frastpy.WebMercatorMapScale
+    maxElev0 = 200 / frastpy.WebMercatorMapScale
+    elevBuf = np.zeros((8,8,2), dtype=np.uint8) # Buffer should be uint8x2
+    nseen = 0
+
+    for lvl in c_dset.getExistingLevels():
+        for coord in c_dset.iterCoords(lvl):
+            z,y,x = coord.z(), coord.y(), coord.x()
+
+            ox = 2.*x / (1<<z) - 1.
+            oy = 2.*y / (1<<z) - 1.
+            lvlScale = 2. / (1<<z)
+
+            if e_dset:
+		        #.def("rasterIo", [](DatasetReader& dset, py::array_t<uint8_t> out, py::array_t<double> tlbrWm_) -> py::object {
+                tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64) * frastpy.WebMercatorMapScale
+                # print(tlbr_wm)
+                # tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64)
+                e_dset.rasterIo(elevBuf, tlbr_wm)
+                elevBuf_ = elevBuf.view(np.uint16) # Actually stored as uint16
+                minElev = elevBuf_.min() / 8
+                maxElev = elevBuf_.max() / 8
+            else:
+                minElev, maxElev = minElev0, maxElev0
+
+            # lvlScale = frastpy.WebMercatorMapScale
+            lvlScales = np.array([lvlScale,lvlScale, maxElev-minElev])[np.newaxis]
+
+            oz = minElev
+
+            uwm_corners = truth_table() * lvlScales + np.array([ox,oy,oz])[np.newaxis]
+            corners = np.zeros_like(uwm_corners)
+            for i in range(len(uwm_corners)): corners[i] = unit_wm_to_ecef(uwm_corners[i]) / EarthGeodetic.R1
+
+            ctr = corners.mean(0).astype(np.float32)
+            extents = (corners - ctr).max(0).astype(np.float32)
+            q = np.array([1,0,0,0], dtype=np.float32)
+
+            buf = np.zeros(3+3+4,dtype=np.float32)
+            buf[0:3]  = ctr
+            buf[3:6]  = extents
+            buf[6:10] = q
+
+            outFp.write(np.uint64(coord.c()).tobytes())
+            outFp.write(buf.tobytes())
+
+
+            nseen += 1
+            # if nseen&(nseen-1) == 0:
+            # if nseen % 10000 == 0:
+            if nseen % 1000 == 0:
+                print(' - on {:6d}, at'.format(nseen), z,y,x, ctr, extents)
+                # print(' - elev', minElev, maxElev)
+
+
 
 if __name__ == '__main__':
-    with open('/data/gearth/tpAois_wgs/index.v1.bin', 'wb') as fp:
-        export_rt_version1(fp, '/data/gearth/tpAois_wgs')
+
+    parser = ArgumentParser()
+    parser.add_argument('--frastColor', help='color dataset, if using frast')
+    parser.add_argument('--frastElev', help='elev dataset, if using frast')
+    parser.add_argument('--gearthDir', help='path to google-earth root data, if using gearth')
+    parser.add_argument('--gearthBulkDirOverride',
+        help='optional override bulk path, useful if nodes were authalic->geodetic xformed but bulks were not',
+        default='')
+    args = parser.parse_args()
+
+    indexVersionStr = 'v1'
+
+    if args.gearthDir:
+        indexFile = os.path.join(args.gearthDir, 'index.{}.bin'.format(indexVersionStr))
+        with open(indexFile, 'wb') as fp: export_rt_version1(fp, args.gearthDir, bulkOverride=args.gearthBulkDirOverride)
+
+    if args.frastColor:
+        assert(args.frastElev)
+        colorDir = os.path.split(args.frastColor)[0]
+        indexFile = os.path.join(colorDir, 'index.{}.bin'.format(indexVersionStr))
+        with open(indexFile, 'wb') as fp: export_frast_version1(fp, colorPath=args.frastColor, elevPath=args.frastElev)
+

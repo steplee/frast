@@ -43,20 +43,26 @@ struct RtTypes {
 	using Renderer = RtRenderer;
 	using ObbMap = RtObbMap;
 	using PushConstants = RtPushConstants;
-	//using BoundingBox = RtBoundingBox;
 
 	// Defaults
-	using BoundingBox = GtBoundingBox<RtTypes>;
+	using BoundingBox = GtOrientedBoundingBox;
 	using UpdateContext = GtUpdateContext<RtTypes>;
 	using RenderContext = GtRenderContext<RtTypes>;
 
+	struct Config {
+		bool allowCaster = true;
+		std::string obbIndexPath;
+		std::string rootDir;
+	};
 
-	struct GlobalBuffer {
+
+	struct __attribute__((packed)) GlobalBuffer {
 		float mvp[16];
 		float positionOffset[4];
 		float modelMats[16*GT_NUM_TILES];
 		float uvScalesAndOffs[4*GT_NUM_TILES];
 	};
+	static_assert(sizeof(GlobalBuffer) < 65536);
 
 	struct DecodedCpuTileData {
 		alignas(16) double modelMat[16];
@@ -75,13 +81,14 @@ struct RtTypes {
 	};
 
 
-	constexpr static bool unnormalizedTextureCoords = true;
+	//constexpr static bool unnormalizedTextureCoords = true;
+	constexpr static bool unnormalizedTextureCoords = false;
 
 };
 
 struct RtCoordinate {
 	constexpr static uint32_t MAX_LEN = 26;
-	constexpr static uint32_t Size = 26;
+	constexpr static uint32_t SerializedSize = 26;
 	char key[MAX_LEN];
 	uint8_t len = 0;
 
@@ -133,13 +140,11 @@ struct RtCoordinate {
 
 struct RtDataLoader : public GtDataLoader<RtTypes, RtDataLoader> {
 
-	std::string rootDir = "/data/gearth/tpAois_wgs/";
-
 	// Unfortunately, we need an adaptor to the generic constructor :(
 	inline RtDataLoader(typename RtTypes::Renderer& renderer_) : GtDataLoader<RtTypes, RtDataLoader>(renderer_) {
 	}
 
-	int loadTile(RtTile* tile, RtTypes::DecodedCpuTileData& td);
+	int loadTile(RtTile* tile, RtTypes::DecodedCpuTileData& td, bool isOpen);
 
 	/*
 	inline bool uploadTile(RtTile* tile, RtTypes::DecodedCpuTileData::MeshData& dctd, GtTileData& td) {
@@ -156,21 +161,23 @@ struct RtObbMap : public GtObbMap<RtTypes, RtObbMap> {
 
 	inline RtObbMap(const std::string& path) : GtObbMap<RtTypes, RtObbMap>(path) {}
 
-	inline bool tileIsTerminal(const RtCoordinate& coord) {
+	/*inline bool tileIsTerminal(const RtCoordinate& coord) {
 		for (int i=0; i<8; i++) {
 			RtCoordinate c{coord,(char)(i+'0')};
 			if (tileExists(c)) return false;
 		}
 		return true;
-	}
+	}*/
+
 };
 
 struct RtTile : public GtTile<RtTypes, RtTile> {
 
 	inline RtTile(const RtCoordinate& coord_) : GtTile<RtTypes,RtTile>(coord_) {
-		constexpr float R1         = (6378137.0f);
+		// constexpr float R1         = (6378137.0f);
 		// geoError = (1.f / R1) / static_cast<float>(1 << coord.level());
-		geoError = (1.f) / static_cast<float>(1 << coord.level());
+		// geoError = (1.f) / static_cast<float>(1 << coord.level());
+		geoError = (4.0f / 255.f) / (1 << coord.level());
 	}
 
 	inline void createChildren(typename RtTypes::UpdateContext& gtuc) {
@@ -193,6 +200,7 @@ struct RtTile : public GtTile<RtTypes, RtTile> {
 };
 
 struct RtPushConstants {
+	static constexpr bool Enabled = true;
 	uint32_t index;
 	uint32_t octantMask;
 	uint32_t level;
@@ -205,9 +213,9 @@ struct RtPushConstants {
 };
 
 struct RtRenderer : public GtRenderer<RtTypes, RtRenderer> {
-	void initPipelinesAndDescriptors(TheDescriptorPool& dpool, SimpleRenderPass& pass, const AppConfig& cfg);
+	void initPipelinesAndDescriptors(TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
-	std::string rootDir = "/data/gearth/tpAois_wgs/";
+	inline RtRenderer(const RtTypes::Config& cfg) : GtRenderer<RtTypes,RtRenderer>(cfg) {}
 
 	virtual ~RtRenderer();
 };

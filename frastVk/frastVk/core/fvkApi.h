@@ -41,7 +41,7 @@ class ExBuffer;
  *		Is it a problem to not wait for the previous frame to finish rendering?
  *		Say a component updates an MVP matrix in a UBO being used by the previous frame, that is still rendering.
  *		Then that is a race condition, no?
- *		But the only way around this would be to have N copies of _all_ buffers (where N is swapchain count).
+ *		But the only way around this would be to have N copies of _all_ buffers (where N is overlap count, not necessarily swapchain count).
  *		But that is crazy inconvienent.
  *		So I guess the framework should have a facility for this N-way buffering...
  *
@@ -56,6 +56,8 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance);
 
 uint64_t scalarSizeOfFormat(const VkFormat& f);
 uint32_t findMemoryTypeIndex(const VkPhysicalDevice& pdev, const VkMemoryPropertyFlags& flags, uint32_t maskOrZero=0);
+
+float getSeconds(bool first=false);
 
 
 struct AppConfig {
@@ -198,12 +200,12 @@ struct Command {
 	VkCommandBuffer cmdBuf;
 	inline operator VkCommandBuffer& () { return cmdBuf; }
 
-	void begin(VkCommandBufferUsageFlags flags={});
-	void end();
+	Command& begin(VkCommandBufferUsageFlags flags={});
+	Command& end();
 
 	//void draw();
-	void barriers(Barriers& b);
-	void clearImage(ExImage& image, const std::vector<float>& color);
+	Command& barriers(Barriers& b);
+	Command& clearImage(ExImage& image, const std::vector<float>& color);
 
 	void executeAndPresent(DeviceQueueSpec& qds, SwapChain& sc, FrameData& fd);
 
@@ -250,7 +252,7 @@ struct ExImage {
 	}
 
 	void set(VkExtent2D extent, VkFormat fmt, VkMemoryPropertyFlags memFlags, VkImageUsageFlags usageFlags, VkImageAspectFlags aspect=VK_IMAGE_ASPECT_COLOR_BIT);
-	void create(Device& device);
+	void create(Device& device, VkImageLayout initialLayout=VK_IMAGE_LAYOUT_UNDEFINED);
 	void deallocate();
 
 	// will not own!
@@ -267,6 +269,7 @@ struct ExImage {
 	inline ExImage& operator=(ExImage&& o) { moveFrom(o); return *this; }
 	inline ExImage(ExImage&& o) { moveFrom(o); }
 	inline void moveFrom(ExImage& o) {
+		deallocate();
 		img = o.img;
 		own = o.own;
 		ownView = o.ownView;
@@ -318,6 +321,7 @@ struct ExBuffer {
 	inline ExBuffer& operator=(ExBuffer&& o) { moveFrom(o); return *this; }
 	inline ExBuffer(ExBuffer&& o) { moveFrom(o); }
 	inline void moveFrom(ExBuffer& o) {
+		deallocate();
 		buf = o.buf;
 		own = o.own;
 		device = o.device;
@@ -371,6 +375,28 @@ struct Barriers {
 	std::vector<VkImageMemoryBarrier>  imgBarriers;
 
 	void append(ExImage& img, VkImageLayout to);
+
+	inline uint32_t size() const { return memBarriers.size() + bufBarriers.size() + imgBarriers.size(); }
+};
+
+struct Fence {
+	Device* device { nullptr };
+	VkFence fence { nullptr };
+
+	inline Fence() : device(nullptr), fence(nullptr) {}
+	Fence(Device& d, bool signaled=false); // create.
+
+	Fence(const Fence&) = delete;
+	Fence& operator=(const Fence&) = delete;
+	// Movable
+	inline Fence(Fence&& o) { moveFrom(o); }
+	inline Fence& operator=(Fence&& o) { moveFrom(o); return *this; }
+	void moveFrom(Fence& o);
+
+	void reset();
+	void wait(uint64_t timeout=99999999999999);
+
+	inline operator VkFence& () { return fence; }
 };
 
 // Temporary type used to submit a cmdbuf, with optional fences and semaphores
@@ -425,11 +451,13 @@ struct DescriptorSet {
     VkShaderStageFlags    stageFlags;
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-	void create(TheDescriptorPool& pool, GraphicsPipeline& pipeline);
+	void create(TheDescriptorPool& pool, const std::vector<GraphicsPipeline*>& pipelines);
 	void update(const std::vector<VkWriteDescriptorSet>& writes);
 	void update(const VkWriteDescriptorSet& write);
 
 	uint32_t addBinding(VkDescriptorType type, uint32_t cnt, VkShaderStageFlags shaderFlags);
+
+	~DescriptorSet();
 
 	inline operator VkDescriptorSet&() { return dset; }
 };
@@ -538,11 +566,13 @@ struct SimpleRenderPass {
 	inline operator VkRenderPass&() { return pass; }
 
 	void begin(Command& cmd, FrameData& fd);
+	void beginWithExternalFbo(Command& cmd, FrameData& fd, VkFramebuffer fbo);
 	void end(Command& cmd, FrameData& fd);
 
 	uint32_t framebufferWidth, framebufferHeight;
 
 	RenderPassDescription description;
+	uint32_t clearCount = 2;
 
 	~SimpleRenderPass();
 };
@@ -551,7 +581,8 @@ struct GraphicsPipeline {
 	Device* device { nullptr };
 	VkPipeline pipeline { nullptr };
 	std::vector<VkPushConstantRange> pushConstants;
-	std::vector<VkDescriptorSetLayout> setLayouts;
+	std::vector<VkDescriptorSetLayout> setLayouts; // do not own!
+	// std::vector<DescriptorSet*> descriptorSets;
 	VkViewport viewport;
 	VkRect2D scissor;
 	VkPipelineLayout layout { nullptr };
@@ -582,6 +613,7 @@ struct BaseApp : public UsesIO {
 	Window* glfwWindow = nullptr;
 	SwapChain swapchain;
 	TheDescriptorPool dpool;
+	ExUploader generalUploader;
 
 	CommandPool mainCommandPool;
 
@@ -605,17 +637,18 @@ struct BaseApp : public UsesIO {
 
 	inline Camera* getCamera() { return camera.get(); }
 
+	uint32_t windowWidth, windowHeight;
+	SimpleRenderPass simpleRenderPass;
+
 	protected:
 
 	// RenderPassDescription simpleRenderPassDescription;
-	SimpleRenderPass simpleRenderPass;
 	bool make_basic_render_stuff();
 
 	std::shared_ptr<Camera> camera = nullptr;
 
 	inline bool isDone() const { return isDone_; }
 
-	uint32_t windowWidth, windowHeight;
 
 	private:
 
@@ -631,7 +664,7 @@ struct BaseApp : public UsesIO {
 
 	float timeZero = 0;
 
-	private:
+	protected:
 		int renders = 0;
 		float time0 = 0;
 		float lastTime = 0;

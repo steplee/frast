@@ -18,6 +18,7 @@ extern "C" {
 
 
 class DatasetReaderIterator;
+class DatasetReaderIteratorNoImages;
 
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
@@ -198,6 +199,7 @@ class Dataset {
 
 	protected:
 		friend class DatasetReaderIterator;
+		friend class DatasetReaderIteratorNoImages;
 		std::string path;
 		bool readOnly;
 		bool allowInflate = false;
@@ -253,7 +255,7 @@ struct WritableTile {
 /*
  * Simple type to help an app control the DatasetWritable writer thread asynchronously.
  */
-struct Command {
+struct DbCommand {
 	enum Type : int32_t {
 		NoCommand, BeginLvl, EndLvl, EraseLvl, TileReady, TileReadyOverwrite
 	} cmd = NoCommand;
@@ -289,7 +291,7 @@ class DatasetWritable : public Dataset {
 		WritableTile& blockingGetTileBufferForThread(int thread);
 
 		//void push(WritableTile& tile);
-		void sendCommand(const Command& cmd);
+		void sendCommand(const DbCommand& cmd);
 
 		// True if 'EndLvl' has not been processed
 		bool hasOpenWrite();
@@ -320,7 +322,7 @@ class DatasetWritable : public Dataset {
 
 		// A worker pushes the index of the buffer to this list. It never grows larger then N.
 		// If it would, sendCommand() blocks
-		RingBuffer<Command> pushedCommands;
+		RingBuffer<DbCommand> pushedCommands;
 
 		// LMDB has bad performance for very large write transactions.
 		// So break up large ones.

@@ -33,7 +33,7 @@ void main()
 		vec3(0.f,-1.f, 0.0f)
 	);
 	vec3 pos = positions[gl_VertexIndex%3];
-	*/
+*/
 	vec3 pos = aPosition.xyz;
 
 	int octant = int(aPosition.w);
@@ -41,7 +41,8 @@ void main()
 	/* mask = 1.0; */
 
 
-	uint tileIndex = pushConstants.tileIndex;
+	/* uint tileIndex = pushConstants.tileIndex; */
+	uint tileIndex = gl_InstanceIndex;
 
 	mat4 modelMat = (cameraData.modelMats[tileIndex]);
 	/* mat4 modelMat = mat4(0.); */

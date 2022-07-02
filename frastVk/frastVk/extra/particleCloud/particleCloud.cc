@@ -1,22 +1,19 @@
 #include "particleCloud.h"
-
-#include "core/render_state.h"
+#include "frastVk/core/fvkShaders.h"
 
 #include <fmt/core.h>
 #include <fmt/color.h>
 
-#define USE_TIMER
-#include <chrono>
-#include <frast/utils/timer.hpp>
-static AtomicTimer timer_pc("pc::render");
+// #define USE_TIMER
+// #include <chrono>
+// #include <frast/utils/timer.hpp>
+// static AtomicTimer timer_pc("pc::render");
 
 #define dprint(...) fmt::print(fmt::fg(fmt::color::medium_slate_blue), __VA_ARGS__);
 //#define dprint(...) {}
 
-#include "frastVk/core/load_shader.hpp"
 
-
-ParticleCloudRenderer::ParticleCloudRenderer(BaseVkApp* app, int capacity) : app(app) {
+ParticleCloudRenderer::ParticleCloudRenderer(BaseApp* app, int capacity) : app(app) {
 	setup(capacity);
 }
 
@@ -24,22 +21,49 @@ void ParticleCloudRenderer::setup(int capacity) {
 	w = app->windowWidth;
 	h = app->windowHeight;
 
-	cmdBuffers = std::move(app->deviceGpu.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-				*app->commandPool,
-				vk::CommandBufferLevel::ePrimary,
-				(uint32_t)(app->scNumImages) }));
-
 	setup_buffers(capacity);
 	setup_fbos();
 	setup_pipelines();
 }
 
 void ParticleCloudRenderer::setup_buffers(int capacity) {
-	particleBuffer.setAsVertexBuffer(capacity*4*4, false);
-	particleBuffer.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+	particleBuffer.set(capacity*4*4, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+	particleBuffer.create(app->mainDevice);
+
+	globalBuffer.set(4*4*4,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+	globalBuffer.create(app->mainDevice);
+	globalBuffer.map();
 }
 
 void ParticleCloudRenderer::setup_fbos() {
+
+	/////////////////////////////////////////////////
+	// Setup passes
+	/////////////////////////////////////////////////
+
+	// Make sure we do not clear the attachments
+	outputPass.description = app->simpleRenderPass.description;
+	outputPass.description.attDescriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	outputPass.description.attDescriptions[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	outputPass.description.attDescriptions[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	outputPass.description.attDescriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	outputPass.description.attDescriptions[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	outputPass.description.attDescriptions[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	// Note: output pass has NO framebuffers, because it uses the one from the app that it is passed
+	outputPass.clearCount = 0;
+	auto rpInfo = outputPass.description.makeCreateInfo();
+	assertCallVk(vkCreateRenderPass(app->mainDevice, &rpInfo, nullptr, &outputPass.pass));
+	outputPass.framebufferWidth = app->simpleRenderPass.framebufferWidth;
+	outputPass.framebufferHeight = app->simpleRenderPass.framebufferHeight;
+	outputPass.device = app->mainDevice;
+	outputPass.inputLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	outputPass.outputLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	
+	/*
 	dprint(" - setting up fbos\n");
 	// Multiply by four again, because it's actually float data
 	std::vector<uint8_t> emptyImage(h*w*4*4, 0);
@@ -83,13 +107,6 @@ void ParticleCloudRenderer::setup_fbos() {
 			vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
 			vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
 			{}, vk::AccessFlagBits::eDepthStencilAttachmentWrite, {} },
-
-		// 0-1
-		/*{
-			0, 1, vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
-			vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-			vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-			vk::DependencyFlagBits::eDeviceGroup }*/
 	};
 
 		vk::AttachmentDescription atts[2] = { colorAttachment, depthAttachment };
@@ -154,14 +171,6 @@ void ParticleCloudRenderer::setup_fbos() {
 		};
 
 
-		// Depth dependency
-		/*SubpassDependency( uint32_t                                 srcSubpass_      = {},
-		  uint32_t                                 dstSubpass_      = {},
-		  VULKAN_HPP_NAMESPACE::PipelineStageFlags srcStageMask_    = {},
-		  VULKAN_HPP_NAMESPACE::PipelineStageFlags dstStageMask_    = {},
-		  VULKAN_HPP_NAMESPACE::AccessFlags        srcAccessMask_   = {},
-		  VULKAN_HPP_NAMESPACE::AccessFlags        dstAccessMask_   = {},
-		  VULKAN_HPP_NAMESPACE::DependencyFlags    dependencyFlags_ = {} ) VULKAN_HPP_NOEXCEPT*/
 		vk::SubpassDependency depthDependency {
 			VK_SUBPASS_EXTERNAL, 0,
 				vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
@@ -182,14 +191,6 @@ void ParticleCloudRenderer::setup_fbos() {
 		dprint("\t - create particle pass\n");
 		particlePass = std::move(app->deviceGpu.createRenderPass(rpInfo));
 
-
-		/*VULKAN_HPP_CONSTEXPR FramebufferCreateInfo( VULKAN_HPP_NAMESPACE::FramebufferCreateFlags flags_           = {},
-		  VULKAN_HPP_NAMESPACE::RenderPass             renderPass_      = {},
-		  uint32_t                                     attachmentCount_ = {},
-		  const VULKAN_HPP_NAMESPACE::ImageView *      pAttachments_    = {},
-		  uint32_t                                     width_           = {},
-		  uint32_t                                     height_          = {},
-		  uint32_t layers_ = {} ) VULKAN_HPP_NOEXCEPT*/
 		dprint("\t - create particle images ({} {})\n", h,w);
 		for (int i=0; i<app->scNumImages; i++) {
 			particleImages.push_back(ResidentImage{});
@@ -266,13 +267,6 @@ void ParticleCloudRenderer::setup_fbos() {
 			// Create images & views
 
 			dprint("\t - create filterImages[{}]\n", jj);
-			/*
-			for (int i=0; i<app->scNumImages; i++) {
-				filterImages[jj].push_back(ResidentImage{});
-				filterImages[jj].back().createAsTexture(app->uploader, h, w,
-					app->scSurfaceFormat.format, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment);
-			}
-			*/
 			// filterImages[jj].unnormalizedCoordinates = true;
 			filterImages[jj].createAsTexture(app->uploader, h, w,
 					// app->scSurfaceFormat.format, emptyImage.data(), vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
@@ -281,20 +275,6 @@ void ParticleCloudRenderer::setup_fbos() {
 					vk::SamplerAddressMode::eClampToBorder);
 
 			dprint("\t - create filterFramebuffers[{}]\n", jj);
-			/*
-			for (int i=0; i<app->scNumImages; i++) {
-				vk::ImageView views[1] = { *filterImages[jj][i].view };
-
-				vk::FramebufferCreateInfo fbInfo {
-					{},
-						*filterPass,
-						{ 1, views},
-						w, h,
-						1
-				};
-				filterFramebuffers[jj].push_back(std::move(app->deviceGpu.createFramebuffer(fbInfo)));
-			}
-			*/
 			vk::ImageView views[1] = { *filterImages[jj].view };
 			vk::FramebufferCreateInfo fbInfo {
 				{},
@@ -306,12 +286,54 @@ void ParticleCloudRenderer::setup_fbos() {
 			filterFramebuffers[jj] = std::move(app->deviceGpu.createFramebuffer(fbInfo));
 		}
 	}
+	*/
 
 }
 
 void ParticleCloudRenderer::setup_pipelines() {
 	dprint(" - [ParticleCloudRenderer] setup pipelines\n");
 
+	// Create global buffer
+	{
+		// particlePipeline.setLayouts.push_back(*globalDescSetLayout);
+		uint32_t globalDataBindingIdx = globalDescSet.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT);
+		globalDescSet.create(app->dpool, {&particlePipeline});
+
+		VkDescriptorBufferInfo bufferInfo { globalBuffer, 0, 16*4 };
+		globalDescSet.update(VkWriteDescriptorSet{
+				VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+				globalDescSet, 0,
+				0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				nullptr, &bufferInfo, nullptr
+				});
+	}
+
+	float viewportXYWH[4] = {
+		0,0,
+		(float)app->windowWidth,
+		(float)app->windowHeight
+	};
+
+	{
+		dprint("\t - create particlePipeline\n");
+		loadShader(app->mainDevice, particlePipeline.vs, particlePipeline.fs, "particleCloud/particle");
+
+		VertexInputDescription vid;
+		VkVertexInputAttributeDescription attrPos       { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
+		VkVertexInputAttributeDescription attrIntensity { 1, 0, VK_FORMAT_R32_SFLOAT, 3*4 };
+		vid.attributes = { attrPos, attrIntensity };
+		vid.bindings = { VkVertexInputBindingDescription { 0, 4*4, VK_VERTEX_INPUT_RATE_VERTEX } };
+
+		PipelineBuilder builder;
+		builder.depthTest = true;
+		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_POINT_LIST, particlePipeline.vs, particlePipeline.fs);
+
+		particlePipeline.create(app->mainDevice, viewportXYWH, builder, outputPass, 0);
+	}
+
+
+
+#if 0
 	// Filter Resources (just textures and pushConstants)
 	{
 		std::vector<vk::DescriptorPoolSize> poolSizes = {
@@ -462,52 +484,11 @@ void ParticleCloudRenderer::setup_pipelines() {
 	vk::raii::ShaderModule downVs{nullptr}, downFs{nullptr},
 		upVs{nullptr}, upFs{nullptr},
 		outputVs{nullptr}, outputFs{nullptr};
-	// std::string vsrcPath1 = "../frastVk/shaders/particleCloud/down.v.glsl";
-	// std::string fsrcPath1 = "../frastVk/shaders/particleCloud/down.f.glsl";
-	// createShaderFromFiles(app->deviceGpu, downVs, downFs, vsrcPath1, fsrcPath1);
-	// std::string vsrcPath2 = "../frastVk/shaders/particleCloud/down.v.glsl";
-	// std::string fsrcPath2 = "../frastVk/shaders/particleCloud/up.f.glsl";
-	// createShaderFromFiles(app->deviceGpu, upVs, upFs, vsrcPath2, fsrcPath2);
-	// std::string vsrcPath3 = "../frastVk/shaders/particleCloud/down.v.glsl";
-	// std::string fsrcPath3 = "../frastVk/shaders/particleCloud/output.f.glsl";
-	// createShaderFromFiles(app->deviceGpu, outputVs, outputFs, vsrcPath3, fsrcPath3);
 	loadShader(app->deviceGpu, downVs, downFs, "particleCloud/down");
 	loadShader(app->deviceGpu, upVs, upFs, "particleCloud/down", "particleCloud/up");
 	loadShader(app->deviceGpu, outputVs, outputFs, "particleCloud/down", "particleCloud/output");
 
 	uint32_t ww = w, hh = h;
-
-	/*
-	// Down
-	for (int l=0; l<n_lvl; l++) {
-			downPipelineStuffs[l].setup_viewport(ww, hh);
-
-			PipelineBuilder builder;
-			builder.init(
-					{},
-					vk::PrimitiveTopology::eTriangleList,
-					*downVs, *downFs);
-			downPipelineStuffs[l].build(builder, app->deviceGpu, *filterPass);
-
-			ww >>= 1; hh >>= 1;
-			assert(ww > 1);
-			assert(hh > 1);
-	}
-
-	// Up
-	for (int l=0; l<n_lvl; l++) {
-			upPipelineStuffs[l].setup_viewport(ww, hh);
-
-			PipelineBuilder builder;
-			builder.init(
-					{},
-					vk::PrimitiveTopology::eTriangleList,
-					*upVs, *upFs);
-			upPipelineStuffs[l].build(builder, app->deviceGpu, *filterPass);
-
-			ww *= 2; hh *= 2;
-	}
-	*/
 
 	// I think I can acheive the sub-AOI based windowing with the VkRenderPassBeginInfo renderArea field,
 	// rather than having pipelines for each viewport size
@@ -575,6 +556,7 @@ void ParticleCloudRenderer::setup_pipelines() {
 					*outputVs, *outputFs);
 			outputPipelineStuff.build(builder, app->deviceGpu, *outputPass, 0);
 	}
+#endif
 }
 
 
@@ -586,15 +568,44 @@ void ParticleCloudRenderer::uploadParticles(std::vector<float>& particles, bool 
 		m = m * divisor;
 		for (int i=3; i<particles.size(); i+=4) particles[i] /= m;
 	}
-	app->uploader.uploadSync(particleBuffer, (void*)particles.data(), particles.size()*sizeof(float), 0);
+	app->generalUploader.enqueueUpload(particleBuffer, (void*)particles.data(), particles.size()*sizeof(float), 0);
+	app->generalUploader.execute();
 	numParticles = particles.size() / 4;
 }
 
-vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer outputFramebuffer) {
+void ParticleCloudRenderer::render(RenderState& rs, Command& cmd, VkFramebuffer outputFramebuffer) {
 	auto &fd = *rs.frameData;
 
-	AtomicTimerMeasurement atm { timer_pc };
+	if (mode == ParticleRenderMode::eNone) return;
 
+	// No longer valid, because we do not submit any commands in the new impl
+	// AtomicTimerMeasurement atm { timer_pc };
+
+	// Update @globalBuffer, which is kept mapped
+	float mvp[16];
+	rs.mvpf(mvp);
+	memcpy(globalBuffer.mappedAddr, mvp, 16*4);
+
+	// We only support ePoints right now:
+
+	{
+		outputPass.beginWithExternalFbo(cmd, *rs.frameData, outputFramebuffer);
+
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlePipeline);
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlePipeline.layout, 0, 1, &globalDescSet.dset, 0, 0);
+		VkDeviceSize offset = 0;
+		vkCmdBindVertexBuffers(cmd, 0, 1, &particleBuffer.buf, &offset);
+		vkCmdDraw(cmd, numParticles, 1, 0, 0);
+
+		outputPass.end(cmd, *rs.frameData);
+	}
+
+
+
+
+
+
+	/*
 	if (mode == ParticleRenderMode::eNone) {
 		vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
 		cmd.reset();
@@ -610,14 +621,16 @@ vk::CommandBuffer ParticleCloudRenderer::render(RenderState& rs, vk::Framebuffer
 		cmd.beginRenderPass(rpInfo, vk::SubpassContents::eInline);
 		cmd.endRenderPass();
 		cmd.end();
-		return *cmd;
+		return;
 	}
 
-	else if (mode == ParticleRenderMode::eFiltered) return renderFiltered(rs, outputFramebuffer);
-	else if (mode == ParticleRenderMode::ePoints) return renderPoints(rs, outputFramebuffer);
+	else if (mode == ParticleRenderMode::eFiltered) renderFiltered(rs, outputFramebuffer);
+	else if (mode == ParticleRenderMode::ePoints) renderPoints(rs, outputFramebuffer);
+	*/
 }
 
-vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Framebuffer outputFramebuffer) {
+void ParticleCloudRenderer::renderFiltered(RenderState& rs, Command& cmd, VkFramebuffer outputFramebuffer) {
+#if 0
 	auto &fd = *rs.frameData;
 
 	/*
@@ -635,8 +648,7 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 	app->uploader.uploadSync(filterImages[0], img0.data(), img0.size(), 0);
 	app->uploader.uploadSync(filterImages[1], img0.data(), img0.size(), 0);
 	*/
-
-	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+	// vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
 
 	vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
@@ -948,12 +960,14 @@ vk::CommandBuffer ParticleCloudRenderer::renderFiltered(RenderState& rs, vk::Fra
 
 	// dprint("done\n");
 	cmd.end();
-	return *cmd;
+	return;
+#endif
 }
 
-vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Framebuffer outputFramebuffer) {
+void ParticleCloudRenderer::renderPoints(RenderState& rs, Command& cmd, VkFramebuffer outputFramebuffer) {
+#if 0
 	auto &fd = *rs.frameData;
-	vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
+	// vk::raii::CommandBuffer& cmd = cmdBuffers[rs.frameData->scIndx];
 
 	vk::CommandBufferBeginInfo beginInfo { {}, {} };
 
@@ -1068,4 +1082,5 @@ vk::CommandBuffer ParticleCloudRenderer::renderPoints(RenderState& rs, vk::Frame
 
 	cmd.end();
 	return *cmd;
+#endif
 }

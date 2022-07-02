@@ -159,7 +159,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 	//    1) Each DeviceQueueCreateInfo specifies one family, and a number to create in that one family.
 	//    2) The DeviceCreateInfo allows multiple such families.
 	constexpr uint32_t n_q_family = 1;
-	uint32_t qcnt = 2;
+	uint32_t qcnt = 3;
 	std::vector<float> qprior;
 	for (int i=0; i<qcnt; i++) qprior.push_back(1.f);
 
@@ -598,7 +598,8 @@ bool BaseApp::make_basic_render_stuff() {
 				0, nullptr,
 				1, &colorAttachmentRef,
 				nullptr,
-				nullptr,
+				&depthAttachmentRef,
+				// nullptr,
 				0, nullptr }
 	};
 
@@ -708,7 +709,7 @@ typedef struct VkWriteDescriptorSet {
     const VkBufferView*              pTexelBufferView;
 } VkWriteDescriptorSet;
 */
-void DescriptorSet::create(TheDescriptorPool& pool_, GraphicsPipeline& pipeline) {
+void DescriptorSet::create(TheDescriptorPool& pool_, const std::vector<GraphicsPipeline*>& pipelines) {
 	assert(bindings.size() > 0);
 
 	this->pool = &pool_;
@@ -718,7 +719,8 @@ void DescriptorSet::create(TheDescriptorPool& pool_, GraphicsPipeline& pipeline)
 	slci.bindingCount = bindings.size();
 	slci.pBindings = bindings.data();
 	assertCallVk(vkCreateDescriptorSetLayout(*pool->device, &slci, nullptr, &layout));
-	pipeline.setLayouts.push_back(layout);
+	for (auto pipeline : pipelines)
+		pipeline->setLayouts.push_back(layout);
 
 	VkDescriptorSetAllocateInfo ai { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr };
 	ai.descriptorPool = *pool;
@@ -739,6 +741,10 @@ uint32_t DescriptorSet::addBinding(VkDescriptorType type, uint32_t cnt, VkShader
 	uint32_t i = bindings.size();
 	bindings.push_back(VkDescriptorSetLayoutBinding{ i, type, cnt, shaderFlags, nullptr });
 	return i;
+}
+
+DescriptorSet::~DescriptorSet() {
+	if (layout) vkDestroyDescriptorSetLayout(*pool->device, layout, nullptr);
 }
 
 
@@ -795,7 +801,7 @@ void ExImage::set(VkExtent2D extent, VkFormat fmt, VkMemoryPropertyFlags memFlag
 	this->aspect = aspect;
 }
 
-void ExImage::create(Device& theDevice) {
+void ExImage::create(Device& theDevice, VkImageLayout initialLayout) {
 	device = theDevice;
 	assert(img == nullptr);
 	assert(device);
@@ -805,7 +811,7 @@ void ExImage::create(Device& theDevice) {
 	auto d = theDevice.device;
 	auto pd = theDevice.pdevice;
 
-	prevLayout = VK_IMAGE_LAYOUT_UNDEFINED;;
+	prevLayout = initialLayout;
 
 	// Image
 	VkImageCreateInfo imageInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr };
@@ -817,6 +823,7 @@ void ExImage::create(Device& theDevice) {
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = memPropFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = usageFlags;
+	imageInfo.initialLayout = prevLayout;
 
 	vkCreateImage(d, &imageInfo, nullptr, &img);
 
@@ -833,6 +840,7 @@ void ExImage::create(Device& theDevice) {
 	uint64_t minSize = std::max(size_, ((size()+0x1000-1)/0x1000)*0x1000);
 	idx = findMemoryTypeIndex(pd, memPropFlags_, memMask);
 	capacity_ = std::max(minSize,size());
+	// fmt::print(" - setting img cap {} (wh {} {}) (ssof {}) (size {})\n", capacity_, extent.width, extent.height, scalarSizeOfFormat(format), size());
 	// printf(" - creating image buffers to memory type idx %u\n", idx);
 	VkMemoryAllocateInfo allocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, capacity_, idx };
 	//mem = std::move(vk::raii::DeviceMemory(d, allocInfo));
@@ -1054,8 +1062,8 @@ void PipelineBuilder::init(
 		info.polygonMode = VK_POLYGON_MODE_FILL;
 		info.lineWidth = 1.0f;
 		//info.cullMode = vk::CullModeFlagBits::eNone; //no backface cull
-		// info.cullMode = VK_CULL_MODE_BACK_BIT;
-		info.cullMode = VK_CULL_MODE_NONE;
+		info.cullMode = VK_CULL_MODE_BACK_BIT;
+		// info.cullMode = VK_CULL_MODE_NONE;
 		info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		info.depthBiasEnable = VK_FALSE; //no depth bias
 		info.depthBiasConstantFactor = 0.0f;
@@ -1071,6 +1079,7 @@ void PipelineBuilder::init(
 		info.depthTestEnable = depthTest ? VK_TRUE : VK_FALSE;
 		info.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
 		info.depthCompareOp = depthTest ? VK_COMPARE_OP_LESS : VK_COMPARE_OP_ALWAYS;
+		// info.depthCompareOp = depthTest ? VK_COMPARE_OP_GREATER : VK_COMPARE_OP_ALWAYS;
 		info.depthBoundsTestEnable = VK_FALSE;
 		info.minDepthBounds = 0.0f;
 		info.maxDepthBounds = 1.0f;
@@ -1196,9 +1205,7 @@ void GraphicsPipeline::create(Device& device_, float viewportXYWH[4], PipelineBu
 
 GraphicsPipeline::~GraphicsPipeline() {
 
-	for (auto &layout : setLayouts) {
-		vkDestroyDescriptorSetLayout(*device, layout, nullptr);
-	}
+	// for (auto &layout : setLayouts) vkDestroyDescriptorSetLayout(*device, layout, nullptr);
 
 	if (vs) vkDestroyShaderModule(*device, vs, nullptr);
 	if (fs) vkDestroyShaderModule(*device, fs, nullptr);
@@ -1307,4 +1314,24 @@ void ExUploader::uploadScratch(void* data, size_t len) {
 
 ExUploader::~ExUploader() {
 	vkDestroyFence(*device, fence, nullptr);
+}
+
+Fence::Fence(Device& d, bool signaled) : device(&d) {
+	VkFenceCreateFlags flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
+	VkFenceCreateInfo fci { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, flags };
+	assertCallVk(vkCreateFence(*device, &fci, nullptr, &fence));
+}
+void Fence::moveFrom(Fence& o) {
+	if (fence) vkDestroyFence(*device, fence, nullptr);
+	fence = o.fence;
+	device = o.device;
+	o.fence = nullptr;
+}
+
+void Fence::reset() {
+	vkResetFences(*device, 1, &fence);
+}
+void Fence::wait(uint64_t timeout) {
+	vkWaitForFences(*device, 1, &fence, true, timeout);
+	reset();
 }

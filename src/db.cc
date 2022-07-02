@@ -700,7 +700,7 @@ void DatasetWritable::w_loop() {
 
 	while (true) {
 		int nWaitingCommands = 0;
-		std::vector<Command> commands;
+		std::vector<DbCommand> commands;
 		//usleep(20'000);
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
@@ -708,7 +708,7 @@ void DatasetWritable::w_loop() {
 			w_cv.wait(lck, [this]{return doStop or pushedCommands.size();});
 			nWaitingCommands = pushedCommands.size();
 			while (pushedCommands.size()) {
-				commands.push_back(Command{});
+				commands.push_back(DbCommand{});
 				pushedCommands.pop_front(commands.back());
 			}
 
@@ -721,13 +721,13 @@ void DatasetWritable::w_loop() {
 			}
 		}
 
-		std::sort(commands.begin(), commands.end(), [](const Command& a, const Command& b) {
-				if (a.cmd == Command::BeginLvl) return true;
-				if (a.cmd == Command::EndLvl) return true;
-				if (a.cmd == Command::EraseLvl) return true;
-				if (b.cmd == Command::BeginLvl) return false;
-				if (b.cmd == Command::EndLvl) return false;
-				if (b.cmd == Command::EraseLvl) return false;
+		std::sort(commands.begin(), commands.end(), [](const DbCommand& a, const DbCommand& b) {
+				if (a.cmd == DbCommand::BeginLvl) return true;
+				if (a.cmd == DbCommand::EndLvl) return true;
+				if (a.cmd == DbCommand::EraseLvl) return true;
+				if (b.cmd == DbCommand::BeginLvl) return false;
+				if (b.cmd == DbCommand::EndLvl) return false;
+				if (b.cmd == DbCommand::EraseLvl) return false;
 				return a.data.tileBufferIdx < b.data.tileBufferIdx;
 		});
 
@@ -735,9 +735,9 @@ void DatasetWritable::w_loop() {
 		//if (commands.size() > 1) printf(" - (awoke to %d avail)\n", commands.size()); fflush(stdout);
 
 		for (auto &theCommand : commands) {
-			if (theCommand.cmd != Command::NoCommand) {
+			if (theCommand.cmd != DbCommand::NoCommand) {
 
-				if (theCommand.cmd == Command::BeginLvl) {
+				if (theCommand.cmd == DbCommand::BeginLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					printf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 					if (w_txn) endTxn(&w_txn);
@@ -752,7 +752,7 @@ void DatasetWritable::w_loop() {
 						tileBufferLendedIdx[i] = 0;
 						tileBufferIdxMtx[i].unlock();
 					}
-				} else if (theCommand.cmd == Command::EndLvl) {
+				} else if (theCommand.cmd == DbCommand::EndLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					printf(" - recv command to end lvl %d, with %d other cmds\n", theCommand.data.lvl, commands.size()); fflush(stdout);
 
@@ -776,7 +776,7 @@ void DatasetWritable::w_loop() {
 					//beginTxn(&w_txn, false);
 					nWaitingCommands--;
 					printf(" - recv command to end lvl %d ... done\n", theCommand.data.lvl); fflush(stdout);
-				} else if (theCommand.cmd == Command::EraseLvl) {
+				} else if (theCommand.cmd == DbCommand::EraseLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 					if (w_txn) {
@@ -810,7 +810,7 @@ void DatasetWritable::w_loop() {
 
 				// Only commit a full set. That helps the in-order-ness
 				int setSize = buffersPerWorker / 2;
-				if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
+				if (theCommand.cmd == DbCommand::TileReady or theCommand.cmd == DbCommand::TileReadyOverwrite) {
 					int theTileIdx = theCommand.data.tileBufferIdx;
 					int theWorker = theTileIdx / buffersPerWorker;
 					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
@@ -822,7 +822,7 @@ void DatasetWritable::w_loop() {
 							if (theTileIdx_ < 0) theTileIdx_ = buffersPerWorker + theTileIdx_;
 							//printf("%d ",theTileIdx_);
 							WritableTile& tile = tileBuffers[theTileIdx_];
-							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
+							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == DbCommand::TileReadyOverwrite);
 							curTransactionWriteCount++;
 						}
 						//printf("\n");
@@ -831,7 +831,7 @@ void DatasetWritable::w_loop() {
 						tileBufferCommittedIdx[theWorker] += setSize;
 						tileBufferIdxMtx[theWorker].unlock();
 					}
-					theCommand.cmd = Command::NoCommand;
+					theCommand.cmd = DbCommand::NoCommand;
 				}
 				nWaitingCommands--;
 			}
@@ -860,8 +860,8 @@ void DatasetWritable::w_loop() {
 
 	while (true) {
 		int nWaitingCommands = 0;
-		Command theCommand;
-		theCommand.cmd = Command::NoCommand;
+		DbCommand theCommand;
+		theCommand.cmd = DbCommand::NoCommand;
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
 			
@@ -883,20 +883,20 @@ void DatasetWritable::w_loop() {
 
 			// Lock the mutex if creating or ending a level.
 			// The TileReady command needn't hold mutex.
-			if (theCommand.cmd == Command::BeginLvl) {
+			if (theCommand.cmd == DbCommand::BeginLvl) {
 				dprintf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) endTxn(&w_txn);
 				this->createLevelIfNeeded(theCommand.data.lvl);
 				beginTxn(&w_txn, false);
 				nWaitingCommands--;
 				curTransactionWriteCount = 0;
-			} else if (theCommand.cmd == Command::EndLvl) {
+			} else if (theCommand.cmd == DbCommand::EndLvl) {
 				dprintf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				assert(w_txn);
 				endTxn(&w_txn);
 				//beginTxn(&w_txn, false);
 				nWaitingCommands--;
-			} else if (theCommand.cmd == Command::EraseLvl) {
+			} else if (theCommand.cmd == DbCommand::EraseLvl) {
 				dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) {
 					printf(" - Cannot have open w_txn while erasing level. Should sent 'EndLvl' first.\n"); fflush(stdout);
@@ -911,13 +911,13 @@ void DatasetWritable::w_loop() {
 
 		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
 
-		if (theCommand.cmd != Command::NoCommand) {
-			if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
+		if (theCommand.cmd != DbCommand::NoCommand) {
+			if (theCommand.cmd == DbCommand::TileReady or theCommand.cmd == DbCommand::TileReadyOverwrite) {
 				int theTileIdx = theCommand.data.tileBufferIdx;
 				int theWorker = theTileIdx / buffersPerWorker;
 				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
 				WritableTile& tile = tileBuffers[theTileIdx];
-				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
+				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == DbCommand::TileReadyOverwrite);
 				curTransactionWriteCount++;
 
 				tileBufferIdxMtx[theWorker].lock();
@@ -995,7 +995,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		perThreadTileCache[i] = LruCache<uint64_t, Image>(WRITER_CACHE_CAPACITY);
 	}
 
-	pushedCommands = RingBuffer<Command>(nBuffers + 16);
+	pushedCommands = RingBuffer<DbCommand>(nBuffers + 16);
 	w_thread = std::thread(&DatasetWritable::w_loop, this);
 }
 
@@ -1009,7 +1009,7 @@ bool DatasetWritable::hasOpenWrite() {
 	return (not pushedCommands.empty()) or w_txn != nullptr;
 }
 
-void DatasetWritable::sendCommand(const Command& cmd) {
+void DatasetWritable::sendCommand(const DbCommand& cmd) {
 	{
 		std::unique_lock<std::mutex> lck(w_mtx);
 		bool full = pushedCommands.isFull();
@@ -1041,13 +1041,13 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 	w_cv.notify_one();
 
 	/*
-	if (cmd.cmd == Command::EndLvl)
+	if (cmd.cmd == DbCommand::EndLvl)
 		while (w_txn) {
 			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
 			usleep(500'000);
 		}
 		*/
-	if (cmd.cmd == Command::EndLvl)
+	if (cmd.cmd == DbCommand::EndLvl)
 		while (w_txn) {
 			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
 			usleep(100'000);
@@ -1571,16 +1571,23 @@ static int floor_log2_i_(float x) {
 
 	// Could also use floating point log2.
 	// Could also convert x to an int and use intrinsics.
-	int i = 0;
-	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
+	uint32_t i = 0;
+	uint32_t xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
+
+	if (xi >= (1<<31)) return 32;
 
 	// Bad quality
 	//while ((1<<(i+1)) < xi) { i++; };
 	// Medium quality
-	while ((1<<i) < xi) { i++; };
+	while ((1u<<i) < xi) {
+		// fmt::print(" - floor_log2 :: (x {}) (xi {}) (i {}) (1i {})\n", x,xi,i,1u<<i);
+		i++;
+		if (i > 31) return BAD_FLOOR_VALUE;
+	};
 	// Good quality
 	//i=1; while ((1<<(i-1)) < xi) { i++; };
-	return i-2;
+	int out = static_cast<int>(i)-2;
+	return out >= 0 ? out : BAD_FLOOR_VALUE;
 }
 
 /*

@@ -4,7 +4,6 @@ import numpy as np, os, sys, cv2
 # Coordinate stuff
 ######################
 
-'''
 class Earth:
     R1         = 6378137.0
     R2         = 6356752.314245179
@@ -79,6 +78,38 @@ def ecef_to_geodetic(x,y,z):
     # print(lng,lat,np.linalg.norm((x,y,z)))
 
     return np.array((np.rad2deg(lng), np.rad2deg(lat), alt*Earth.R))
+'''
+
+one_div_two_pi = 1. / (2*np.pi)
+def geodetic_to_unit_wm(ll):
+    return torch.stack((
+        (ll[:,0] + np.pi).mul_(one_div_two_pi),
+        (np.pi - (np.pi/4 + ll[:,1]*.5).tan_().log_()).mul_(one_div_two_pi)
+        #one_div_two_pi * (np.pi - torch.log(torch.tan(np.pi/4 + ll[:,1]*.5)))
+    ), -1) * 2 - 1
+
+'''
+void unit_wm_to_geodetic(double* out, int n, const double* xyz) {
+    for (int i = 0; i < n; i++) {
+        out[i * 3 + 0] = xyz[i * 3 + 0] * M_PI;
+        out[i * 3 + 1] = std::atan(std::exp(xyz[i * 3 + 1] * M_PI)) * 2 - M_PI / 2;
+        out[i * 3 + 2] = xyz[i * 3 + 2] * M_PI;
+    }
+}
+
+void unit_wm_to_ecef(double* out, int n, const double* xyz) {
+    // OKAY: both unit_wm_to_geodetic and geodetic_to_ecef can operate in place.
+    unit_wm_to_geodetic(out, n, xyz);
+    geodetic_to_ecef(out, n, out);
+}
+'''
+
+def unit_wm_to_geodetic(xyz):
+    x,y,z = xyz
+    return np.array((x*180, np.rad2deg(np.arctan(np.exp(y*np.pi)) * 2 - np.pi/2.), z*np.pi))
+def unit_wm_to_ecef(xyz):
+    xyz = unit_wm_to_geodetic(xyz)
+    return geodetic_to_ecef(*xyz)
 
 truth_table_ = np.array((
     0,0,0,

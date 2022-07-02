@@ -1,8 +1,7 @@
 #pragma once
 
 #include <frast/image.h>
-#include "frastVk/core/buffer_utils.h"
-#include "frastVk/core/app.h"
+#include "frastVk/core/fvkApi.h"
 
 // This is not allocated on the CPU, but is useful to access mapped data instead of the void*
 struct __attribute__((packed)) CasterBuffer {
@@ -12,22 +11,34 @@ struct __attribute__((packed)) CasterBuffer {
 	uint32_t casterMask;
 };
 
-namespace rt { class RtRenderer; }
-namespace tr2 { class TiledRenderer; }
+// namespace rt { class RtRenderer; }
+// namespace tr2 { class TiledRenderer; }
+class FtRenderer;
+class RtRenderer;
 class Castable;
 
+// CPU resident data, that can be modified off the render thread :: TODO: add mutex
 struct CasterWaitingData {
-	friend class rt::RtRenderer;
-	friend class tr2::TiledRenderer;
+	// friend class rt::RtRenderer;
+	// friend class tr2::TiledRenderer;
 	friend class Castable;
+	friend class FtRenderer;
+	friend class RtRenderer;
 
 	public:
 		inline void setMatrix1(float* m) { memcpy(casterMatrix1, m, sizeof(float)*16); haveMatrix1 = true; }
 		inline void setMatrix2(float* m) { memcpy(casterMatrix2, m, sizeof(float)*16); haveMatrix2 = true; }
-		inline void setImage(const Image& image_) { image = image_; }
+		inline void setImage(const Image& image_) { imgIsNew = true; image = image_; }
 		inline void setMask(const uint32_t mask_) { mask = mask_; }
 		inline void setColor1(float* c) { memcpy(color1, c, 4*4); haveColor1 = true; }
 		inline void setColor2(float* c) { memcpy(color2, c, 4*4); haveColor2 = true; }
+
+		inline bool isNew() const {
+			return imgIsNew or haveMatrix1 or haveMatrix2 or haveColor1 or haveColor2;
+		}
+		inline void setNotNew() {
+			imgIsNew = haveColor1 = haveColor2 = haveMatrix2 = haveMatrix1 = false;
+		}
 
 	private:
 		Image image;
@@ -38,17 +49,23 @@ struct CasterWaitingData {
 		uint32_t mask = 0;
 		bool haveMatrix1=false, haveMatrix2=false;
 		bool haveColor1=false, haveColor2=false;
+		bool imgIsNew = false;
 };
 
+// GPU Resident data, should only be touched on render thread.
+// TODO Note: This is not taking full use of Vulkan's asynchroncity, but that is okay for now
 struct CasterStuff {
 	uint32_t casterMask; // should match the gpu buffer variable.
 	bool casterTextureSet = false; // true after first time set
-	ResidentImage casterImages[1];
-	ResidentBuffer casterBuffer;
-	PipelineStuff casterPipelineStuff;
-	vk::raii::DescriptorPool casterDescPool = {nullptr};
-	vk::raii::DescriptorSetLayout casterDescSetLayout = {nullptr};
-	vk::raii::DescriptorSet casterDescSet = {nullptr};
+	ExImage casterImage;
+	ExBuffer casterBuffer;
+
+	GraphicsPipeline pipeline;
+	DescriptorSet dset;
+
+	// vk::raii::DescriptorPool casterDescPool = {nullptr};
+	// vk::raii::DescriptorSetLayout casterDescSetLayout = {nullptr};
+	// vk::raii::DescriptorSet casterDescSet = {nullptr};
 };
 
 /*
@@ -67,10 +84,19 @@ struct CasterStuff {
 
 class Castable {
 	public:
-		void setCasterInRenderThread(CasterWaitingData& cwd, BaseVkApp* app);
-		void do_init_caster_stuff(BaseVkApp* app);
+		// void setCasterInRenderThread(CasterWaitingData& cwd);
+		void setCasterInRenderThread();
+		void do_init_caster_stuff(Device& device, uint32_t queueNumberForUploader, TheDescriptorPool& dpool);
+		~Castable();
 
+	public:
+		CasterWaitingData cwd;
 	protected:
 		CasterStuff casterStuff;
+		Device* device { nullptr };
+
+		Queue queue;
+		Sampler sampler;
+		ExUploader uploader;
 
 };

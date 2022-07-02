@@ -88,8 +88,8 @@ struct TestApp_Shape : public BaseClass {
 		// Setup vertex and index buffers
 
 		float verts[] = {
-			-.5, -.5, .1,
 			.5, -.5, .1,
+			-.5, -.5, .1,
 			.0,  .7, .1 };
 		numInds = 3;
 		if (0) {
@@ -128,7 +128,7 @@ struct TestApp_Shape : public BaseClass {
 		globalDataBuffer.create(mainDevice);
 
 		uint32_t globalDataBindingIdx = dset.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		dset.create(dpool, triPipeline);
+		dset.create(dpool, {&triPipeline});
 
 		mat44_map = (float*) globalDataBuffer.map();
 		for (int i=0; i<16; i++) mat44_map[i] = (i%5) == 0;

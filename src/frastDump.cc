@@ -131,7 +131,7 @@ int do_subaoi(DatasetWritable& dsetOut, DatasetReader& dsetIn, double tlbr[4]) {
 			if (not dsetIn.hasLevel(lvl))
 				continue;
 
-			dsetOut.sendCommand(Command{Command::BeginLvl, (int32_t)lvl});
+			dsetOut.sendCommand(DbCommand{DbCommand::BeginLvl, (int32_t)lvl});
 			dsetOut.blockUntilEmptiedQueue();
 
 			MDB_txn* r_txn;
@@ -168,7 +168,7 @@ int do_subaoi(DatasetWritable& dsetOut, DatasetReader& dsetIn, double tlbr[4]) {
 						n_added++;
 						auto &wtile = dsetOut.blockingGetTileBufferForThread(tid);
 						wtile.fillWith(bc, val);
-						dsetOut.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+						dsetOut.sendCommand(DbCommand{DbCommand::TileReady, wtile.bufferIdx});
 						// dsetOut.blockUntilEmptiedQueue();
 					}
 

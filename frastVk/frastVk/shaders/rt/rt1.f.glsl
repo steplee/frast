@@ -28,6 +28,7 @@ void main()
 	//c += sin(angle) * cross(axis,c) + (1-cos(angle))*cross(axis,cross(axis,c));
 	//c = c * .5 + .5;
 	outFragColor = vec4(c,1.0);
+	/* outFragColor = vec4(1.0); */
 
 }
 

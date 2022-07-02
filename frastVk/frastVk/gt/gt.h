@@ -12,9 +12,16 @@
 
 // #include "frastVk/core/app.h"
 #include "frastVk/core/fvkApi.h"
+#include "frastVk/extra/caster/castable.h"
 
 #include <fmt/color.h>
 #include <fmt/ostream.h>
+
+//
+// TODO: Allow a @sharedInds member that avoids having seperate index buffers when not needed
+//
+// TODO: Make ftr more like rt: use model matrices and uint8_t vertices instead of float32 verts and no model matrix
+//
 
 using Eigen::Matrix4f;
 using Eigen::Matrix3f;
@@ -24,17 +31,22 @@ using Eigen::Vector4f;
 using Eigen::Vector4d;
 using Eigen::Vector3f;
 using Eigen::Vector3d;
+using Eigen::Array3f;
 using Eigen::Quaternionf;
+using RowMatrix83f = Eigen::Matrix<float,8,3,Eigen::RowMajor>;
+using RowMatrix84f = Eigen::Matrix<float,8,4,Eigen::RowMajor>;
 
 // Max UBO size is 65536. Each tile needs a mat4 and some other stuff probably, so 800 is a good default max.
 static constexpr uint32_t GT_NUM_TILES = 800;
+static constexpr bool GT_DEBUG = true;
+
 
 
 // ObbMap type
 // @GtObbMap can give you an Obb given a coordinate. It also is used to see whether children are available or not. It also knows which tiles are roots
 // TODO: This will be an lmdb based implementation. Right now, though, it is in-memory
 // Derived must implement:
-//		bool tileIsTerminal()
+//		bool tileIsTerminal() -- nevermind, dont need this
 template <class GtTypes, class Derived>
 class GtObbMap {
 	public:
@@ -45,7 +57,7 @@ class GtObbMap {
 
 			fmt::print(" - [GtObbMap] loading obbs.\n");
 
-			auto row_size = 26 + 4*(3+3+4);
+			auto row_size = (GtTypes::Coord::SerializedSize) + 4*(3+3+4);
 
 			//std::vector<uint8_t> buffer(row_size);
 			std::string buffer(row_size, '\0');
@@ -56,7 +68,7 @@ class GtObbMap {
 
 				// typename GtTypes::Coord coord = typename GtTypes::Coord::fromString(line);
 				typename GtTypes::Coord coord(buffer);
-				float *start = (float*)(buffer.data() + GtTypes::Coord::Size);
+				float *start = (float*)(buffer.data() + GtTypes::Coord::SerializedSize);
 				Vector3f  ctr { start[0], start[1], start[2] };
 				Vector3f  ext { start[3], start[4], start[5] };
 				Quaternionf q { start[6], start[7], start[8], start[9] };
@@ -68,8 +80,8 @@ class GtObbMap {
 			// Find roots
 			for (auto& kv : map) {
 				typename GtTypes::Coord parentKey = kv.first.parent();
-				//fmt::print(" - key {}\n", kv.first.toString());
-				//fmt::print(" - par {}\n", parentKey.toString());
+				// fmt::print(" - key {}\n", kv.first.toString());
+				// fmt::print(" - par {}\n", parentKey.toString());
 				if (map.find(parentKey) == map.end()) roots.push_back(kv.first);
 			}
 
@@ -119,7 +131,7 @@ struct GtRenderContext {
 	const RenderState& rs;
 	GtPooledData<GtTypes>& pooledData;
 	// PipelineStuff& pipelineStuff;
-	GraphicsPipeline& gfxPipeline;
+	GraphicsPipeline& pipeline;
 
 	// vk::CommandBuffer& cmd;
 	VkCommandBuffer& cmd;
@@ -127,19 +139,32 @@ struct GtRenderContext {
 	uint32_t drawCount = 0;
 };
 
-template <class GtTypes>
-struct GtUpdateContext {
+struct GtUpdateCameraData {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	typename GtTypes::DataLoader& dataLoader;
-	typename GtTypes::ObbMap& obbMap;
-	GtPooledData<GtTypes>& pooledData;
-
-	// Camera/Screen info
 	RowMatrix4f mvp;
 	Vector3f zplus;
 	Vector3f eye;
 	Vector2f wh;
 	float two_tan_half_fov_y;
+	RowMatrix83f frustumCorners;
+};
+
+template <class GtTypes>
+struct GtUpdateContext {
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	typename GtTypes::DataLoader& dataLoader;
+	typename GtTypes::ObbMap& obbMap;
+	GtPooledData<GtTypes>& pooledData;
+
+	// Camera/Screen info
+	// RowMatrix4f mvp;
+	// Vector3f zplus;
+	// Vector3f eye;
+	// Vector2f wh;
+	// float two_tan_half_fov_y;
+	// RowMatrix83f frustumCorners;
+	GtUpdateCameraData cameraData;
 
 	float sseThresholdClose, sseThresholdOpen;
 
@@ -148,7 +173,7 @@ struct GtUpdateContext {
 };
 
 /*
-// bounding box
+// the default bounding box
 // Derived should implement:
 //         - float computeSse(gtuc);
 template <class GtTypes, class Derived>
@@ -156,19 +181,24 @@ struct GtBoundingBox {
 	//float computeSse(const GtTypes::UpdateContext& gtuc);
 };
 */
-template <class GtTypes>
-struct GtBoundingBox {
+struct GtOrientedBoundingBox {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-	inline GtBoundingBox() : ctr(Vector3f::Zero()), extents(Vector3f::Zero()), q(Quaternionf::Identity()) {}
-	inline GtBoundingBox(const Vector3f& ctr, const Vector3f& ex, const Quaternionf& q) : ctr(ctr), extents(ex), q(q) {}
+	inline GtOrientedBoundingBox() : ctr(Vector3f::Zero()), extents(Array3f::Zero()), q(Quaternionf::Identity()) {}
+	inline GtOrientedBoundingBox(const Vector3f& ctr, const Array3f& ex, const Quaternionf& q) : ctr(ctr), extents(ex), q(q) {}
 
-	float computeSse(const typename GtTypes::UpdateContext& gtuc) const;
+	float computeSse(const GtUpdateCameraData& gtuc, const float geoError) const;
+
+	void getEightCorners(RowMatrix83f& out) const;
 
 	public:
 		Vector3f ctr;
-		Vector3f extents;
+		Array3f extents;
 		Quaternionf q;
+};
+
+struct __attribute__((packed)) GtDebugPushConstants {
+	float posColors[(4+4)*8]; // xyzw | rgba
 };
 
 
@@ -324,14 +354,17 @@ struct GtDataLoader {
 // Derived must implement:
 //		bool initPipelinesAndDescriptors()
 template <class GtTypes, class Derived>
-struct GtRenderer {
+struct GtRenderer : public Castable {
 
 	public:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-		inline GtRenderer()
-			: loader((Derived&)*this),
-			  obbMap(new typename GtTypes::ObbMap("/data/gearth/tpAois_wgs/index.v1.bin"))
+		inline GtRenderer(const typename GtTypes::Config &cfg_)
+			:
+			  cfg(cfg_),
+			  loader((Derived&)*this),
+			  // obbMap(new typename GtTypes::ObbMap("/data/gearth/tpAois_wgs/index.v1.bin"))
+			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPath))
 		{
 
 			GtAsk<GtTypes> ask;
@@ -340,7 +373,7 @@ struct GtRenderer {
 			for (auto &rootCoord : obbMap->getRootCoords()) {
 				auto root = new typename GtTypes::Tile(rootCoord);
 				root->bb = obbMap->get(rootCoord);
-				fmt::print(" - root OBB: {} | {} | {}\n", root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
+				fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
 				root->state = GtTypes::Tile::INVALID;
 				root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
 				roots.push_back(root);
@@ -357,9 +390,28 @@ struct GtRenderer {
 
 	protected:
 		Device *device { nullptr };
+
+		// Very inefficient pushConsant based debug rendering of BoundingBoxes. Shouldn't be used other than dbg so doesn't matter.
+		void initDebugPipeline(TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
+		void renderDbg(RenderState& rs, Command& cmd);
+		DescriptorSet dbgDescSet;
+
+
+		// Disallow compute sse and changing tile tree. Useful for debugging.
+		bool updateAllowed = true;
+
+
 	public:
 
-		void init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, const AppConfig& cfg);
+		inline bool toggleUpdateAllowed() {
+			updateAllowed = !updateAllowed;
+			return updateAllowed;
+		}
+		bool debugMode = true; // Note: GT_DEBUG (at top of this file) must also be compiled with true!
+
+		typename GtTypes::Config cfg;
+
+		void init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
 		GtPooledData<GtTypes> gtpd;
 		typename GtTypes::DataLoader loader;
@@ -377,6 +429,8 @@ struct GtRenderer {
 		void render(RenderState& rs, Command& cmd);
 
 		GraphicsPipeline gfxPipeline;
+		// GraphicsPipeline casterPipeline;
+		GraphicsPipeline dbgPipeline;
 
 		Sampler sampler;
 

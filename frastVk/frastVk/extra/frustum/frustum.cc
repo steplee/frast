@@ -3,10 +3,10 @@
 #include "frustum.h"
 #include <fmt/color.h>
 
-#include "frastVk/core/load_shader.hpp"
+#include "frastVk/core/fvkShaders.h"
 
 
-FrustumSet::FrustumSet(BaseVkApp* app, int nInSet) : app(app), nInSet(nInSet) {
+FrustumSet::FrustumSet(BaseApp* app, int nInSet) : app(app), nInSet(nInSet) {
 	init();
 }
 
@@ -38,14 +38,21 @@ void FrustumSet::init() {
 		};
 		nInds = inds_.size();
 
-		verts.setAsVertexBuffer(14*nInSet*7 * 4, true, vk::BufferUsageFlagBits::eTransferDst);
-		inds.setAsIndexBuffer(inds_.size() * 2, false);
-		verts.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
-		inds.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
-		app->uploader.uploadSync(inds, inds_.data(), inds_.size() * 2, 0);
+		verts.set(14*nInSet*7*4,
+					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+					VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		inds.set(inds_.size()*2, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		verts.create(app->mainDevice);
+		inds.create(app->mainDevice);
 
-		matrices.setAsUniformBuffer((1+nInSet) * 16 * 4, true);
-		matrices.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
+		app->generalUploader.enqueueUpload(inds, inds_.data(), inds_.size() * 2, 0);
+		app->generalUploader.execute();
+
+		globalBuffer.set((1+nInSet) * 16 * 4,
+					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+					VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		globalBuffer.create(app->mainDevice);
+		globalBuffer.map();
 		modelMatrices.resize(16*nInSet, 0);
 
 		for (int i=0; i<nInSet; i++)
@@ -53,88 +60,51 @@ void FrustumSet::init() {
 	}
 
 	{
-		std::vector<vk::DescriptorPoolSize> poolSizes = {
-			vk::DescriptorPoolSize { vk::DescriptorType::eUniformBuffer, 1 },
+		loadShader(app->mainDevice, frustumPipeline.vs, frustumPipeline.fs, "frustum/frustum");
+
+		// frustumPipeline.setLayouts.push_back(globalDescSetLayout);
+		// GlobalData
+		uint32_t globalDataBindingIdx = globalDescSet.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		globalDescSet.create(app->dpool, {&frustumPipeline, &pathPipeline});
+
+		VertexInputDescription vid;
+		VkVertexInputAttributeDescription attrPos { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
+		VkVertexInputAttributeDescription attrCol { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8 };
+		vid.attributes = { attrPos, attrCol };
+		vid.bindings = { VkVertexInputBindingDescription { 0, 7*4, VK_VERTEX_INPUT_RATE_VERTEX } };
+
+		float viewportXYWH[4] = {
+			0,0,
+			(float)app->windowWidth,
+			(float)app->windowHeight
 		};
-		vk::DescriptorPoolCreateInfo poolInfo {
-			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, // allow raii to free the owned sets
-				1,
-				(uint32_t)poolSizes.size(), poolSizes.data()
-		};
-		descPool = std::move(vk::raii::DescriptorPool(app->deviceGpu, poolInfo));
-	}
-
-	{
-		vk::DescriptorSetLayoutBinding bindings[1] = { {
-			0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex } };
-
-		vk::DescriptorSetLayoutCreateInfo layInfo { {}, 1, bindings };
-		globalDescSetLayout = std::move(app->deviceGpu.createDescriptorSetLayout(layInfo));
-
-		vk::DescriptorSetAllocateInfo allocInfo { *descPool, 1, &*globalDescSetLayout };
-		globalDescSet = std::move(app->deviceGpu.allocateDescriptorSets(allocInfo)[0]);
-
-		// Its allocated, now make it point on the gpu side.
-		vk::DescriptorBufferInfo binfo {
-			*matrices.buffer, 0, VK_WHOLE_SIZE
-		};
-		vk::WriteDescriptorSet writeDesc[1] = { {
-			*globalDescSet,
-				0, 0, 1,
-				vk::DescriptorType::eUniformBuffer,
-				nullptr, &binfo, nullptr } };
-		app->deviceGpu.updateDescriptorSets({1, writeDesc}, nullptr);
-	}
-
-
-	{
-		pipelineStuff.setup_viewport(app->windowWidth, app->windowHeight);
-		// std::string vsrcPath = "../frastVk/shaders/frustum/frustum.v.glsl";
-		// std::string fsrcPath = "../frastVk/shaders/frustum/frustum.f.glsl";
-		// createShaderFromFiles(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, vsrcPath, fsrcPath);
-		loadShader(app->deviceGpu, pipelineStuff.vs, pipelineStuff.fs, "frustum/frustum");
-
-		pipelineStuff.setLayouts.push_back(*globalDescSetLayout);
-
-		vk::VertexInputAttributeDescription posAttr, colorAttr;
-		posAttr.binding = 0;
-		posAttr.location = 0;
-		posAttr.offset = 0;
-		posAttr.format = vk::Format::eR32G32B32Sfloat;
-		colorAttr.binding = 0;
-		colorAttr.location = 1;
-		colorAttr.offset = 3*4;
-		colorAttr.format = vk::Format::eR32G32B32A32Sfloat;
-		vk::VertexInputBindingDescription mainBinding = {};
-		mainBinding.binding = 0;
-		mainBinding.stride = 7*4;
-		mainBinding.inputRate = vk::VertexInputRate::eVertex;
-		VertexInputDescription vertexDesc;
-		vertexDesc.attributes = { posAttr, colorAttr };
-		vertexDesc.bindings = { mainBinding };
-
-
 		PipelineBuilder builder;
-		builder.init(
-				vertexDesc,
-				vk::PrimitiveTopology::eLineList,
-				*pipelineStuff.vs, *pipelineStuff.fs);
-		pipelineStuff.build(builder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
+		builder.depthTest = true;
+		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, frustumPipeline.vs, frustumPipeline.fs);
+
+		frustumPipeline.create(app->mainDevice, viewportXYWH, builder, app->simpleRenderPass.pass, 0);
+
+		// Write descriptor
+		VkDescriptorBufferInfo bufferInfo { globalBuffer, 0, sizeof(GlobalBuffer) };
+		globalDescSet.update(VkWriteDescriptorSet{
+				VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+				globalDescSet, 0,
+				0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				nullptr, &bufferInfo, nullptr
+				});
 	}
 
-	// Make path stuff
-	/*
-		ResidentBuffer paths;
-		int maxPaths = 8;
-		int maxPathLen;
-		std::vector<int> idToCurrentPath;
-		std::vector<Vector4f> pathColors;
-	*/
-	paths.setAsVertexBuffer(maxPaths*maxPathLen*4*3, true);
-	paths.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 	idToCurrentPath.resize(nInSet, -1);
 	pathLens.resize(maxPaths, 0);
 	pathColors.resize(maxPaths);
+	paths.set(maxPaths*maxPathLen*4*3,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	paths.create(app->mainDevice);
+	// Make path stuff
+	/*
+	paths.setAsVertexBuffer(maxPaths*maxPathLen*4*3, true);
+	paths.create(app->deviceGpu, *app->pdeviceGpu, app->queueFamilyGfxIdxs);
 
 	// Pipeline
 	{
@@ -169,24 +139,57 @@ void FrustumSet::init() {
 
 		pathPipelineStuff.build(builder, app->deviceGpu, *app->simpleRenderPass.pass, app->mainSubpass());
 	}
+	*/
+
+	{
+		loadShader(app->mainDevice, pathPipeline.vs, pathPipeline.fs, "frustum/path");
+
+		// GlobalData (already created and tracked above)
+		// uint32_t globalDataBindingIdx = globalDescSet.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		// globalDescSet.create(app->dpool, {&frustumPipeline, &pathPipeline});
+
+		VertexInputDescription vid;
+		VkVertexInputAttributeDescription attrPos { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
+		vid.attributes = { attrPos };
+		vid.bindings = { VkVertexInputBindingDescription { 0, 3*4, VK_VERTEX_INPUT_RATE_VERTEX } };
+
+		float viewportXYWH[4] = {
+			0,0,
+			(float)app->windowWidth,
+			(float)app->windowHeight
+		};
+		PipelineBuilder builder;
+		builder.depthTest = true;
+		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, pathPipeline.vs, pathPipeline.fs);
+
+		pathPipeline.pushConstants.push_back(VkPushConstantRange{
+				VK_SHADER_STAGE_FRAGMENT_BIT,
+				0,
+				4*4 });
+
+		pathPipeline.create(app->mainDevice, viewportXYWH, builder, app->simpleRenderPass.pass, 0);
+	}
+
 }
 
 void FrustumSet::setColor(int n, const float color[4]) {
 	Eigen::Vector4f c { color[0], color[1], color[2], color[3] };
-	void* dbuf = (void*) verts.mem.mapMemory(14*4*7*n, 14*4*7, {});
-	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
-	vs.topRightCorner<8,4>().rowwise() = c.transpose();
 	Eigen::Vector4f c2 { color[0], color[1], color[2], color[3] * .2f };
-	vs.block<1,4>(8,3).rowwise() = c2.transpose();
 	Eigen::Vector4f c3 { color[0], color[1], color[2], color[3] * .01f };
+
+	void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
+	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
+
+	vs.topRightCorner<8,4>().rowwise() = c.transpose();
+	vs.block<1,4>(8,3).rowwise() = c2.transpose();
 	vs.bottomRightCorner<5,4>().rowwise() = c3.transpose();
-	verts.mem.unmapMemory();
+	verts.unmap();
 
 	pathColors[n] = c;
 }
 
 void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
-	void* dbuf = (void*) verts.mem.mapMemory(14*4*7*n, 14*4*7, {});
+	void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
 	float z = -1.f, o = 1.f;
 	// const float ray_far = 19000.0 / 6378137.0;
 	Eigen::Map<RowMatrix4d> model { modelMatrices.data() + n * 16 };
@@ -216,7 +219,7 @@ void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
 	new_vs.block<4,2>(10,0) *= ray_far;
 	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
 	vs.leftCols(3) = new_vs;
-	verts.mem.unmapMemory();
+	verts.unmap();
 }
 
 void FrustumSet::setNextPath(int n, const Vector4f& color) {
@@ -255,16 +258,16 @@ void FrustumSet::setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R
 		int pi = pathLens[pid];
 		// simple case
 		if (pi < maxPathLen) {
-			float* dbuf = (float*) paths.mem.mapMemory(4*3*(maxPathLen*pid + pi), 4*3, {});
+			float* dbuf = (float*) paths.map(4*3*(maxPathLen*pid + pi), 4*3);
 			dbuf[0] = (float)pos(0);
 			dbuf[1] = (float)pos(1);
 			dbuf[2] = (float)pos(2);
-			paths.mem.unmapMemory();
+			paths.unmap();
 			pathLens[pid]++;
 		} else {
 			// Must decimate
 
-			float* dbuf = (float*) paths.mem.mapMemory(4*3*(maxPathLen*pid), 4*3*maxPathLen, {});
+			float* dbuf = (float*) paths.map(4*3*(maxPathLen*pid), 4*3*maxPathLen);
 			for (int i=0; i<maxPathLen/2; i++) {
 				dbuf[i*3+0] = dbuf[i*2*3+0];
 				dbuf[i*3+1] = dbuf[i*2*3+1];
@@ -275,7 +278,7 @@ void FrustumSet::setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R
 			dbuf[pi*3+0] = (float)pos(0);
 			dbuf[pi*3+1] = (float)pos(1);
 			dbuf[pi*3+2] = (float)pos(2);
-			paths.mem.unmapMemory();
+			paths.unmap();
 		}
 	}
 
@@ -290,7 +293,7 @@ void FrustumSet::setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R
 
 
 
-void FrustumSet::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
+void FrustumSet::render(RenderState& rs, Command& cmd) {
 
 	// Setup matrices
 	{
@@ -307,14 +310,16 @@ void FrustumSet::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
 			// out = (vp * model).cast<float>();
 			out = (model).cast<float>();
 		}
-		void* dbuf = (void*) matrices.mem.mapMemory(0, (1+nInSet)*16*4, {});
+		// void* dbuf = (void*) globalBuffer.map(0, (1+nInSet)*16*4);
+		void* dbuf = (void*) globalBuffer.mappedAddr;
 		memcpy(dbuf, frameModelMatrices.data(), (1+nInSet)*16*4);
-		matrices.mem.unmapMemory();
+		// globalBuffer.unmap();
 	}
 
 	// Render instanced. But cannot use instancing in correct way (one draw call). Must make several
 	// calls due to how I setup the attributes. Not going to change now though.
 	{
+		/*
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
 		cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*verts.buffer}, {0u});
@@ -322,8 +327,20 @@ void FrustumSet::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
 		// cmd.drawIndexed(nInds, nInSet, 0,0,0);
 		for (int i=0; i<nInSet; i++)
 			cmd.drawIndexed(nInds, 1, 0,i*14,i);
+		*/
+
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, frustumPipeline.layout, 0, 1, &globalDescSet.dset, 0, 0);
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, frustumPipeline);
+
+		VkDeviceSize offset = 0;
+		vkCmdBindVertexBuffers(cmd, 0, 1, &verts.buf, &offset);
+		vkCmdBindIndexBuffer(cmd, inds.buf, 0, VK_INDEX_TYPE_UINT16);
+
+		for (int i=0; i<nInSet; i++)
+			vkCmdDrawIndexed(cmd, nInds, 1, 0, 0, i);
 	}
 
+	/*
 	// Render paths
 	{
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pathPipelineStuff.pipeline);
@@ -340,6 +357,29 @@ void FrustumSet::renderInPass(RenderState& rs, vk::CommandBuffer cmd) {
 				cmd.pushConstants(*pathPipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, vk::ArrayProxy<const float>{4u, p_color});
 				int vOff = pid * maxPathLen;
 				cmd.draw(pathLens[pid], 1, vOff,0);
+			}
+		}
+
+	}
+	*/
+
+	if(1){
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pathPipeline);
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pathPipeline.layout, 0, 1, &globalDescSet.dset, 0, 0);
+
+		// cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*paths.buffer}, {0u});
+		VkDeviceSize offset = 0;
+		vkCmdBindVertexBuffers(cmd, 0, 1, &paths.buf, &offset);
+
+		for (int pid=0; pid<maxPaths; pid++) {
+			float* p_color = pathColors[pid].data();
+
+			if (pathLens[pid] > 0) {
+				
+				vkCmdPushConstants(cmd, pathPipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4*4, (void*)p_color);
+				int vOff = pid * maxPathLen;
+				//cmd.draw(pathLens[pid], 1, vOff,0);
+				vkCmdDraw(cmd, pathLens[pid], 1, vOff, 0);
 			}
 		}
 

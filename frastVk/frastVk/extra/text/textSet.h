@@ -1,7 +1,6 @@
 #pragma once
 
-#include "frastVk/core/app.h"
-#include "frastVk/core/buffer_utils.h"
+#include "frastVk/core/fvkApi.h"
 
 // Simple 2d bitmap-text renderer.
 // Would be easy to apply a model * viewProj,
@@ -12,9 +11,10 @@
 // then read in the source file of this header.
 class SimpleTextSet {
 	public:
-		SimpleTextSet(BaseVkApp* app);
+		SimpleTextSet(BaseApp* app);
+		~SimpleTextSet();
 
-		void render(RenderState& rs, vk::CommandBuffer &cmd);
+		void render(RenderState& rs, Command &cmd);
 
 		void reset();
 		void setText(int i, const std::string& text, const float matrix[16], const float color[4]);
@@ -22,7 +22,7 @@ class SimpleTextSet {
 
 	private:
 
-		BaseVkApp* app = nullptr;
+		BaseApp* app = nullptr;
 
 		static constexpr int maxLength = 176;
 		static constexpr int maxStrings = 32;
@@ -38,15 +38,18 @@ class SimpleTextSet {
 			float color[4];
 			uint8_t chars[maxLength];
 		};
-		ResidentBuffer ubo;
+
 		uint32_t stringLengths[maxStrings] = {0};
+		ExBuffer ubo;
+		ExImage fontTex;
 
-		ResidentImage fontTex;
+		GraphicsPipeline pipeline;
 
-		PipelineStuff pipelineStuff;
-
-		vk::raii::DescriptorPool descPool = {nullptr};
-		vk::raii::DescriptorSetLayout descSetLayout = {nullptr};
-		vk::raii::DescriptorSet descSet = {nullptr};
+		// vk::raii::DescriptorPool descPool = {nullptr};
+		// vk::raii::DescriptorSetLayout descSetLayout = {nullptr};
+		// vk::raii::DescriptorSet descSet = {nullptr};
+		DescriptorSet descSet;
 		uint32_t ww,hh;
+
+		Sampler sampler;
 };

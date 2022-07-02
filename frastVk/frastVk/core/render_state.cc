@@ -324,6 +324,7 @@ bool SphericalEarthMovingCamera::handleMouseMotion(double x, double y) {
 	return false;
 }
 bool SphericalEarthMovingCamera::handleKey(int key, int scancode, int action, int mods) {
+
 	bool isDown = action == GLFW_PRESS or action == GLFW_REPEAT;
 	if (isDown) {
 		Map<Matrix<double,3,1>> acc { acc_ };
@@ -357,6 +358,7 @@ bool SphericalEarthMovingCamera::handleKey(int key, int scancode, int action, in
 	return false;
 }
 void SphericalEarthMovingCamera::step(double dt) {
+	// fmt::print(" - [SphericalEarthMovingCamera::step] dt {}\n", dt);
 	Map<Matrix<double,3,1>> vel { vel_ };
 	Map<Matrix<double,3,1>> acc { acc_ };
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );

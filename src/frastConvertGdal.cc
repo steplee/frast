@@ -578,7 +578,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 	for (int lvli = 0; lvli<lvls.size(); lvli++) {
 		int lvl = lvls[lvli];
 
-		outDset.sendCommand(Command{Command::BeginLvl,lvl});
+		outDset.sendCommand(DbCommand{DbCommand::BeginLvl,lvl});
 
 		uint64_t tileTlbr[4];
 		findWmTlbrOfDataset(tileTlbr, dset[0], lvl);
@@ -622,7 +622,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 						}
 
 						outTile.coord = coord;
-						outDset.sendCommand({Command::TileReady, outTile.bufferIdx});
+						outDset.sendCommand({DbCommand::TileReady, outTile.bufferIdx});
 						tilesInRow++;
 				}
 			}
@@ -639,7 +639,7 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 		}
 
 		outDset.blockUntilEmptiedQueue();
-		outDset.sendCommand(Command{Command::EndLvl, lvl});
+		outDset.sendCommand(DbCommand{DbCommand::EndLvl, lvl});
 		outDset.blockUntilEmptiedQueue();
 
 

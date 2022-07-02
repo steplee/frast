@@ -1,7 +1,6 @@
 #pragma once
 
-#include "frastVk/core/app.h"
-#include "frastVk/core/buffer_utils.h"
+#include "frastVk/core/fvkApi.h"
 
 
 struct EllipsoidSet {
@@ -13,10 +12,10 @@ struct EllipsoidSet {
 
 		constexpr static int maxEllipsoids = 8;
 
-		inline EllipsoidSet(BaseVkApp* app) : app(app) { }
+		inline EllipsoidSet(BaseApp* app) : app(app) { }
 
-		void renderInPass(RenderState& rs, vk::CommandBuffer cmd);
-		void init(uint32_t subpass);
+		void render(RenderState& rs, Command& cmd);
+		void init();
 
 		void unset(int i);
 		void set(int i, const float matrix[16], const float color[4]);
@@ -26,14 +25,17 @@ struct EllipsoidSet {
 		bool residency[maxEllipsoids] = {false};
 		int n_resident = 0;
 
-		BaseVkApp* app;
-		vk::raii::DescriptorPool descPool = {nullptr};
-		vk::raii::DescriptorSetLayout globalDescSetLayout = {nullptr}; // holds camera etc
-		vk::raii::DescriptorSet globalDescSet = {nullptr};
+		BaseApp* app;
+		// vk::raii::DescriptorPool descPool = {nullptr};
+		// vk::raii::DescriptorSetLayout globalDescSetLayout = {nullptr}; // holds camera etc
+		// vk::raii::DescriptorSet globalDescSet = {nullptr};
 
-		PipelineStuff pipelineStuff;
+		// PipelineStuff pipelineStuff;
+
+		DescriptorSet descSet;
+		GraphicsPipeline pipeline;
 
 		// Stores inverse MVP, as well as each ellps model matrix
-		ResidentBuffer globalBuffer;
+		ExBuffer globalBuffer;
 
 };

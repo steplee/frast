@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frastVk/core/fvkShaders.h"
+
 
 // -----------------------------------------------------------
 // Gt Impl
@@ -30,19 +32,30 @@ void GtTile<GtTypes,Derived>::render(typename GtTypes::RenderContext& gtrc) {
 		for (int mi=0; mi<meshIds.size(); mi++) {
 			auto idx = meshIds[mi];
 			auto &td = gtrc.pooledData.datas[idx];
+
+			// fmt::print(" - tile {} mesh {} index {} with {} inds\n", coord.toString(), mi, idx, td.residentInds);
 			if (td.residentInds <= 0) continue;
 
 			// TODO Uncomment these
 			//gtrc.cmd.bindVertexBuffers(0, vk::ArrayProxy<const vk::Buffer>{1, &*td.verts.buffer}, {0u});
 			//gtrc.cmd.bindIndexBuffer(*td.inds.buffer, 0u, vk::IndexType::eUint16);
 
-			if (sizeof(typename GtTypes::PushConstants) > 0) {
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(gtrc.cmd, 0, 1, &td.verts.buf, &offset);
+			vkCmdBindIndexBuffer(gtrc.cmd, td.inds, 0, VK_INDEX_TYPE_UINT16);
+
+			if (GtTypes::PushConstants::Enabled) {
 				typename GtTypes::PushConstants pushc{(Derived*)this, idx};
 				//gtrc.cmd.pushConstants(*gtrc.pipelineStuff.pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, vk::ArrayProxy<const typename GtTypes::PushConstants>{1, &pushc});
-				vkCmdPushConstants(gtrc.cmd, gtrc.gfxPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(typename GtTypes::PushConstants), &pushc);
+				vkCmdPushConstants(gtrc.cmd, gtrc.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(typename GtTypes::PushConstants), &pushc);
 			}
 
-			//gtrc.cmd.drawIndexed(td.residentInds, 1, 0,0,0);
+			// fmt::print(" - tile {} rendering {}v {}i\n", coord.toString(), td.residentVerts, td.residentInds);
+
+			// If the impl's shaders don't use push constants for getting the tile idx, we can also make
+			// it available as gl_InstanceIndex at no cost
+			// vkCmdDrawIndexed(gtrc.cmd, td.residentInds, 1, 0, 0, 0);
+			vkCmdDrawIndexed(gtrc.cmd, td.residentInds, 1, 0, 0, idx);
 		}
 		gtrc.drawCount += meshIds.size();
 	}
@@ -58,14 +71,15 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 	}
 
 	if (leaf() or invalid()) {
-		if (not sseIsCached) lastSSE = bb.computeSse(gtuc)*geoError;
+		if (not sseIsCached) lastSSE = bb.computeSse(gtuc.cameraData,geoError);
 		//if (coord.len < 9) lastSSE = 3;
 		//fmt::print(" - update {}\n", toString());
 		// fmt::print(" - {} has sse {}\n", coord.toString(), lastSSE);
 
 		if (!root() and lastSSE < gtuc.sseThresholdClose) {
 			// Should not close while opening a subtree
-			assert (gtuc.currentOpenAsk.ancestor == nullptr);
+			// That would mean the sse is higher for a child than an ancestor
+			// assert (gtuc.currentOpenAsk.ancestor == nullptr);
 			return UpdateStatus::eClose;
 
 		} else if (lastSSE > gtuc.sseThresholdOpen) {
@@ -95,21 +109,23 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 
 				bool anyChildrenWantOpen = false;
 				for (auto &child : children) {
-					child->lastSSE = child->bb.computeSse(gtuc)*geoError;
-					//if (child->coord.len < 9) child->lastSSE = 3;
-					if (child->lastSSE > gtuc.sseThresholdOpen) anyChildrenWantOpen = true;
-					// fmt::print(" - {} has sse {} (child)\n", coord.toString(), lastSSE);
+					child->lastSSE = child->bb.computeSse(gtuc.cameraData,child->geoError);
+					if (child->lastSSE > gtuc.sseThresholdOpen) {
+						anyChildrenWantOpen = true;
+						fmt::print(" - {} has sse {} (wants to shortcut open, ge {})\n", child->coord.toString(), child->lastSSE, child->geoError);
+					}
 				}
 
-#warning "cascading open disabled, there is a bug: TODO"
-				if (false and anyChildrenWantOpen) {
-				// if (anyChildrenWantOpen) {
+#warning "the cascading crash was fixed, but now something seems to be wrong with frustum culling when camera is inside the bbox"
+				// #warning "cascading open disabled, there is a bug: TODO"
+				// if (false and anyChildrenWantOpen) {
+				if (anyChildrenWantOpen) {
 					fmt::print(" - (t {}) some children want to open, shortcutting.\n", coord.toString());
 					loadMe = false;
 					// state = INNER;
 					flags |= OPENING;
 					for (auto &child : children) {
-						// child->state = LEAF;
+						child->state = LEAF;
 						// lastSSE was just compute and set on the child
 						child->update(gtuc, true);
 					}
@@ -128,7 +144,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 			} else {
 				// Even if some children are recursively loading and we dont 'loadMe', we still must sweep and add terminal children!
 				for (auto &c : children) {
-					if (c->terminal()) {
+					if ((c->terminal() and not c->openingAsLeaf()) or not (c->opening() or c->openingAsLeaf())) {
 						c->flags |= OPENING_AS_LEAF;
 						ask.tiles.push_back(c);
 					}
@@ -163,10 +179,10 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 		// TODO: first I will only support closing one level at a time. The full-recursive case is trickier
 		if (allClose) {
 
-			if (not sseIsCached) lastSSE = bb.computeSse(gtuc)*geoError;
+			if (not sseIsCached) lastSSE = bb.computeSse(gtuc.cameraData,geoError);
 			//if (coord.len < 9) lastSSE = 3;
 			if (lastSSE > gtuc.sseThresholdOpen) {
-				fmt::print(" - (t {}) children want to close, but this tile would just re-open. Not doing anything.)\n", coord.toString());
+				// fmt::print(" - (t {}) children want to close, but this tile would just re-open. Not doing anything.)\n", coord.toString());
 				return UpdateStatus::eNone;
 			}
 
@@ -183,7 +199,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 				children[i]->flags |= CLOSING;
 			}
 			newAsk.tiles.push_back((Derived*)this);
-			fmt::print(" - Asking to close {} ({} children)\n", coord.toString(), children.size());
+			// fmt::print(" - Asking to close {} ({} children)\n", coord.toString(), children.size());
 			gtuc.dataLoader.pushAsk(newAsk);
 
 			// Must return none!
@@ -263,10 +279,11 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 	// 1)
 
-	for (auto& root : roots) {
-		// fmt::print(" (update root {})\n", root->coord.toString());
-		root->update(gtuc);
-	}
+	if (updateAllowed)
+		for (auto& root : roots) {
+			// fmt::print(" (update root {})\n", root->coord.toString());
+			root->update(gtuc);
+		}
 
 	// Debug entire tree (prints a lot)
 	if (0) {
@@ -283,17 +300,18 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 	// 2)
 
+	// TODO :: scoop these up in a vector and update all at once!
 	auto writeImgDesc = [&](GtTileData& td, uint32_t idx) {
 		VkDescriptorImageInfo imgInfo { sampler, gtpd.datas[idx].tex.view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL };
 		gtpd.tileDescSet.update(VkWriteDescriptorSet{
 				VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
-				gtpd.globalDescSet, 0,
-				0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				gtpd.tileDescSet, 0,
+				idx, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				&imgInfo, 0, nullptr
 				});
 		// td.texOld.; // Free
 	};
-	auto checkWriteImgDesc = [&](RtTile* tile) {
+	auto checkWriteImgDesc = [&](typename GtTypes::Tile* tile) {
 		for (auto& idx : tile->meshIds) {
 			if (gtpd.datas[idx].mustWriteImageDesc) {
 				gtpd.datas[idx].mustWriteImageDesc = false;
@@ -351,7 +369,7 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 			if (r.isOpen) {
 				for (auto tile : r.tiles) {
-					fmt::print(" - handle {} (anc {})\n", tile->coord.toString(), r.ancestor ? r.ancestor->coord.toString() : "null");
+					// fmt::print(" - handle {} (anc {})\n", tile->coord.toString(), r.ancestor ? r.ancestor->coord.toString() : "null");
 					//if (r.ancestor) assert(r.ancestor->leaf() or r.ancestor->invalid());
 					// assert(tile->invalid());
 					assert(tile->openingAsLeaf());
@@ -370,6 +388,7 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 					}
 
 					tile->updateGlobalBuffer((typename GtTypes::GlobalBuffer*)gtpd.globalBuffer.mappedAddr);
+					checkWriteImgDesc(tile);
 				}
 			}
 
@@ -393,9 +412,10 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 				tile->loaded = true;
 
 				tile->updateGlobalBuffer((typename GtTypes::GlobalBuffer*)gtpd.globalBuffer.mappedAddr);
+				checkWriteImgDesc(tile);
 			}
 
-			//void RtTile::updateGlobalBuffer(RtTypes::GlobalBuffer& gpuBuffer) {
+			//void GtTile::updateGlobalBuffer(GtTypes::GlobalBuffer& gpuBuffer) {
 		}
 	}
 
@@ -403,12 +423,19 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 template <class GtTypes, class Derived>
 void GtRenderer<GtTypes,Derived>::render(RenderState& rs, Command& cmd) {
+
+	if (cfg.allowCaster) {
+		setCasterInRenderThread();
+	}
+
 	// Have a pointer indirection here for if we want to use the caster pipeline
 	GraphicsPipeline* thePipeline = nullptr;
 	//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 0, {1,&*globalDescSet}, nullptr);
 	//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipelineLayout, 1, {1,&*gtpd.descSet}, nullptr);
 	//cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelineStuff.pipeline);
-	thePipeline = &gfxPipeline;
+	thePipeline = (cfg.allowCaster and casterStuff.casterTextureSet and casterStuff.casterMask>0) ? &casterStuff.pipeline : &gfxPipeline;
+	// if (thePipeline == &casterStuff.pipeline) fmt::print(" - Using caster pipeline\n");
+	// thePipeline = &pipeline;
 
 	typename GtTypes::RenderContext gtrc { rs, gtpd, *thePipeline, cmd };
 
@@ -421,21 +448,40 @@ void GtRenderer<GtTypes,Derived>::render(RenderState& rs, Command& cmd) {
 	vkCmdDrawIndexed(fd.cmd, numInds, 1, 0, 0, 0);
 	simpleRenderPass.end(fd.cmd, fd);*/
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, *thePipeline);
+	// Fill the @mvp and @positionOffset members of the gpu-mapped @globalBuffer
+	//
+	typename GtTypes::GlobalBuffer* buf = (typename GtTypes::GlobalBuffer*)gtpd.globalBuffer.mappedAddr;
+	Vector3d offset;
+	rs.eyed(offset.data());
+	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
+	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
+	memcpy(buf->mvp, new_mvp.data(), 4*16);
+	buf->positionOffset[0] = -static_cast<float>(offset(0));
+	buf->positionOffset[1] = -static_cast<float>(offset(1));
+	buf->positionOffset[2] = -static_cast<float>(offset(2));
+	buf->positionOffset[3] = 0.f;
+
+
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, thePipeline->layout, 0, 1, &gtpd.globalDescSet.dset, 0, 0);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, thePipeline->layout, 1, 1, &gtpd.tileDescSet.dset, 0, 0);
+	if (thePipeline == &casterStuff.pipeline) {
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, thePipeline->layout, 2, 1, &casterStuff.dset.dset, 0, 0);
+	}
 
-	float mvp[16];
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, *thePipeline);
 
 	for (auto root : roots) {
 		root->render(gtrc);
 	}
 
+	if (GT_DEBUG and debugMode) renderDbg(rs, cmd);
+
 }
 
 
 template <class GtTypes, class Derived>
-void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, const AppConfig& cfg) {
+void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg) {
 	device = &d;
 
 	sampler.create(d, VkSamplerCreateInfo{
@@ -447,9 +493,10 @@ void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, Simp
 			// VkSamplerMipmapMode     mipmapMode;
 			// VkSamplerAddressMode    addressModeU; VkSamplerAddressMode    addressModeV; VkSamplerAddressMode    addressModeW;
 			VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+			// VK_FILTER_NEAREST, VK_FILTER_NEAREST,
 			// VK_SAMPLER_MIPMAP_MODE_LINEAR,
 			VK_SAMPLER_MIPMAP_MODE_NEAREST,
-			//VK_SAMPLER_ADDRESS_MODE_REPEAT
+			// VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT,
 			VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 
 			// float                   mipLodBias;
@@ -460,7 +507,7 @@ void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, Simp
 			// VkBool32                unnormalizedCoordinates;
 			0.f,
 			VK_FALSE, 0.f,
-			VK_FALSE, VK_COMPARE_OP_LESS,
+			VK_FALSE, VK_COMPARE_OP_NEVER,
 			0, 0,
 			VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
 			GtTypes::unnormalizedTextureCoords
@@ -472,7 +519,9 @@ void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, Simp
 	gtpd.globalBuffer.create(d);
 	gtpd.globalBuffer.map();
 
-	static_cast<Derived*>(this)->initPipelinesAndDescriptors(dpool, pass, cfg);
+	static_cast<Derived*>(this)->initPipelinesAndDescriptors(dpool, pass, q,cmd, cfg);
+
+	if (GT_DEBUG) initDebugPipeline(dpool, pass, q, cmd, cfg);
 
 	loader.init(d, 1);
 }
@@ -538,17 +587,24 @@ void GtDataLoader<GtTypes,Derived>::pushAsk(GtAsk<GtTypes>& ask) {
 	ask.ancestor = nullptr;
 }
 
+#warning "I see an issue where if I pan left and right, tiles are not closed until the pan back to them, then they are re-opened. Why? They should close when I turn away from them, and not do this step-down step-up I see..."
 template <class GtTypes, class Derived>
 void GtDataLoader<GtTypes,Derived>::internalLoop() {
 	fmt::print(" - [GtDataLoader] starting loader thread\n");
 
 	while (true) {
 		std::unique_lock<std::mutex> lck(mtx);
-		cv.wait(lck, [this]() { return doStop or asks.size(); });
+
+		if (asks.size()) {
+			// Don't sleep on cv if there is already data available
+			// lck is already acquired, don't need any code here
+		} else {
+			cv.wait(lck, [this]() { return doStop or asks.size(); });
+		}
 
 		if (doStop) break;
 
-		// Move the @asks member to a temporary buffer, and empty it.
+		// Move the @asks member to a temporary buffer, and empty it. Also release the lock
 		decltype(asks) curAsks;
 		{
 			curAsks = std::move(asks);
@@ -557,11 +613,9 @@ void GtDataLoader<GtTypes,Derived>::internalLoop() {
 		}
 
 		fmt::print(fmt::fg(fmt::color::olive), " - [#loader] handling {} asks\n", curAsks.size());
-		for (auto ask : curAsks)
-			if (ask.ancestor)
-				fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor {}\n", ask.ancestor->coord.toString());
-			else
-				fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor <null>\n");
+		// for (auto ask : curAsks)
+			// if (ask.ancestor) fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor {}\n", ask.ancestor->coord.toString());
+			// else fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor <null>\n");
 
 		while (curAsks.size()) {
 			auto &ask = curAsks.back();
@@ -578,7 +632,7 @@ void GtDataLoader<GtTypes,Derived>::internalLoop() {
 			int total_meshes = 0;
 			for (int i=0; i<ask.tiles.size(); i++) {
 				auto &tile = ask.tiles[i];
-				int n_meshes = static_cast<Derived*>(this)->loadTile(tile, decodedTileDatas[i]);
+				int n_meshes = static_cast<Derived*>(this)->loadTile(tile, decodedTileDatas[i], ask.isOpen);
 				// int n_meshes = 0;
 				total_meshes += n_meshes;
 			}
@@ -614,57 +668,124 @@ void GtDataLoader<GtTypes,Derived>::internalLoop() {
 		}
 
 		// TODO: If any asks failed, copy them back to the @asks member
-
 	}
 };
 
-////////////////////////////
-// GtBoundingBox
-////////////////////////////
 
-template <class GtTypes>
-float GtBoundingBox<GtTypes>::computeSse(const typename GtTypes::UpdateContext& gtuc) const {
 
-	/*
-	 gtuc:
-			RowMatrix4f mvp;
-			Vector3f zplus;
-			Vector3f eye;
-			Vector2f wh;
-			float two_tan_half_fov_y;
-	*/
+template <class GtTypes, class Derived>
+void GtRenderer<GtTypes,Derived>::initDebugPipeline(TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg) {
 
-	Vector3f ctr_ = (gtuc.mvp * ctr.homogeneous()).hnormalized();
-	// fmt::print(" - proj ctr {}\n", ctr_.transpose());
-	Eigen::AlignedBox<float,3> cube { Vector3f{-1,-1,0}, Vector3f{1,1,1} };
-	if (!cube.contains(ctr_)) {
-		Eigen::Matrix<float,8,3,Eigen::RowMajor> corners;
-		for (int i=0; i<8; i++)
-			corners.row(i) << i%2, (i/2)%2, (i/4);
-		RowMatrix3f R = q.toRotationMatrix();
-		// corners = ((corners * 2 - 1).rowwise() * R.transpose() * extents).rowwise() + ctr;
-		corners = ((corners.array() * 2 - 1).matrix() * R.transpose()).rowwise() + ctr.transpose();
-		bool anyInside = false;
-		for (int i=0; i<8; i++) if (cube.contains(corners.row(i).transpose())) { anyInside = true; break; }
+		assert(not loadShader(*device,
+				dbgPipeline.vs,
+				dbgPipeline.fs,
+				"rt/debugObb"));
 
-		// Neither the center is in the box, nor any corner. Therefore the SSE is zero.
-		if (!anyInside) return 0;
-	}
+		float viewportXYWH[4] = {
+			0,0,
+			(float)cfg.width,
+			(float)cfg.height
+		};
+		PipelineBuilder builder;
+		builder.depthTest = cfg.depth;
 
-	// Either center or any corner in box. Now evalauted oriented-box exterior distance to eye.
-	// To get that distance I use a the function "sdBox" from IQ's raymarching function collection.
-	// https://iquilezles.org/articles/distfunctions/
+		VertexInputDescription vid;
+		/*
+		VkVertexInputAttributeDescription attrPos   { 0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0 };
+		VkVertexInputAttributeDescription attrColor { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT,   4 };
+		vid.attributes = { attrPos, attrColor };
+		vid.bindings = { VkVertexInputBindingDescription { 0, 12, VK_VERTEX_INPUT_RATE_VERTEX } };
+		*/
 
-	RowMatrix3f R = q.toRotationMatrix();
-	Vector3f q = R.transpose() * (gtuc.eye - ctr);
-	float exteriorDistance = q.array().max(0.f).matrix().norm() + std::min(q.maxCoeff(), 0.f);
+		// Create buffers for each tile
 
-	float sse_without_geoErr = gtuc.wh(1) / (exteriorDistance * gtuc.two_tan_half_fov_y);
-	// fmt::print(" - (sseWoGeoErr {}) (extDist {})\n", sse_without_geoErr, exteriorDistance);
-	return sse_without_geoErr; // Note: Still multiply by geoError of tile
+		dbgPipeline.pushConstants.push_back(VkPushConstantRange{
+				// VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				VK_SHADER_STAGE_VERTEX_BIT,
+				0,
+				sizeof(GtDebugPushConstants)});
+
+		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, dbgPipeline.vs, dbgPipeline.fs);
+
+		// Create descriptors
+		//    Set0: GlobalData
+		//          binding0: UBO holding MVP as well as an array of model matrices etc. for each tile
+
+		// GlobalData
+		uint32_t globalDataBindingIdx = dbgDescSet.addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		dbgDescSet.create(dpool, {&dbgPipeline});
+
+		VkDescriptorBufferInfo bufferInfo { gtpd.globalBuffer, 0, sizeof(typename GtTypes::GlobalBuffer) };
+		dbgDescSet.update(VkWriteDescriptorSet{
+				VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+				dbgDescSet, 0,
+				0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				nullptr, &bufferInfo, nullptr
+				});
+
+
+		// Create pipeline
+
+		dbgPipeline.create(*device, viewportXYWH, builder, pass, 0);
+
 }
 
+template <class GtTypes, class Derived>
+void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs, Command& cmd) {
 
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dbgPipeline.layout, 0, 1, &dbgDescSet.dset, 0, 0);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dbgPipeline);
+
+	auto drawWithColor = [&](typename GtTypes::Tile* cur, float color[4]) {
+			auto obb = obbMap->get(cur->coord);
+			RowMatrix83f corners;
+			obb.getEightCorners(corners);
+
+			GtDebugPushConstants pushc;
+			for (int i=0; i<8; i++) {
+				pushc.posColors[i*8+0] = corners(i, 0);
+				pushc.posColors[i*8+1] = corners(i, 1);
+				pushc.posColors[i*8+2] = corners(i, 2);
+				pushc.posColors[i*8+3] = 1.f;
+
+				pushc.posColors[i*8+4] = color[0];
+				pushc.posColors[i*8+5] = color[1];
+				pushc.posColors[i*8+6] = color[2];
+				pushc.posColors[i*8+7] = color[3];
+			}
+
+			vkCmdPushConstants(cmd, dbgPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GtDebugPushConstants), &pushc);
+			vkCmdDraw(cmd, 24, 1, 0, 0);
+	};
+
+	// DFS and draw
+	std::stack<typename GtTypes::Tile*> stack;
+	for (auto root : roots) stack.push(root);
+
+	while (!stack.empty()) {
+		auto cur = stack.top();
+		stack.pop();
+
+		if (cur->leaf()) {
+
+			if (cur->terminal()) {
+				float color[4] = { 1.f, .2f, .2f, .5f };
+				drawWithColor(cur, color);
+			} else {
+				float color[4] = { 1.f, 1.f, 1.f, .5f };
+				drawWithColor(cur, color);
+			}
+
+
+		} else {
+
+			float color[4] = { 0.f, 1.f, 1.f, .3f };
+			drawWithColor(cur, color);
+
+			for (auto child : cur->children) stack.push(child);
+		}
+	}
+}
 
 
 
@@ -678,7 +799,7 @@ int main() {
 
 	for (int i=0; i<100; i++) {
 		fmt::print(" (update)\n");
-		GtUpdateContext<RtTypes> gtuc { renderer.loader, *renderer.obbMap, renderer.gtpd };
+		GtUpdateContext<GtTypes> gtuc { renderer.loader, *renderer.obbMap, renderer.gtpd };
 		gtuc.sseThresholdClose = .9;
 		gtuc.sseThresholdOpen = 1.5;
 		gtuc.two_tan_half_fov_y = 1.;
