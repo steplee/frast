@@ -486,14 +486,17 @@ void Dataset::getExistingLevels(std::vector<int>& out) const {
 
 bool Dataset::tileExists(const BlockCoordinate& bc, MDB_txn* txn) {
 	uint64_t lvl = bc.z();
-	if (lvl < 0 or lvl > MAX_LVLS-1) return false;
-	if (dbs[lvl] == INVALID_DB) return false;
+	if (lvl < 0 or lvl >= MAX_LVLS or dbs[lvl] == INVALID_DB) return false;
 	MDB_val key, val;
 	key.mv_data = (void*) &(bc.c);
 	key.mv_size = sizeof(BlockCoordinate);
 	if (auto err = mdb_get(txn, dbs[lvl], &key, &val)) {
 		if (err == MDB_NOTFOUND) return false;
-		else throw std::runtime_error(std::string{"(tileExists " + std::to_string(lvl) + ") mdb err "} + mdb_strerror(err));
+		else {
+			char buf[256];
+			sprintf(buf, "(tileExists %lu %lu %lu) mdb err %s", bc.z(),bc.y(),bc.x(), mdb_strerror(err));
+			throw std::runtime_error(std::string{buf});
+		}
 	}
 	return true;
 }
