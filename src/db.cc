@@ -2,6 +2,8 @@
 #include "image.h"
 #include "utils/solve.hpp"
 #include "utils/memcpy_utils.hpp"
+       #include <sys/stat.h>
+
 
 #include <cassert>
 #include <string>
@@ -15,6 +17,9 @@
 #include <array>
 #include <iomanip>
 #include <cmath>
+
+#include <fmt/color.h>
+#include <fmt/core.h>
 
 //#define DEBUG_RASTERIO
 #ifdef DEBUG_RASTERIO
@@ -61,14 +66,27 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	: path(path),
 	  readOnly(m == OpenMode::READ_ONLY)
 {
+	allowInflate = dopts.allowInflate;
+
 	for (int i=0; i<MAX_LVLS; i++) dbs[i] = INVALID_DB;
 
 	if (auto err = mdb_env_create(&env)) {
 		throw std::runtime_error(std::string{"mdb_env_create failed with "} + mdb_strerror(err));
 	}
 
-	mdb_env_set_mapsize(env, dopts.mapSize);
-	printf(" - Setting mapSize (initial  ) to %lu\n", dopts.mapSize);
+	if (readOnly) {
+
+		struct stat statbuf;
+		int res = stat(path.c_str(), &statbuf);
+
+		uint64_t fileSize = statbuf.st_size;
+		fileSize = fileSize * 2;
+		printf(" - (    readonly) Setting mapSize (fileSiz  ) to %lu\n", fileSize);
+		mdb_env_set_mapsize(env, fileSize);
+	} else {
+		printf(" - (not readonly) Setting mapSize (initial  ) to %lu\n", dopts.mapSize);
+		mdb_env_set_mapsize(env, dopts.mapSize);
+	}
 
 	mdb_env_set_maxdbs(env, MAX_LVLS+1);
 
@@ -79,7 +97,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	//if (not readOnly) flags |= MDB_NORDAHEAD;
 	mode_t fileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 	if (auto err = mdb_env_open(env, path.c_str(), flags, fileMode)) {
-		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err));
+		throw std::runtime_error(std::string{"mdb_env_open failed with "} + mdb_strerror(err) + " for " + path);
 	}
 
 	memset(&meta, 0, sizeof(DatasetMeta));
@@ -124,8 +142,11 @@ void Dataset::open_all_dbs() {
 		decode_meta_(txn);
 	}
 
+	// Disableing this: causes crash on Jetson with too much taken mem, no time to change code + recompress data
+	/*
 	mdb_env_set_mapsize(env, meta.fixedSizeMeta.mapSize);
 	printf(" - Setting mapSize (from meta) to %lu\n", meta.fixedSizeMeta.mapSize);
+	*/
 
 	for (int i=0; i<MAX_LVLS; i++) {
 		std::string name = std::string{"lvl"} + std::to_string(i);
@@ -189,6 +210,14 @@ bool Dataset::get(Image& out, const BlockCoordinate& coord, MDB_txn** givenTxn) 
 	bool ret = get_(eimg_, coord, theTxn);
 
 	if (ret) {
+
+		// Try to inflate before failing.
+		if (allowInflate and !getInflate_(out, coord, theTxn)) {
+			// inflate success
+			if (givenTxn == nullptr) endTxn(&theTxn);
+			return false;
+		}
+
 		if (givenTxn == nullptr) endTxn(&theTxn);
 		return ret != 0;
 	}
@@ -220,6 +249,89 @@ int Dataset::put_(MDB_val& val,  const BlockCoordinate& coord, MDB_txn* txn, boo
 	//std::cout << " - writing keylen " << key.mv_size << " vallen " << val.mv_size << " to lvl " << coord.z() << "\n";
 	auto err = mdb_put(txn, dbs[coord.z()], &key, &val, allowOverwrite ? 0 : MDB_NOOVERWRITE);
 	return err;
+}
+
+bool Dataset::getInflate_(Image& out, const BlockCoordinate& coord, MDB_txn* txn) {
+	uint64_t z = coord.z();
+	uint64_t y = coord.y();
+	uint64_t x = coord.x();
+
+	bool found_ancestor = false;
+	MDB_val key { 8, (void*)(&coord.c) };
+	MDB_val eimg_;
+	BlockCoordinate bc(0);
+
+	while (z > 0) {
+		z--;
+		y >>= 1;
+		x >>= 1;
+		bc = BlockCoordinate { z , y , x };
+
+		if (dbs[z]) {
+			if (not get_(eimg_, bc, txn)) {
+				found_ancestor = true;
+				break;
+			}
+		}
+	}
+
+	if (not found_ancestor) {
+		printf(" - getInflate (%lu %lu %lu) no ancestor found.\n",
+				coord.z(), coord.y(), coord.x());
+		return true;
+	}
+
+	// TODO: Move this to a class member to avoid allocs
+	Image tmp { out.h, out.w, out.format };
+	tmp.alloc();
+
+	// Decode.
+	{
+		EncodedImageRef eimg { eimg_.mv_size, (uint8_t*) eimg_.mv_data };
+		AtomicTimerMeasurement g(t_decodeImage);
+		bool ret = decode(tmp, eimg);
+		if (ret) return true;
+	}
+
+	// Sample the correct part of the image.
+	{
+		uint32_t lvlOffset = coord.z() - z;
+		uint32_t div = 1 << lvlOffset;
+		uint64_t y_off = div - 1 - (coord.y() % div);
+		uint64_t x_off = (coord.x() % div);
+		float y_off_pix = static_cast<float>(y_off * tileSize()) / div;
+		float x_off_pix = static_cast<float>(x_off * tileSize()) / div;
+
+		/*
+		float grid[8] = {
+			static_cast<float>((x_off+0) * tileSize()) / div,
+			static_cast<float>((y_off+0) * tileSize()) / div,
+
+			static_cast<float>((x_off+1) * tileSize()) / div,
+			static_cast<float>((y_off+0) * tileSize()) / div,
+
+			static_cast<float>((x_off+1) * tileSize()) / div,
+			static_cast<float>((y_off+1) * tileSize()) / div,
+
+			static_cast<float>((x_off+0) * tileSize()) / div,
+			static_cast<float>((y_off+1) * tileSize()) / div,
+		};
+		printf(" - getInflate (%lu %lu %lu) -> (%lu %lu %lu) grid [%f %f -> %f %f] (%u %u)\n",
+				coord.z(), coord.y(), coord.x(), z,y,x, grid[0], grid[1], grid[6], grid[7], lvlOffset, div);
+		tmp.remapRemap(out, grid, 2, 2);
+		*/
+
+		float H[9] = {
+			//1.f / div, 0, (float)x_off / div,
+			//0, 1.f / div, (float)y_off / div,
+			(float)div, 0, -(float)x_off_pix * div,
+			0, (float)div, -(float)y_off_pix * div,
+			0, 0, 1.f
+		};
+		tmp.warpAffine(out, H);
+	}
+
+	return false;
 }
 
 int Dataset::put(Image& in,  const BlockCoordinate& coord, MDB_txn** givenTxn, bool allowOverwrite) {
@@ -591,7 +703,7 @@ void DatasetWritable::w_loop() {
 
 	while (true) {
 		int nWaitingCommands = 0;
-		std::vector<Command> commands;
+		std::vector<DbCommand> commands;
 		//usleep(20'000);
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
@@ -599,7 +711,7 @@ void DatasetWritable::w_loop() {
 			w_cv.wait(lck, [this]{return doStop or pushedCommands.size();});
 			nWaitingCommands = pushedCommands.size();
 			while (pushedCommands.size()) {
-				commands.push_back(Command{});
+				commands.push_back(DbCommand{});
 				pushedCommands.pop_front(commands.back());
 			}
 
@@ -612,13 +724,13 @@ void DatasetWritable::w_loop() {
 			}
 		}
 
-		std::sort(commands.begin(), commands.end(), [](const Command& a, const Command& b) {
-				if (a.cmd == Command::BeginLvl) return true;
-				if (a.cmd == Command::EndLvl) return true;
-				if (a.cmd == Command::EraseLvl) return true;
-				if (b.cmd == Command::BeginLvl) return false;
-				if (b.cmd == Command::EndLvl) return false;
-				if (b.cmd == Command::EraseLvl) return false;
+		std::sort(commands.begin(), commands.end(), [](const DbCommand& a, const DbCommand& b) {
+				if (a.cmd == DbCommand::BeginLvl) return true;
+				if (a.cmd == DbCommand::EndLvl) return true;
+				if (a.cmd == DbCommand::EraseLvl) return true;
+				if (b.cmd == DbCommand::BeginLvl) return false;
+				if (b.cmd == DbCommand::EndLvl) return false;
+				if (b.cmd == DbCommand::EraseLvl) return false;
 				return a.data.tileBufferIdx < b.data.tileBufferIdx;
 		});
 
@@ -626,9 +738,9 @@ void DatasetWritable::w_loop() {
 		//if (commands.size() > 1) printf(" - (awoke to %d avail)\n", commands.size()); fflush(stdout);
 
 		for (auto &theCommand : commands) {
-			if (theCommand.cmd != Command::NoCommand) {
+			if (theCommand.cmd != DbCommand::NoCommand) {
 
-				if (theCommand.cmd == Command::BeginLvl) {
+				if (theCommand.cmd == DbCommand::BeginLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					printf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 					if (w_txn) endTxn(&w_txn);
@@ -643,7 +755,7 @@ void DatasetWritable::w_loop() {
 						tileBufferLendedIdx[i] = 0;
 						tileBufferIdxMtx[i].unlock();
 					}
-				} else if (theCommand.cmd == Command::EndLvl) {
+				} else if (theCommand.cmd == DbCommand::EndLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					printf(" - recv command to end lvl %d, with %d other cmds\n", theCommand.data.lvl, commands.size()); fflush(stdout);
 
@@ -667,7 +779,7 @@ void DatasetWritable::w_loop() {
 					//beginTxn(&w_txn, false);
 					nWaitingCommands--;
 					printf(" - recv command to end lvl %d ... done\n", theCommand.data.lvl); fflush(stdout);
-				} else if (theCommand.cmd == Command::EraseLvl) {
+				} else if (theCommand.cmd == DbCommand::EraseLvl) {
 					std::unique_lock<std::mutex> lck(w_mtx);
 					dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 					if (w_txn) {
@@ -701,7 +813,7 @@ void DatasetWritable::w_loop() {
 
 				// Only commit a full set. That helps the in-order-ness
 				int setSize = buffersPerWorker / 2;
-				if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
+				if (theCommand.cmd == DbCommand::TileReady or theCommand.cmd == DbCommand::TileReadyOverwrite) {
 					int theTileIdx = theCommand.data.tileBufferIdx;
 					int theWorker = theTileIdx / buffersPerWorker;
 					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
@@ -713,7 +825,7 @@ void DatasetWritable::w_loop() {
 							if (theTileIdx_ < 0) theTileIdx_ = buffersPerWorker + theTileIdx_;
 							//printf("%d ",theTileIdx_);
 							WritableTile& tile = tileBuffers[theTileIdx_];
-							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
+							this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == DbCommand::TileReadyOverwrite);
 							curTransactionWriteCount++;
 						}
 						//printf("\n");
@@ -722,7 +834,7 @@ void DatasetWritable::w_loop() {
 						tileBufferCommittedIdx[theWorker] += setSize;
 						tileBufferIdxMtx[theWorker].unlock();
 					}
-					theCommand.cmd = Command::NoCommand;
+					theCommand.cmd = DbCommand::NoCommand;
 				}
 				nWaitingCommands--;
 			}
@@ -751,8 +863,8 @@ void DatasetWritable::w_loop() {
 
 	while (true) {
 		int nWaitingCommands = 0;
-		Command theCommand;
-		theCommand.cmd = Command::NoCommand;
+		DbCommand theCommand;
+		theCommand.cmd = DbCommand::NoCommand;
 		{
 			std::unique_lock<std::mutex> lck(w_mtx);
 			
@@ -774,20 +886,20 @@ void DatasetWritable::w_loop() {
 
 			// Lock the mutex if creating or ending a level.
 			// The TileReady command needn't hold mutex.
-			if (theCommand.cmd == Command::BeginLvl) {
+			if (theCommand.cmd == DbCommand::BeginLvl) {
 				dprintf(" - recv command to start lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) endTxn(&w_txn);
 				this->createLevelIfNeeded(theCommand.data.lvl);
 				beginTxn(&w_txn, false);
 				nWaitingCommands--;
 				curTransactionWriteCount = 0;
-			} else if (theCommand.cmd == Command::EndLvl) {
+			} else if (theCommand.cmd == DbCommand::EndLvl) {
 				dprintf(" - recv command to end lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				assert(w_txn);
 				endTxn(&w_txn);
 				//beginTxn(&w_txn, false);
 				nWaitingCommands--;
-			} else if (theCommand.cmd == Command::EraseLvl) {
+			} else if (theCommand.cmd == DbCommand::EraseLvl) {
 				dprintf(" - recv command to erase lvl %d\n", theCommand.data.lvl); fflush(stdout);
 				if (w_txn) {
 					printf(" - Cannot have open w_txn while erasing level. Should sent 'EndLvl' first.\n"); fflush(stdout);
@@ -802,13 +914,13 @@ void DatasetWritable::w_loop() {
 
 		//printf(" - (awoke to %d avail) handling push of tile %d\n", nAvailable, theTileIdx); fflush(stdout);
 
-		if (theCommand.cmd != Command::NoCommand) {
-			if (theCommand.cmd == Command::TileReady or theCommand.cmd == Command::TileReadyOverwrite) {
+		if (theCommand.cmd != DbCommand::NoCommand) {
+			if (theCommand.cmd == DbCommand::TileReady or theCommand.cmd == DbCommand::TileReadyOverwrite) {
 				int theTileIdx = theCommand.data.tileBufferIdx;
 				int theWorker = theTileIdx / buffersPerWorker;
 				//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
 				WritableTile& tile = tileBuffers[theTileIdx];
-				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == Command::TileReadyOverwrite);
+				this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, theCommand.cmd == DbCommand::TileReadyOverwrite);
 				curTransactionWriteCount++;
 
 				tileBufferIdxMtx[theWorker].lock();
@@ -886,7 +998,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		perThreadTileCache[i] = LruCache<uint64_t, Image>(WRITER_CACHE_CAPACITY);
 	}
 
-	pushedCommands = RingBuffer<Command>(nBuffers + 16);
+	pushedCommands = RingBuffer<DbCommand>(nBuffers + 16);
 	w_thread = std::thread(&DatasetWritable::w_loop, this);
 }
 
@@ -900,7 +1012,7 @@ bool DatasetWritable::hasOpenWrite() {
 	return (not pushedCommands.empty()) or w_txn != nullptr;
 }
 
-void DatasetWritable::sendCommand(const Command& cmd) {
+void DatasetWritable::sendCommand(const DbCommand& cmd) {
 	{
 		std::unique_lock<std::mutex> lck(w_mtx);
 		bool full = pushedCommands.isFull();
@@ -932,13 +1044,13 @@ void DatasetWritable::sendCommand(const Command& cmd) {
 	w_cv.notify_one();
 
 	/*
-	if (cmd.cmd == Command::EndLvl)
+	if (cmd.cmd == DbCommand::EndLvl)
 		while (w_txn) {
 			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
 			usleep(500'000);
 		}
 		*/
-	if (cmd.cmd == Command::EndLvl)
+	if (cmd.cmd == DbCommand::EndLvl)
 		while (w_txn) {
 			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
 			usleep(100'000);
@@ -1089,6 +1201,9 @@ bool DatasetReader::rasterIoQuad(Image& out, const double quad[8]) {
 	dprintf(" - Edge Len: %f with ow oh %d %d\n", edgeLen, ow, oh);
 	uint64_t tileTlbr[4];
 	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, edgeLen, bboxWm, r_txn_);
+	if (lvl == BAD_LEVEL_CHOSEN) {
+		return true;
+	}
 	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 	/*
@@ -1230,6 +1345,11 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 
 	uint64_t tileTlbr[4];
 	uint64_t lvl = findBestLvlAndTlbr_dataDependent(tileTlbr, accessCache.capacity, oh,ow, bboxWm, r_txn_);
+	if (lvl == BAD_LEVEL_CHOSEN) {
+		auto err = endTxn(&r_txn_, true);
+		return true;
+	}
+
 	double s = (.5 * (1<<lvl)) / WebMercatorMapScale;
 
 
@@ -1282,7 +1402,7 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	float inset_tl_y = -(sh - in_corners[3]) * scale_y;
 
 
-	printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
+	//printf(" - scale and offset: %f %f %f %f\n", scale_x, scale_y, inset_tl_x, inset_tl_y);
 	assert(scale_x > 0.f);
 	assert(scale_y > 0.f);
 	assert(inset_tl_x <= 0.f); assert(inset_tl_y <= 0.f);
@@ -1314,9 +1434,9 @@ bool DatasetReader::rasterIo(Image& out, const double bboxWm[4]) {
 	int push_w = accessCache.w, push_h = accessCache.h;
 	accessCache.w = sw;
 	accessCache.h = sh;
-	printf(" - Warping %d %d %d -> %d %d %d\n",
-			accessCache.w, accessCache.h, accessCache.channels(),
-			out.w, out.h, out.channels());
+	// printf(" - Warping %d %d %d -> %d %d %d\n",
+			// accessCache.w, accessCache.h, accessCache.channels(),
+			// out.w, out.h, out.channels());
 	{
 		AtomicTimerMeasurement g(t_warp);
 		accessCache.warpAffine(out, A);
@@ -1411,9 +1531,9 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 				else if (channels() == 3) memcpyStridedOutputFlatInput<uint16_t,3>(dst, src, sw, tileSize(), tileSize());
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint16_t,4>(dst, src, sw, tileSize(), tileSize());
 			} else {
-				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*channels()) + xi*(tileSize()*channels());
+				uint8_t* dst = (out.buffer) + (ny-1-yi)*(tileSize()*sw*out.channels()) + xi*(tileSize()*out.channels());
 				if (out.channels() == 4 and channels() == 1) memcpyStridedOutputFlatInputReplicateRgbPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
-				if (out.channels() == 4 and channels() == 3) memcpyStridedOutputFlatInputPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
+				else if (out.channels() == 4 and channels() == 3) memcpyStridedOutputFlatInputPadAlpha<uint8_t>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 1) memcpyStridedOutputFlatInput<uint8_t,1>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
 				else if (channels() == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, accessCache1.buffer, sw, tileSize(), tileSize());
@@ -1432,7 +1552,7 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 			throw std::runtime_error(std::string{"(fetchBlocks) mdb_txn_end failed with "} + mdb_strerror(err));
 
 	// Populate cache.
-	printf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
+	//printf(" - setting fetched cache (%d %d, out %d %d).\n", fetchedCache.h, fetchedCache.w, out.h, out.w);
 	{
 	//AtomicTimerMeasurement g(t_encodeImage);
 	fetchedCache = out;
@@ -1447,23 +1567,33 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 }
 
 
+static constexpr int BAD_FLOOR_VALUE = -10;
 static int floor_log2_i_(float x) {
-	assert(x >= 0);
+	// assert(x >= 0);
+	if (x <= 0) return BAD_FLOOR_VALUE;
 
 	// Could also use floating point log2.
 	// Could also convert x to an int and use intrinsics.
-	int i = 0;
-	int xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
+	uint32_t i = 0;
+	uint32_t xi = x * 4.f; // offset by 2^2 to get better resolution, if x < 1.
+
+	if (xi >= (1<<31)) return 32;
 
 	// Bad quality
 	//while ((1<<(i+1)) < xi) { i++; };
 	// Medium quality
-	while ((1<<i) < xi) { i++; };
+	while ((1u<<i) < xi) {
+		// fmt::print(" - floor_log2 :: (x {}) (xi {}) (i {}) (1i {})\n", x,xi,i,1u<<i);
+		i++;
+		if (i > 31) return BAD_FLOOR_VALUE;
+	};
 	// Good quality
 	//i=1; while ((1<<(i-1)) < xi) { i++; };
-	return i-2;
+	int out = static_cast<int>(i)-2;
+	return out >= 0 ? out : BAD_FLOOR_VALUE;
 }
 
+/*
 uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]) {
 	assert(false); // deprecated
 
@@ -1498,6 +1628,7 @@ uint64_t DatasetReader::findBestLvlForBoxAndRes(int imgH, int imgW, const double
 
 	return lvl;
 }
+*/
 
 uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint32_t outCapacity, int imgH, int imgW, const double bboxWm[4], MDB_txn* txn) {
 	double boxW = bboxWm[2] - bboxWm[0];
@@ -1518,6 +1649,11 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 	// (1)
 	float x = (edgeLen / static_cast<float>(std::min(imgH,imgW))) * (tileSize());
 	int lvl_ = floor_log2_i_(WebMercatorCellSizesf[0] / x);
+	if (lvl_ == BAD_FLOOR_VALUE) {
+		printf(" - BAD FLOOR VALUE : Given bboxWm %lfw %lfh, edge %f, tileSize() %d, selecting level %d\n", bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],edgeLen,tileSize(),lvl_);
+		// fmt::print(fmt::fg(fmt::color::red), " - BAD FLOOR VALUE : Given bboxWm {}w {}h, edge {}, tileSize() {}, selecting level {}\n", bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],edgeLen,tileSize(),lvl_);
+		return BAD_LEVEL_CHOSEN;
+	}
 	//printf(" - Given bboxWm %lfw %lfh, tileSize() %d, selecting level %d with cell size %f\n",
 			//bboxWm[2]-bboxWm[0],bboxWm[3]-bboxWm[1],tileSize(),lvl_,WebMercatorCellSizesf[lvl_]);
 
@@ -1575,9 +1711,10 @@ uint64_t DatasetReader::findBestLvlAndTlbr_dataDependent(uint64_t tlbr[4], uint3
 			//printf(" - (findBestLvlAndTlbr_dataDependent) missing tile on lvl %d, going down one to %d\n", lvl+1,lvl);
 		}
 
-		if (lvl <= 0) {
+		if (lvl <= 0 or lvl >= 99) {
 			printf(" - (findBestLvlAndTlbr) picked lvl %d, but searched all the way down to lvl 0 and could not find tiles to cover it.\n", lvl_);
-			throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
+			//throw std::runtime_error(std::string{"(findBestLvlAndTlbr) failed to find level with tiles covering it"});
+			return BAD_LEVEL_CHOSEN;
 		}
 	}
 

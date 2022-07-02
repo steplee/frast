@@ -18,11 +18,13 @@ extern "C" {
 
 
 class DatasetReaderIterator;
+class DatasetReaderIteratorNoImages;
 
 constexpr int MAX_LVLS = 26;
 constexpr int MAX_READER_THREADS = 4;
 constexpr int READER_TILE_CACHE_SIZE = 64;
 constexpr int WRITER_CACHE_CAPACITY = 16 /* times nthreads */;
+constexpr uint32_t BAD_LEVEL_CHOSEN = 55;
 
 // Note: WebMercator the size of the map is actually 2x this.
 constexpr double WebMercatorMapScale = 20037508.342789248;
@@ -87,6 +89,7 @@ struct DatabaseOptions {
 	//uint64_t mapSize = 30lu * (1lu << 30lu); // x 1GB
 	uint64_t mapSize = 100lu * (1lu << 30lu); // x 1GB
 	bool threadLocalStorage = true;
+	bool allowInflate = false;
 };
 
 struct DatasetMeta {
@@ -132,6 +135,7 @@ class Dataset {
 		~Dataset();
 
 		bool get(Image& out, const BlockCoordinate& coord, MDB_txn** txn);
+		bool getInflate_(Image& out, const BlockCoordinate& coord, MDB_txn* txn);
 		bool get(std::vector<uint8_t>& out, const BlockCoordinate& coord, MDB_txn** txn); // By re-using output buffer, allocations will stop happening eventually
 		int get_(MDB_val& out, const BlockCoordinate& coord, MDB_txn* txn);
 		int put(Image& in,  const BlockCoordinate& coord, MDB_txn** txn, bool allowOverwrite=false);
@@ -195,8 +199,10 @@ class Dataset {
 
 	protected:
 		friend class DatasetReaderIterator;
+		friend class DatasetReaderIteratorNoImages;
 		std::string path;
 		bool readOnly;
+		bool allowInflate = false;
 		bool doStop = false;
 
 		MDB_env *env = nullptr;
@@ -249,7 +255,7 @@ struct WritableTile {
 /*
  * Simple type to help an app control the DatasetWritable writer thread asynchronously.
  */
-struct Command {
+struct DbCommand {
 	enum Type : int32_t {
 		NoCommand, BeginLvl, EndLvl, EraseLvl, TileReady, TileReadyOverwrite
 	} cmd = NoCommand;
@@ -285,7 +291,7 @@ class DatasetWritable : public Dataset {
 		WritableTile& blockingGetTileBufferForThread(int thread);
 
 		//void push(WritableTile& tile);
-		void sendCommand(const Command& cmd);
+		void sendCommand(const DbCommand& cmd);
 
 		// True if 'EndLvl' has not been processed
 		bool hasOpenWrite();
@@ -316,7 +322,7 @@ class DatasetWritable : public Dataset {
 
 		// A worker pushes the index of the buffer to this list. It never grows larger then N.
 		// If it would, sendCommand() blocks
-		RingBuffer<Command> pushedCommands;
+		RingBuffer<DbCommand> pushedCommands;
 
 		// LMDB has bad performance for very large write transactions.
 		// So break up large ones.
@@ -361,11 +367,9 @@ class DatasetReader : public Dataset {
 		// Image should already be allocated.
 		// false on success.
 		bool rasterIo(Image& out, const double bbox[4]);
-
+		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0);
 		// Access a quad in the projection coordinate system (e.g. WM)
 		bool rasterIoQuad(Image& out, const double quad[8]);
-
-		int fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0);
 
 		// Shared by all threads
 		bool getCached(Image& out, const BlockCoordinate& coord, MDB_txn** txn);

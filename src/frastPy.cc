@@ -98,6 +98,58 @@ struct DatasetReaderIterator {
 		return py::make_tuple(coord, result);
 	}
 };
+struct DatasetReaderIteratorNoImages {
+	DatasetReader* dset;
+	MDB_txn* txn = nullptr;
+	MDB_cursor* cursor = nullptr;
+	int lvl;
+	int ii = 0;
+
+	inline DatasetReaderIteratorNoImages(DatasetReader* dset, int lvl) : dset(dset), lvl(lvl) {
+	}
+	inline void init() {
+		printf(" - DRI constructor.\n");
+		if (txn) dset->endTxn(&txn);
+		dset->beginTxn(&txn,true);
+
+		if (dset->dbs[lvl] == INVALID_DB) {
+			printf(" - iterLevel called on invalid lvl %d\n", lvl);
+		}
+		if (mdb_cursor_open(txn, dset->dbs[lvl], &cursor))
+			throw std::runtime_error("Failed to open cursor.");
+	}
+	inline ~DatasetReaderIteratorNoImages() {
+		printf(" - DRI destructor.\n"); fflush(stdout);
+		if (cursor) mdb_cursor_close(cursor);
+		cursor = nullptr;
+		if (txn) dset->endTxn(&txn);
+	}
+
+	inline BlockCoordinate next() {
+		MDB_val key, val;
+		BlockCoordinate coord { 0 };
+		if (cursor == nullptr) throw py::stop_iteration();
+		if (ii++ == 0) {
+			if (mdb_cursor_get(cursor, &key, &val, MDB_FIRST)) {
+				printf(" - iterLevel all on empty db lvl\n");
+				mdb_cursor_close(cursor); cursor = nullptr;
+				if (txn) dset->endTxn(&txn);
+				throw py::stop_iteration();
+			} else {
+				coord = BlockCoordinate(*static_cast<uint64_t*>(key.mv_data));
+			}
+		} else {
+			if (mdb_cursor_get(cursor, &key, &val, MDB_NEXT)) {
+				throw py::stop_iteration();
+				mdb_cursor_close(cursor); cursor = nullptr;
+				if (txn) dset->endTxn(&txn);
+			} else
+				coord = BlockCoordinate(*static_cast<uint64_t*>(key.mv_data));
+		}
+
+		return coord;
+	}
+};
 
 PYBIND11_MODULE(frastpy, m) {
 
@@ -112,6 +164,12 @@ PYBIND11_MODULE(frastpy, m) {
 		.def(py::init<DatasetReader*, int>())
 		.def("__iter__", [](DatasetReaderIterator* it) { it->init(); return it; })
 		.def("__next__", [](DatasetReaderIterator* it) {
+				return it->next();
+		});
+    py::class_<DatasetReaderIteratorNoImages>(m, "DatasetReaderIteratorNoImages")
+		.def(py::init<DatasetReader*, int>())
+		.def("__iter__", [](DatasetReaderIteratorNoImages* it) { it->init(); return it; })
+		.def("__next__", [](DatasetReaderIteratorNoImages* it) {
 				return it->next();
 		});
 
@@ -237,9 +295,10 @@ PYBIND11_MODULE(frastpy, m) {
 
 
 				{
-				py::gil_scoped_release release;
-				Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
-				dset.rasterIo(imgView, tlbr);
+					py::gil_scoped_release release;
+					// Image imgView (outh,outw, dset.channels()==3?Image::Format::RGB:dset.channels()==4?Image::Format::RGBN:Image::Format::GRAY, (uint8_t*)bufIn.ptr);
+					Image imgView (outh,outw, dset.format(), (uint8_t*)bufIn.ptr);
+					dset.rasterIo(imgView, tlbr);
 				}
 
 				return result;
@@ -298,8 +357,10 @@ PYBIND11_MODULE(frastpy, m) {
 
 		.def("iterTiles", [](DatasetReader& dset, int lvl) {
 				return new DatasetReaderIterator(&dset, lvl);
-		});
-
+		})
+		.def("iterCoords", [](DatasetReader& dset, int lvl) {
+				return new DatasetReaderIteratorNoImages(&dset, lvl);
+		})
 		;
 
 }

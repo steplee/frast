@@ -10,6 +10,19 @@ So this suite of several programs and one static library attempts to be better f
 
 It offers tools to convert from a GDAL supported format to an internal one (using gdal itself), and a library that amongst others, allows something equivalent to `RasterIO`.
 
+# FrastVk
+Besides the frast data storage code, there is a completely seperate Vulkan framework to help build applications, called `fvk`. This should really be its own repo. There are basic Vulkan wrapper types that take care of handling tedious Vulkan structs and object management. There are also some classes to help render various things. The most substantive is the `GtRenderer` class, which is a generic tree-based level-of-detailing renderer. There are two specializations: `rt` and `ftr`. `ftr` stands for "frast tiled renderer", it renders 2.5 WebMercator color and DTED tiles. `rt` renders google-earth data. The downloader is elsewhere...
+
+Both `rt` and `ftr` support "casting", which uses a seperate shader that takes upto two more textures and projection matrices and renders those textures from the perspective of the projeciton matrices. This can be used to overlay a video from a camera that was on an aircraft for example, while also rendering the true data underneath. You could do this in multiple passes, but the way its implemented is with one pass that takes all the matrices and textures up front and blends the overlaid video directly in one shader.
+
+My original code had two different implementations for `rt` and `ftr`, but this had a lot of near-duplicate code. So I tried to find what was common and what was unique and how to share as much code as possible. `GtRenderer` makes use of CRTP. This is my first time using it for anything non-trivial. You need to specialize a bunch of stuff, and I ended up having to add things as I went, but overall I'm happy with how it turned out.
+My original code also did not have access to bounding boxes to evaluate screen-space-error until the tiles were loaded from disk. This means each level had to be loaded sequentially! By precomputing the oriented bounding boxes, you can shortcut levels and directly load ancestors. This requires an extra prep step which is not ideal, but worth it.
+
+All shaders must follow the `frastVk/shaders/<group>/<name>.<type>.glsl`. They can be compiled (assuming zsh) with:
+```
+python3 -m pysrc.compile_shaders --srcFiles frastVk/shaders/**/*.glsl --dstName frastVk/shaders/compiled/all.cc --targetEnv='--target-env vulkan1.2'
+```
+
 
 ### Dependencies
   - Eigen
@@ -17,6 +30,13 @@ It offers tools to convert from a GDAL supported format to an internal one (usin
   - OpenCV 4+
   - Clang
 
+
+# FrastVk Notes:
+  - There is a big issue with my tree implementation for both `tiled_renderer2` and `rt`. It requires all children to close before closing the parent. This means that while rendering a deep level, a bunch out-of-frame but still high-res tiles must be resident.
+  - The rocktree data includes an octant mask to help with, but I currently don't use it. Basically the vertices are organized in a way that allows rendering e.g. 3/8 tiles and not requiring having the sibiling still loaded. The parent can be partially rendered with the other 5/8 parts. This is a better approach.
+
+#### FVK RT Sample Images
+![fvk rt example](/docs/fvk_rt.jpg)
 
 ### TODO
   - ~~Fix the bilinear interpolation in convertGdal.cc. It works when the number of sample points is large (128), but it should work for a very small grid too (like 4x4).~~

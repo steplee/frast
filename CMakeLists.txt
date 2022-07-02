@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.18)
 
 project(frast)
 
+EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
+if (${ARCHITECTURE} STREQUAL "x86_64")
+	set (IS_ARM FALSE)
+else()
+	set (IS_ARM TRUE)
+endif()
+
+
 ##################
 #   Options
 ##################
@@ -46,8 +54,12 @@ find_package(pybind11 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
-set(cxx_opts " -march=native -O3 -fopenmp -Werror=return-type ")
-#set(cxx_opts "  -O3 -fopenmp -Werror=return-type ")
+if (IS_ARM)
+	set(cxx_opts "  -O3 -fopenmp -Werror=return-type ")
+	link_directories(/usr/lib/aarch64-linux-gnu)
+else()
+	set(cxx_opts "  -O3 -fopenmp -march=native -Werror=return-type ")
+endif()
 set(includes "")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")

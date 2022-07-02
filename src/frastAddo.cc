@@ -53,7 +53,7 @@ int removeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvls)
 
 	for (int i=0; i<existingLvls.size()-1; i++) {
 		printf(" - (sending cmd to erase lvl %d)\n", existingLvls[i]);
-		dset.sendCommand(Command{Command::EraseLvl, existingLvls[i]});
+		dset.sendCommand(DbCommand{DbCommand::EraseLvl, existingLvls[i]});
 	}
 
 	return 0;
@@ -149,7 +149,7 @@ int safeRemoveOverviews(DatasetWritable& dset, const std::vector<int>& existingL
 		nxtLvlTiles = std::move(curLvlTiles);
 
 		//printf(" - (sending cmd to erase lvl %d)\n", existingLvls[i]);
-		//dset.sendCommand(Command{Command::EraseLvl, existingLvls[i]});
+		//dset.sendCommand(DbCommand{DbCommand::EraseLvl, existingLvls[i]});
 	}
 
 	return 0;
@@ -192,7 +192,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 		{
 			int tid = omp_get_thread_num();
 			if (tid == 0) {
-				dset.sendCommand(Command{Command::BeginLvl, (int32_t) lvl});
+				dset.sendCommand(DbCommand{DbCommand::BeginLvl, (int32_t) lvl});
 				dset.blockUntilEmptiedQueue();
 			}
 		}
@@ -272,7 +272,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 						encode(wtile.eimg, childImg);
 					}
 					wtile.coord = myCoord;
-					dset.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+					dset.sendCommand(DbCommand{DbCommand::TileReady, wtile.bufferIdx});
 					tilesInRow++;
 				}
 			}
@@ -293,7 +293,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 #pragma omp barrier
 		//printf(" - post loop, tid: %d\n", tid);
 		if (tid == 0) {
-			dset.sendCommand(Command{Command::EndLvl, (int32_t) lvl});
+			dset.sendCommand(DbCommand{DbCommand::EndLvl, (int32_t) lvl});
 
 		}
 #pragma omp barrier

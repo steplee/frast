@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fmt/core.h>
+
 // Inteded for use only in db.cc
 
 // Assumes channelStride = 1.
@@ -24,6 +26,7 @@ void memcpyStridedOutputFlatInputReplicateRgbPadAlpha(T* dst, const T* src, size
 		dst[y*rowStride*4 + x*4 + 0] = *(src  );
 		dst[y*rowStride*4 + x*4 + 1] = *(src  );
 		dst[y*rowStride*4 + x*4 + 2] = *(src++);
+		// dst[y*rowStride*4 + x*4 + 3] = 255;
 	}
 }
 

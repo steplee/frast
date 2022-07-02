@@ -62,14 +62,14 @@ int main(int argc, char** argv) {
 	sprintf(cmd, "ls '%s'", inDsetPaths[0].c_str());
 	int ret1 = system(cmd);
 	if (ret1) {
-		printf(" - Command \"%s\" failed, are you sure all input dsets exist?", cmd);
+		printf(" - DbCommand \"%s\" failed, are you sure all input dsets exist?", cmd);
 		return 1;
 	}
 	sprintf(cmd, "cp -r '%s' '%s'", inDsetPaths[0].c_str(), outDsetPath.c_str());
 	printf(" - Running \"%s\"\n", cmd);
 	int ret2 = system(cmd);
 	if (ret1) {
-		printf(" - Command \"%s\" failed, are you sure all input dsets exist, and parent out dir exists and is writable?", cmd);
+		printf(" - DbCommand \"%s\" failed, are you sure all input dsets exist, and parent out dir exists and is writable?", cmd);
 		return 1;
 	}
 	printf(" - Done running cp\n", cmd);
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
 		for (int dseti=0; dseti<inDsets.size(); dseti++) {
 			auto& inDset = *inDsets[dseti];
 
-			outDset.sendCommand(Command{Command::BeginLvl,lvl});
+			outDset.sendCommand(DbCommand{DbCommand::BeginLvl,lvl});
 			outDset.blockUntilEmptiedQueue();
 
 
@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
 							seen.insert(bc.c);
 							auto &wtile = outDset.blockingGetTileBufferForThread(tid);
 							wtile.fillWith(bc, val);
-							outDset.sendCommand(Command{Command::TileReady, wtile.bufferIdx});
+							outDset.sendCommand(DbCommand{DbCommand::TileReady, wtile.bufferIdx});
 							printf(" - No collision on tile %luz %luy %lux [dset %d / %d], size %zu\n",
 									bc.z(),bc.y(),bc.x(),dseti+1,inDsets.size(), val.mv_size);
 						} else {
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
 								}
 
 								wtile.coord = bc;
-								outDset.sendCommand(Command{Command::TileReadyOverwrite, wtile.bufferIdx});
+								outDset.sendCommand(DbCommand{DbCommand::TileReadyOverwrite, wtile.bufferIdx});
 							}
 						}
 						outDset.blockUntilEmptiedQueue();
@@ -206,7 +206,7 @@ int main(int argc, char** argv) {
 
 			if (inDset.endTxn(&r_txn)) throw std::runtime_error("failed to end txn");
 
-			outDset.sendCommand(Command{Command::EndLvl,lvl});
+			outDset.sendCommand(DbCommand{DbCommand::EndLvl,lvl});
 			outDset.blockUntilEmptiedQueue();
 
 		}
