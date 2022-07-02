@@ -152,14 +152,14 @@ struct TestRtApp : public BaseApp {
 		if (textSet) {
 			constexpr double R1         = (6378137.0);
 			RowMatrix4f model { RowMatrix4f::Identity() };
-			Vector3f p {0.115938, -0.879261  ,0.468235 };
+			Vector3f p {0.116107 ,-0.876376  ,0.465961};
 			model.topRightCorner<3,1>() = p;
 			model.block<3,1>(0,2) = -model.topRightCorner<3,1>();
 			model.block<3,1>(0,0) =  model.block<3,1>(0,2).cross(Eigen::Vector3f::UnitZ()).normalized();
 			model.block<3,1>(0,1) = model.block<3,1>(0,2).cross(model.block<3,1>(0,0)).normalized();
 			// float scale = static_cast<float>(R1)*1.85f * (sqrt(1.f+.01f*(p-eye).norm())-1.f) + 19.0;
 			// float scale = static_cast<float>(R1)*1.85f * (sqrt(1.f+.01f*(p-eye).norm())-1.f) + 19.0;
-			model.topLeftCorner<3,3>() *= 1000.f / static_cast<float>(R1);
+			model.topLeftCorner<3,3>() *= 120.f / static_cast<float>(R1);
 
 			float color[4] = {1.f,1.f,.5f,1.f};
 			textSet->setText(0, "hello world", model.data(), color);
