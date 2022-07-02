@@ -16,6 +16,12 @@ Besides the frast data storage code, there is a completely seperate Vulkan frame
 Both `rt` and `ftr` support "casting", which uses a seperate shader that takes upto two more textures and projection matrices and renders those textures from the perspective of the projeciton matrices. This can be used to overlay a video from a camera that was on an aircraft for example, while also rendering the true data underneath. You could do this in multiple passes, but the way its implemented is with one pass that takes all the matrices and textures up front and blends the overlaid video directly in one shader.
 
 My original code had two different implementations for `rt` and `ftr`, but this had a lot of near-duplicate code. So I tried to find what was common and what was unique and how to share as much code as possible. `GtRenderer` makes use of CRTP. This is my first time using it for anything non-trivial. You need to specialize a bunch of stuff, and I ended up having to add things as I went, but overall I'm happy with how it turned out.
+My original code also did not have access to bounding boxes to evaluate screen-space-error until the tiles were loaded from disk. This means each level had to be loaded sequentially! By precomputing the oriented bounding boxes, you can shortcut levels and directly load ancestors. This requires an extra prep step which is not ideal, but worth it.
+
+All shaders must follow the `frastVk/shaders/<group>/<name>.<type>.glsl`. They can be compiled (assuming zsh) with:
+```
+python3 -m pysrc.compile_shaders --srcFiles frastVk/shaders/**/*.glsl --dstName frastVk/shaders/compiled/all.cc --targetEnv='--target-env vulkan1.2'
+```
 
 
 ### Dependencies
