@@ -2,6 +2,34 @@ cmake_minimum_required(VERSION 3.18)
 
 project(frastVk)
 
+set (LOCAL_GLFW_BUILD_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/glfw/)
+set (LOCAL_GLFW_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/glfw/include)
+set (LOCAL_GLFW_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/glfw/lib)
+
+# Build GLFW
+include(ExternalProject)
+ExternalProject_Add(glfw
+	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/glfw
+
+	CONFIGURE_COMMAND ${CMAKE_COMMAND} -E echo "Starting GLFW cfg"
+	WORKING_DIRECTORY <BINARY_DIR>
+	COMMAND ${CMAKE_COMMAND} -E echo "Starting GLFW cfg"
+	COMMAND ${CMAKE_COMMAND} <SOURCE_DIR> -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF -DBUILD_SHARED_LIBS=OFF
+
+
+	BUILD_COMMAND ${CMAKE_COMMAND} -E echo "Starting GLFW build"
+	#WORKING_DIRECTORY <BINARY_DIR>
+	COMMAND       ${CMAKE_COMMAND} --build <BINARY_DIR> -j 4
+	STEP_TARGETS build
+
+	# INSTALL_COMMAND ""
+	INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "install"
+	COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix ${LOCAL_GLFW_BUILD_PREFIX}
+	)
+
+link_directories(${LOCAL_GLFW_LIB_DIR})
+include_directories(${LOCAL_GLFW_INCLUDE_DIR})
+
 EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
 if (${ARCHITECTURE} STREQUAL "x86_64")
 	set (IS_ARM FALSE)
@@ -14,6 +42,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frastVk)
+
 
 
 # Careful: with precompiled headers, definitions are finicky
@@ -145,7 +174,8 @@ target_link_libraries(frastVk
 	${VULKAN_LIBS}
 	dl
 	# ${XCB_LIBRARIES}
-	glfw3 X11
+	glfw3
+	X11
 	pthread
 	stdc++fs
 	protobuf
@@ -200,3 +230,8 @@ target_precompile_headers(rtGenSets REUSE_FROM frastVk)
 install(TARGETS frastVk LIBRARY DESTINATION /usr/local/lib)
 install(DIRECTORY frastVk/core frastVk/entity frastVk/extra frastVk/gt frastVk/utils DESTINATION /usr/local/include/frastVk FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 install(DIRECTORY frastVk/shaders/compiled DESTINATION /usr/local/include/frastVk/shaders/ FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+
+# Also get the GLFW headers
+install(FILES ${LOCAL_GLFW_INCLUDE_DIR}/GLFW/glfw3.h ${LOCAL_GLFW_INCLUDE_DIR}/GLFW/glfw3native.h DESTINATION /usr/local/include/frastVk/GLFW)
+
+
