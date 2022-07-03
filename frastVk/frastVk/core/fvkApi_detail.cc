@@ -256,6 +256,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 	};
 	pushIt((S*)&extraFeatures5);
 
+	/*
 	VkPhysicalDeviceMultiDrawFeaturesEXT extraFeatures6;
 	memset(&extraFeatures6, 0, sizeof(decltype(extraFeatures6)));
 	extraFeatures6.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_FEATURES_EXT;
@@ -269,6 +270,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
     extraFeatures7.pNext = nullptr;
     extraFeatures7.nullDescriptor = true;
 	pushIt((S*)&extraFeatures7);
+	*/
 
 	VkPhysicalDeviceVulkan12Features extraFeatures8;
 	memset(&extraFeatures8, 0, sizeof(VkPhysicalDeviceVulkan12Features));

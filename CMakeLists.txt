@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.16)
 
 project(frast)
 
@@ -9,6 +9,8 @@ else()
 	set (IS_ARM TRUE)
 endif()
 
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+#add_compile_options("-stdlib=libc++" "-lc++abi")
 
 ##################
 #   Options
@@ -25,18 +27,32 @@ set(WRITER_NBUF 32 CACHE INT "buffers allocated per thread")
 set(TURBOJPEG_QUALITY 92 CACHE INT "jpeg quality, must be [0-100]")
 set(COMPRESS_TERRAIN 1 CACHE INT "use zlib to compress terrain")
 
+
 ##################
 #   Setup Deps
 ##################
 
 # TODO: I am in the middle of completely phasing out OpenCV (except for DEBUG_RASTERIO)
-find_package(OpenCV REQUIRED)
+#find_package(OpenCV REQUIRED)
+set(OpenCV_LIBRARIES opencv_highgui opencv_core opencv_imgcodecs opencv_imgproc)
+if (EXISTS /usr/local/include/opencv4/)
+	set(OpenCV_INCLUDE_DIRS /usr/local/include/opencv4/)
+else()
+	set(OpenCV_INCLUDE_DIRS /usr/include/opencv4/)
+endif()
+
+set(includes "")
 
 find_package(Fmt REQUIRED)
 find_package(GDAL REQUIRED)
-include_directories(/usr/local/include/eigen3)
+if (EXISTS /usr/local/include/eigen3/)
+	include_directories(/usr/local/include/eigen3)
+else()
+	include_directories(/usr/include/eigen3)
+endif()
 include_directories(/usr/include/gdal)
 set(COMMON_LIBS pthread lmdb fmt::fmt ${OpenCV_LIBRARIES} ${GDAL_LIBRARIES})
+list(APPEND includes ${OpenCV_INCLUDE_DIRS})
 
 if (USE_TURBOJPEG)
 	list(APPEND COMMON_LIBS turbojpeg)
@@ -60,7 +76,6 @@ if (IS_ARM)
 else()
 	set(cxx_opts "  -O3 -fopenmp -march=native -Werror=return-type ")
 endif()
-set(includes "")
 if (DEBUG_SYMBOLS)
 	set(cxx_opts "${cxx_opts} -g ")
 endif()

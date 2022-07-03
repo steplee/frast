@@ -23,6 +23,12 @@ All shaders must follow the `frastVk/shaders/<group>/<name>.<type>.glsl`. They c
 python3 -m pysrc.compile_shaders --srcFiles frastVk/shaders/**/*.glsl --dstName frastVk/shaders/compiled/all.cc --targetEnv='--target-env vulkan1.2'
 ```
 
+# Dockerization
+Building with docker is currently support on x864_64. I need to remove OpenCV because it is a massive depedency. You must download the Vulkan SDK version 1.3.211 and put `./docker/dist/`, then use
+```
+sudo docker build -t frast:0.9 -f docker/Dockerfile.dev .
+```
+
 
 ### Dependencies
   - Eigen

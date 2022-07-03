@@ -4,9 +4,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 
 // #include "protos/rocktree.pb.h"
-#include "frastVk/rt/protos/rocktree.pb.h"
-#include "frastVk/rt/decode/stb_image.h"
-#include "frastVk/rt/rt_convert.hpp"
+#include "frastVk/gt/rt/protos/rocktree.pb.h"
+#include "frastVk/gt/rt/decode/stb_image.h"
+#include "frastVk/gt/rt/decode/rt_convert.hpp"
 
 namespace rtpb = ::geo_globetrotter_proto_rocktree;
 

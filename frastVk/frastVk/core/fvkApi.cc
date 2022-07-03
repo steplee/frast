@@ -170,7 +170,15 @@ TheDescriptorPool::~TheDescriptorPool() {
 
 static VkInstance makeInstance(const AppConfig& cfg) {
 
+#ifndef VK_HEADER_VERSION_COMPLETE
+#ifdef VK_MAKE_API_VERSION
+	#define VK_HEADER_VERSION_COMPLETE VK_MAKE_API_VERSION(0, 1, 3, VK_HEADER_VERSION)
+#else VK_MAKE_API_VERSION
+	#define VK_HEADER_VERSION_COMPLETE VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION)
+#endif
+#endif
 	uint32_t desiredApiVersion = VK_HEADER_VERSION_COMPLETE;
+
 	// If using raytracing, we need 1.2+
 	//if (rti.enablePipeline) desiredApiVersion = VK_MAKE_VERSION(1,3,0);
 

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -50,7 +51,6 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		imgRef.copyTo(mat(cv::Rect({((int)xi)*ts, (int)(h-1-yi)*ts, ts, ts})));
 	}
 
-	if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
 
 	// Handle terrain case
 	if (dset.format() == Image::Format::TERRAIN_2x8) {
@@ -79,7 +79,15 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		cv::putText(mat, b, {20,50}, 0, 1.f, cv::Scalar{0,255,0});
 	}
 
-	cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
+	// if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
+	// cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
+
+	std::ofstream ofs("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + "_.jpg", std::ofstream::out | std::ofstream::binary);
+			EncodedImage eimg;
+			Image img_ { mat.rows, mat.cols, dset.format(), mat.data };
+			encode(eimg, img_);
+	ofs.write((char*)eimg.data(), eimg.size());
+
 	return 0;
 }
 
