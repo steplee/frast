@@ -69,6 +69,7 @@ uint32_t findMemoryTypeIndex(const VkPhysicalDevice& pdev, const VkMemoryPropert
 	return 99999999;
 }
 
+
 Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 	uint32_t ndevices = 8;
 	VkPhysicalDevice pdevices[8];
@@ -256,7 +257,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 	};
 	pushIt((S*)&extraFeatures5);
 
-	/*
+	///*
 	VkPhysicalDeviceMultiDrawFeaturesEXT extraFeatures6;
 	memset(&extraFeatures6, 0, sizeof(decltype(extraFeatures6)));
 	extraFeatures6.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_FEATURES_EXT;
@@ -270,7 +271,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
     extraFeatures7.pNext = nullptr;
     extraFeatures7.nullDescriptor = true;
 	pushIt((S*)&extraFeatures7);
-	*/
+	//*/
 
 	VkPhysicalDeviceVulkan12Features extraFeatures8;
 	memset(&extraFeatures8, 0, sizeof(VkPhysicalDeviceVulkan12Features));
@@ -350,19 +351,74 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 
 
 
+void BaseApp::executeAndPresent(RenderState& rs, FrameData& fd) {
+	auto& cmd = fd.cmd;
+	if (fd.swapchainImg->prevLayout != swapchain.finalLayout) {
+		Barriers barrier;
+		barrier.append(*fd.swapchainImg, swapchain.finalLayout);
+		cmd.barriers(barrier);
+	}
+
+	cmd.end();
+
+	Submission submission { DeviceQueueSpec{mainDevice,mainQueue} };
+	// submission.fence = nullptr;
+	submission.fence = fd.frameDoneFence;
+	submission.signalSemas = { fd.renderCompleteSema };
+	submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
+	submission.submit(&cmd.cmdBuf, 1);
+
+
+	if (window->headless()) {
+		handleCompletedHeadlessRender(rs,fd);
+
+	} else {
+		VkResult result;
+		VkPresentInfoKHR presentInfo {
+				VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+				nullptr,
+				1, &fd.renderCompleteSema, // wait sema
+				1, &swapchain.displaySwapchain,
+				&fd.scIndx, &result
+		};
+
+		assertCallVk(vkQueuePresentKHR(mainQueue, &presentInfo));
+		assertCallVk(result);
+	}
+}
+
 
 void BaseApp::makeGlfwWindow() {
-	windowWidth = cfg.width;
-	windowHeight = cfg.height;
-	glfwWindow = new Window(cfg.height, cfg.width, false);
-	glfwWindow->setupWindow();
+	window = new MyGlfwWindow(cfg.height, cfg.width);
+	window->setupWindow();
+	window->addIoUser(this);
+}
 
-	glfwWindow->ioUsers.push_back(this);
+void BaseApp::makeFakeSwapChain() {
+	swapchain.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+	swapchain.surfFormat.format = VK_FORMAT_R8G8B8A8_UNORM;
+
+	swapchain.device = &mainDevice;
+	swapchain.size = VkExtent2D{windowWidth,windowHeight};
+	swapchain.numImages = 3;
+	swapchain.images.resize(swapchain.numImages);
+	for (int i=0; i<swapchain.numImages; i++) {
+		auto &img = swapchain.images[i];
+		img.set(swapchain.size, swapchain.surfFormat.format, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+		img.create(mainDevice);
+	}
 }
 
 void BaseApp::makeRealSwapChain() {
+	MyGlfwWindow* window = dynamic_cast<MyGlfwWindow*>(this->window);
+	assert(window);
+
+	swapchain.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
 	// Make surface
-	auto res = glfwCreateWindowSurface(instance, glfwWindow->glfwWindow, NULL, &swapchain.surface);
+	auto res = glfwCreateWindowSurface(instance, window->glfwWindow, NULL, &swapchain.surface);
 
 	// Select swapchain details
 
@@ -470,6 +526,10 @@ void BaseApp::makeRealSwapChain() {
 	}
 }
 
+
+
+
+
 void BaseApp::makeFrameDatas() {
 	/*
 	VkFence frameDoneFence;
@@ -493,12 +553,13 @@ void BaseApp::makeFrameDatas() {
 		VkFenceCreateInfo fci1 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, {} };
 		// VkFenceCreateInfo fci2 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT };
 		VkFenceCreateInfo fci2 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, {} };
+		if (window->headless()) fci2.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 		assertCallVk(vkCreateFence(mainDevice, &fci1, nullptr, &fd.frameDoneFence));
 		assertCallVk(vkCreateFence(mainDevice, &fci2, nullptr, &fd.frameAvailableFence));
 		fmt::print(" - frameDatas[{}] fence {}\n", i, (void*)fd.frameAvailableFence);
 
 		VkSemaphoreCreateInfo sci { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, {} };
-		assertCallVk(vkCreateSemaphore(mainDevice, &sci, nullptr, &fd.swapchainAcquireSema));
+		// assertCallVk(vkCreateSemaphore(mainDevice, &sci, nullptr, &fd.swapchainAcquireSema));
 		assertCallVk(vkCreateSemaphore(mainDevice, &sci, nullptr, &fd.renderCompleteSema));
 
 		fd.scIndx = 0;
@@ -527,7 +588,7 @@ void BaseApp::destroyFrameDatas() {
 		auto& fd = frameDatas[i];
 		vkDestroyFence(mainDevice, fd.frameDoneFence, nullptr);
 		vkDestroyFence(mainDevice, fd.frameAvailableFence, nullptr);
-		vkDestroySemaphore(mainDevice, fd.swapchainAcquireSema, nullptr);
+		// vkDestroySemaphore(mainDevice, fd.swapchainAcquireSema, nullptr);
 		vkDestroySemaphore(mainDevice, fd.renderCompleteSema, nullptr);
 	}
 	frameDatas.clear();
@@ -967,35 +1028,6 @@ void Barriers::append(ExImage& img, VkImageLayout to) {
 
 
 
-
-void Command::executeAndPresent(DeviceQueueSpec& qds, SwapChain& sc, FrameData& fd) {
-
-	if (fd.swapchainImg->prevLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-		Barriers barrier;
-		barrier.append(*fd.swapchainImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-		this->barriers(barrier);
-	}
-
-	fd.cmd.end();
-
-	Submission submission { qds };
-	submission.fence = fd.frameDoneFence;
-	submission.signalSemas = { fd.renderCompleteSema };
-	submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
-	submission.submit(&cmdBuf, 1);
-
-	VkResult result;
-	VkPresentInfoKHR presentInfo {
-			VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-			nullptr,
-			1, &fd.renderCompleteSema, // wait sema
-			1, &sc.displaySwapchain,
-			&fd.scIndx, &result
-	};
-
-	assertCallVk(vkQueuePresentKHR(qds.q, &presentInfo));
-	assertCallVk(result);
-}
 
 
 

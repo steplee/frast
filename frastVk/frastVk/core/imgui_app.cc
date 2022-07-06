@@ -112,6 +112,8 @@ void ImguiApp::initVk() {
 	}
 
 
+	MyGlfwWindow* glfwWindow = dynamic_cast<MyGlfwWindow*>(window);
+	assert(glfwWindow);
     ImGui_ImplGlfw_InitForVulkan(glfwWindow->glfwWindow, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;
@@ -171,15 +173,13 @@ void ImguiApp::initVk() {
 void ImguiApp::render() {
 	assert(camera);
 
-	if (glfwWindow) bool proc = glfwWindow->pollWindowEvents();
-
 	if (isDone() or frameDatas.size() == 0) {
 		return;
 	}
 
 
 	if (not cfg.headless()) {
-		bool proc = glfwWindow->pollWindowEvents();
+		bool proc = window->pollWindowEvents();
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
@@ -214,6 +214,7 @@ void ImguiApp::render() {
 		renderState.frameBegin(&fd);
 	}
 
+	fd.cmd.begin();
 	doRender(renderState);
 
 
@@ -259,8 +260,7 @@ void ImguiApp::render() {
 		// cmds.push_back(*uiCmd);
 	}
 
-	DeviceQueueSpec dqs { mainDevice, mainQueue };
-	fd.cmd.executeAndPresent(dqs, swapchain, fd);
+	executeAndPresent(renderState, fd);
 
 	postRender();
 }

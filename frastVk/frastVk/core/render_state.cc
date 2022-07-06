@@ -106,6 +106,8 @@ void CameraSpec::compute_projection(double* dest) const {
 	// double u = fx_ * 2. / (w /  aspect());
 	double u = fx_ * 2. / (w);
 	double v = fy_ * 2. / h;
+	// double u = w / (.5 * fx_);
+	// double v = h / (.5 * fy_);
 	double n = near, f = far;
 	proj <<
 		//2*n / 2*u, 0, 0, 0,

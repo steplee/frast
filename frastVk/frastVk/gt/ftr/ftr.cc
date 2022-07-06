@@ -14,6 +14,7 @@ template void GtRenderer<FtTypes, FtTypes::Renderer>::init(Device& d, TheDescrip
 // template void GtRenderer<FtTypes, FtTypes::Renderer>::initDebugPipeline(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
 template void GtRenderer<FtTypes, FtTypes::Renderer>::update(GtUpdateContext<FtTypes>&);
+template void GtRenderer<FtTypes, FtTypes::Renderer>::defaultUpdate(Camera* cam);
 template void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState&, Command&);
 template void GtRenderer<FtTypes, FtTypes::Renderer>::renderDbg(RenderState&, Command&);
 

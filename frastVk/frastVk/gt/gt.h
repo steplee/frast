@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/eigen.h"
+#include "frastVk/utils/eigen.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -362,6 +362,7 @@ struct GtRenderer : public Castable {
 		inline GtRenderer(const typename GtTypes::Config &cfg_)
 			:
 			  cfg(cfg_),
+			  debugMode(cfg_.debugMode),
 			  loader((Derived&)*this),
 			  // obbMap(new typename GtTypes::ObbMap("/data/gearth/tpAois_wgs/index.v1.bin"))
 			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPath))
@@ -407,7 +408,7 @@ struct GtRenderer : public Castable {
 			updateAllowed = !updateAllowed;
 			return updateAllowed;
 		}
-		bool debugMode = true; // Note: GT_DEBUG (at top of this file) must also be compiled with true!
+		bool debugMode; // Note: GT_DEBUG (at top of this file) must also be compiled with true!
 
 		typename GtTypes::Config cfg;
 
@@ -423,8 +424,11 @@ struct GtRenderer : public Castable {
 		// Called from GtDataLoader
 		void pushResult(GtAsk<GtTypes>& ask); // Note: will move
 		std::vector<GtAsk<GtTypes>> waitingResults;
+
 		// Must be called from render thread
 		void update(GtUpdateContext<GtTypes>& gtuc);
+		// Helper function that constructs GtUpdateContext<> and calls update()
+		void defaultUpdate(Camera* cam);
 
 		void render(RenderState& rs, Command& cmd);
 

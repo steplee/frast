@@ -156,13 +156,19 @@ struct SwapChain {
 
 
 	Device* device { nullptr };
-	VkSurfaceKHR surface = nullptr;
-	VkSwapchainKHR displaySwapchain = nullptr;
 	VkExtent2D size{0,0};
 	VkSurfaceFormatKHR surfFormat;
-	VkPresentModeKHR presentMode;
+
 	uint32_t numImages=0;
 	std::vector<ExImage> images;
+
+	VkSurfaceKHR surface = nullptr;
+
+	VkSwapchainKHR displaySwapchain = nullptr;
+	VkPresentModeKHR presentMode;
+	// Will be presentSrc if a real swapchain, or probably transferSrcOptimal for a fake swapchain
+	VkImageLayout finalLayout;
+
 	//std::vector<ExImage> depthImages;
 	// std::vector<VkImageView> imageViews;
 
@@ -207,7 +213,10 @@ struct Command {
 	Command& barriers(Barriers& b);
 	Command& clearImage(ExImage& image, const std::vector<float>& color);
 
-	void executeAndPresent(DeviceQueueSpec& qds, SwapChain& sc, FrameData& fd);
+	// if @finalLayout is @VK_IMAGE_MAX_ENUM, then it will use the prevLayout.
+	Command& copyImageToBuffer(ExBuffer& out, ExImage& in, VkImageLayout finalLayout=VK_IMAGE_LAYOUT_MAX_ENUM);
+	Command& copyBufferToImage(ExImage& out, ExBuffer& in, VkImageLayout finalLayout=VK_IMAGE_LAYOUT_MAX_ENUM);
+
 
 	// noop
 	~Command();
@@ -422,10 +431,11 @@ struct FrameData {
 	FrameData(const FrameData& other) =delete;
 	FrameData& operator=(const FrameData& other) =delete;
 
-	VkFence frameDoneFence { nullptr };
-	VkFence frameAvailableFence { nullptr };
-	VkSemaphore swapchainAcquireSema { nullptr };
-	VkSemaphore renderCompleteSema { nullptr };
+	// See the readme notes about "No Frame Overlap"
+	VkFence frameAvailableFence { nullptr };         // Signaled when frame is available (before acquireNextFrame() returns)
+	VkFence frameDoneFence { nullptr };              // Signaled when frame is done rendering (after present)
+	// VkSemaphore swapchainAcquireSema { nullptr }; // Blocks until frame is available (before render, not needed if using fence and 0-overlap)
+	VkSemaphore renderCompleteSema { nullptr };      // Blocks until frame is done
 
 	// The image in the swapchain. Set in BaseApp::acquireNext
 	ExImage* swapchainImg { nullptr };
@@ -610,7 +620,7 @@ struct BaseApp : public UsesIO {
 	VkInstance instance = nullptr;
 	Device mainDevice;
 	Queue mainQueue;
-	Window* glfwWindow = nullptr;
+	Window* window = nullptr;
 	SwapChain swapchain;
 	TheDescriptorPool dpool;
 	ExUploader generalUploader;
@@ -628,6 +638,7 @@ struct BaseApp : public UsesIO {
 	virtual void render();
 	virtual void doRender(RenderState& rs) =0;
 	inline virtual void postRender() {}
+	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) {}
 
 		// inline virtual bool handleKey(int key, int scancode, int action, int mods) override { return false; }
 		// inline virtual bool handleMousePress(int button, int action, int mods) override { return false; }
@@ -640,6 +651,8 @@ struct BaseApp : public UsesIO {
 	uint32_t windowWidth, windowHeight;
 	SimpleRenderPass simpleRenderPass;
 
+	inline bool isDone() const { return isDone_; }
+
 	protected:
 
 	// RenderPassDescription simpleRenderPassDescription;
@@ -647,7 +660,6 @@ struct BaseApp : public UsesIO {
 
 	std::shared_ptr<Camera> camera = nullptr;
 
-	inline bool isDone() const { return isDone_; }
 
 
 	private:
@@ -658,9 +670,11 @@ struct BaseApp : public UsesIO {
 
 	void makeGlfwWindow();
 	void makeRealSwapChain();
+	void makeFakeSwapChain();
 
 	void makeFrameDatas();
 	void destroyFrameDatas();
+
 
 	float timeZero = 0;
 
@@ -672,5 +686,7 @@ struct BaseApp : public UsesIO {
 		float fpsMeter = 0;
 		RenderState renderState;
 		bool isDone_ = false;
+
+		void executeAndPresent(RenderState& rs, FrameData& fd);
 };
 

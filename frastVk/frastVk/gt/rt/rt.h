@@ -51,6 +51,7 @@ struct RtTypes {
 
 	struct Config {
 		bool allowCaster = true;
+		bool debugMode = false;
 		std::string obbIndexPath;
 		std::string rootDir;
 	};

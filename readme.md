@@ -16,12 +16,16 @@ Besides the frast data storage code, there is a completely seperate Vulkan frame
 Both `rt` and `ftr` support "casting", which uses a seperate shader that takes upto two more textures and projection matrices and renders those textures from the perspective of the projeciton matrices. This can be used to overlay a video from a camera that was on an aircraft for example, while also rendering the true data underneath. You could do this in multiple passes, but the way its implemented is with one pass that takes all the matrices and textures up front and blends the overlaid video directly in one shader.
 
 My original code had two different implementations for `rt` and `ftr`, but this had a lot of near-duplicate code. So I tried to find what was common and what was unique and how to share as much code as possible. `GtRenderer` makes use of CRTP. This is my first time using it for anything non-trivial. You need to specialize a bunch of stuff, and I ended up having to add things as I went, but overall I'm happy with how it turned out.
-My original code also did not have access to bounding boxes to evaluate screen-space-error until the tiles were loaded from disk. This means each level had to be loaded sequentially! By precomputing the oriented bounding boxes, you can shortcut levels and directly load ancestors. This requires an extra prep step which is not ideal, but worth it.
+
+My original code also did not have access to bounding boxes to evaluate screen-space-error until the tiles were loaded from disk. This means each level had to be loaded sequentially! By precomputing the oriented bounding boxes, you can shortcut levels and directly load ancestors. This requires an extra prep step which is not ideal, but worth it (see `./frastVk/pysrc/exportObbs.py`)
 
 All shaders must follow the `frastVk/shaders/<group>/<name>.<type>.glsl`. They can be compiled (assuming zsh) with:
 ```
 python3 -m pysrc.compile_shaders --srcFiles frastVk/shaders/**/*.glsl --dstName frastVk/shaders/compiled/all.cc --targetEnv='--target-env vulkan1.2'
 ```
+
+### No Frame Overlap
+FrastVk does not support frame overlap. That is, even though the swapchain has three or more entries, only one frame can be rendering at once (of course one is also being presented, so it is double buffered). To get as many frames as possible, Vulkan applications can actually render more than one frame ahead of time. But this requires N-way buffering *all* UBOs, textures, etc. which is outside the scope of frastVk. Doing all that extra buffering is not worth the trouble, considering how smooth the results already are. Besides that, it is usually impossible to get future data to even fill the buffers with! I guess the idea of a framework with frame-overlap is to render as many frames with inter/extrapolated data not just to get more frames, but so that the data is always most recent -- even if it is not as valid.
 
 # Dockerization
 Building with docker is currently support on x864_64. I need to remove OpenCV because it is a massive depedency. You must download the Vulkan SDK version 1.3.211 and put `./docker/dist/`, then use
@@ -38,7 +42,7 @@ sudo docker build -t frast:0.9 -f docker/Dockerfile.dev .
 
 
 # FrastVk Notes:
-  - There is a big issue with my tree implementation for both `tiled_renderer2` and `rt`. It requires all children to close before closing the parent. This means that while rendering a deep level, a bunch out-of-frame but still high-res tiles must be resident.
+  - There is a slight issue with my tree implementation for both `tiled_renderer2` and `rt`. It requires all children to close before closing the parent. This means that while rendering a deep level, a bunch out-of-frame but still high-res tiles must be resident.
   - The rocktree data includes an octant mask to help with, but I currently don't use it. Basically the vertices are organized in a way that allows rendering e.g. 3/8 tiles and not requiring having the sibiling still loaded. The parent can be partially rendered with the other 5/8 parts. This is a better approach.
 
 #### FVK RT Sample Images

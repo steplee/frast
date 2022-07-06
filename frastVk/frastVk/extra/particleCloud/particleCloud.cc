@@ -325,6 +325,8 @@ void ParticleCloudRenderer::setup_pipelines() {
 		vid.bindings = { VkVertexInputBindingDescription { 0, 4*4, VK_VERTEX_INPUT_RATE_VERTEX } };
 
 		PipelineBuilder builder;
+		builder.additiveBlending = true;
+		builder.depthWrite = false;
 		builder.depthTest = true;
 		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_POINT_LIST, particlePipeline.vs, particlePipeline.fs);
 

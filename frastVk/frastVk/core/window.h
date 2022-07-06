@@ -20,41 +20,68 @@ struct UsesIO {
 	//inline virtual void handleMouseNotify(int x, int y, bool isEntering) {}
 };
 
-class Window : public UsesIO {
+class Window {
+	public:
+		virtual void setupWindow() =0;
+		virtual std::vector<std::string> getWindowExtensions() =0;
+		virtual bool pollWindowEvents() =0;
+		virtual void addIoUser(UsesIO* ptr) =0;
+
+		inline Window(uint32_t w, uint32_t h) : windowWidth(w), windowHeight(h) {};
+		inline Window() : windowWidth(0), windowHeight(0) {};
+		inline virtual ~Window() {}
+
+		virtual bool headless() =0;
+
+	public:
+		uint32_t windowHeight, windowWidth;
+
+};
+
+class MyGlfwWindow : public Window, public UsesIO {
 	public:
 
-		Window(int h, int w, bool headless);
-		Window();
-		~Window();
-		virtual void destroyWindow();
-		bool pollWindowEvents();
-		std::vector<UsesIO*> ioUsers;
+		MyGlfwWindow(int h, int w);
+		MyGlfwWindow();
+		virtual ~MyGlfwWindow();
+		void destroyWindow();
+		virtual bool pollWindowEvents() override;
 		std::string title;
 
-		void setupWindow();
+		virtual std::vector<std::string> getWindowExtensions() override;
+		virtual void setupWindow() override;
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) override { return false; }
 		inline virtual bool handleMousePress(int button, int action, int mods) override { return false; }
 		inline virtual bool handleMouseMotion(double x, double y) override { return false; }
 		//inline virtual void handleMouseNotify(int x, int y, bool isEntering) {}
 
-		uint32_t windowHeight, windowWidth;
-		bool headless = false;
 		GLFWwindow* glfwWindow = nullptr;
 
-		std::vector<std::string> getWindowExtensions();
+		inline virtual bool headless() override { return false; }
+		inline virtual void addIoUser(UsesIO* ptr) override { ioUsers.push_back(ptr); }
+
 
 	private:
 
-
-		/*
-		void handleKey_(uint8_t key, uint8_t mod, bool isDown);
-		void handleMousePress_(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing);
-		void handleMouseMotion_(int x, int y, uint8_t mod);
-		//void handleMouseNotify_(int x, int y, bool isEntering);
-		*/
+		std::vector<UsesIO*> ioUsers;
 		static void _reshapeFunc(GLFWwindow* window, int w, int h);
 		static void _keyboardFunc(GLFWwindow* window, int key, int scancode, int action, int mods);
 		static void _clickFunc(GLFWwindow* window, int button, int action, int mods);
 		static void _motionFunc(GLFWwindow* window, double xpos, double ypos);
 };
+
+class MyHeadlessWindow : public Window {
+	public:
+		MyHeadlessWindow(int h, int w);
+		virtual ~MyHeadlessWindow();
+
+		virtual std::vector<std::string> getWindowExtensions() override;
+		virtual void setupWindow() override;
+		inline virtual bool pollWindowEvents() override { return false; };
+
+		inline virtual bool headless() override { return true; }
+		inline virtual void addIoUser(UsesIO* ptr) override { }
+
+};
+

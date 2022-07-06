@@ -40,6 +40,7 @@ struct FtTypes {
 		static constexpr uint64_t vertsPerTile = vertsAlongEdge * vertsAlongEdge;
 
 		bool allowCaster = true;
+		bool debugMode = false;
 		std::string obbIndexPath;
 		std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
 		std::string elevDsetPath  = "/data/elevation/srtm/usa.11.ft";

@@ -16,7 +16,7 @@ static void glfw_error_callback(int error, const char* description)
 static void __doInit() {
 }
 
-void Window::setupWindow() {
+void MyGlfwWindow::setupWindow() {
 
 	__window_mtx.lock();
     if (!__didInit) {
@@ -32,7 +32,7 @@ void Window::setupWindow() {
 
 	bool egl = false;
     if (egl) glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-    if (headless) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    // if (headless) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     glfwWindow = glfwCreateWindow(windowWidth, windowHeight, title.c_str(), NULL, NULL);
@@ -56,48 +56,48 @@ void Window::setupWindow() {
     glfwSetWindowUserPointer(glfwWindow, reinterpret_cast<void *>(this));
 }
 
-Window::Window(int h, int w, bool headless) : windowHeight(h), windowWidth(w), headless(headless) {
+MyGlfwWindow::MyGlfwWindow(int w, int h) : Window(w,h) {
 	title = "noName";
 }
-Window::Window() : windowHeight(0), windowWidth(0), headless(false) {
+MyGlfwWindow::MyGlfwWindow() : Window() {
 	title = "noName";
 }
 
-Window::~Window() {
+MyGlfwWindow::~MyGlfwWindow() {
 	destroyWindow();
 }
-void Window::destroyWindow() {
+void MyGlfwWindow::destroyWindow() {
 	ioUsers.clear();
     if (glfwWindow) glfwDestroyWindow(glfwWindow);
     glfwWindow = nullptr;
 }
-bool Window::pollWindowEvents() {
+bool MyGlfwWindow::pollWindowEvents() {
     glfwPollEvents();
 	// fmt::print(" - Polling events.\n");
 	return false;
 }
 
-void Window::_reshapeFunc(GLFWwindow* glfwWindow, int w, int h) {
-    Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
+void MyGlfwWindow::_reshapeFunc(GLFWwindow* glfwWindow, int w, int h) {
+    MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
 }
-void Window::_keyboardFunc(GLFWwindow* glfwWindow, int key, int scancode, int action, int mods) {
-    Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
+void MyGlfwWindow::_keyboardFunc(GLFWwindow* glfwWindow, int key, int scancode, int action, int mods) {
+    MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
 	bool stop = theWindow->handleKey(key, scancode, action, mods);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;
 		stop = l->handleKey(key, scancode, action, mods);
 	}
 }
-void Window::_clickFunc(GLFWwindow* glfwWindow, int button, int action, int mods) {
-    Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
+void MyGlfwWindow::_clickFunc(GLFWwindow* glfwWindow, int button, int action, int mods) {
+    MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
 	bool stop = theWindow->handleMousePress(button, action, mods);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;
 		stop = l->handleMousePress(button, action, mods);
 	}
 }
-void Window::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
-    Window* theWindow = reinterpret_cast<Window *>(glfwGetWindowUserPointer(glfwWindow));
+void MyGlfwWindow::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
+    MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
 	bool stop = theWindow->handleMouseMotion(xpos,ypos);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;
@@ -105,12 +105,7 @@ void Window::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
 	}
 }
 
-std::vector<std::string> Window::getWindowExtensions() {
-
-	if (headless) {
-		// return { VK_KHR_SURFACE_EXTENSION_NAME };
-		return { "VK_KHR_surface" };
-	}
+std::vector<std::string> MyGlfwWindow::getWindowExtensions() {
 
 	__window_mtx.lock();
     if (!__didInit) {
@@ -126,4 +121,19 @@ std::vector<std::string> Window::getWindowExtensions() {
 	char** extensions = (char**)glfwGetRequiredInstanceExtensions(&count);
 	for (int i=0; i<count; i++) out.push_back(std::string{extensions[i]});
 	return out;
+}
+
+
+
+
+
+
+MyHeadlessWindow::MyHeadlessWindow(int w, int h) : Window(w,h) {
+}
+std::vector<std::string> MyHeadlessWindow::getWindowExtensions() {
+	return { "VK_KHR_surface" };
+}
+void MyHeadlessWindow::setupWindow() {
+}
+MyHeadlessWindow::~MyHeadlessWindow() {
 }

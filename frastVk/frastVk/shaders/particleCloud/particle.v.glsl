@@ -22,5 +22,13 @@ void main()
 	/* v_color = vec4(vec3(intensity), 1.0); */
 	/* v_color = vec4(1.0, 1.0 ,1.0, intensity); */
 	/* v_color = vec4(1.); */
-	v_color = vec4(intensity);
+
+	/* v_color = vec4(intensity); */
+	v_color = vec4(
+		intensity,
+		pow(intensity,8.0),
+		mix(pow(intensity,2.0), intensity, .5),
+		clamp(pow(intensity,.5), .001, .2)
+	);
+
 }

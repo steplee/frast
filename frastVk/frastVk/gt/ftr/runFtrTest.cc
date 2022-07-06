@@ -4,25 +4,37 @@
 #include "frastVk/gt/ftr/ftr.h"
 #include "frastVk/core/fvkApi.h"
 #include "frastVk/core/fvkShaders.h"
+#include "frastVk/core/imgui_app.h"
 
 #include "frastVk/utils/eigen.h"
+#include "frastVk/extra/primitives/earthEllipsoid.h"
+#include "frastVk/extra/headlessCopyHelper.hpp"
 
+// using Super = BaseApp;
+using Super = ImguiApp;
 
-struct TestFtrApp : public BaseApp {
+// struct TestFtrApp : public HeadlessCopyMixin<Super> {
+struct TestFtrApp : public Super, public HeadlessCopyMixin<TestFtrApp> {
 
 	FtRenderer renderer;
+	std::shared_ptr<EarthEllipsoid> earthEllipsoid;
 
 	inline TestFtrApp(const AppConfig& cfg)
-		: BaseApp(cfg),
+		// : HeadlessCopyMixin<Super>(cfg),
+		: Super(cfg),
 		  renderer(FtTypes::Config {
-				.obbIndexPath = "/data/naip/mocoNaip/index.v1.bin",
-				.colorDsetPath = "/data/naip/mocoNaip/out.ft",
+				.debugMode = true,
+				// .obbIndexPath = "/data/naip/mocoNaip/index.v1.bin",
+				// .colorDsetPath = "/data/naip/mocoNaip/out.ft",
+				.obbIndexPath = "/data/naip/tampa/index.v1.bin",
+				.colorDsetPath = "/data/naip/tampa/tampaAoi.ft",
 				.elevDsetPath = "/data/elevation/srtm/usa.11.ft"
 		  })
 	{
 	}
 
 	inline void update() {
+		/*
 		GtUpdateCameraData gtucd;
 		gtucd.two_tan_half_fov_y = 1.;
 		gtucd.wh.setConstant(cfg.width);
@@ -52,12 +64,15 @@ struct TestFtrApp : public BaseApp {
 		gtuc.sseThresholdClose = .9;
 		gtuc.sseThresholdOpen = 1.5;
 		renderer.update(gtuc);
+		*/
+
+		renderer.defaultUpdate(camera.get());
 	}
 
 	inline virtual void initVk() override {
-		BaseApp::initVk();
+		Super::initVk();
 
-		CameraSpec spec { (double)windowWidth, (double)windowHeight, 45. };
+		CameraSpec spec { (double)windowWidth, (double)windowHeight, 40*M_PI/180. };
 		camera = std::make_shared<SphericalEarthMovingCamera>(spec);
 
 		Eigen::Vector3d pos0 { 0.136273, -1.03348, 0.552593 };
@@ -69,7 +84,7 @@ struct TestFtrApp : public BaseApp {
 		camera->setPosition(pos0.data());
 		camera->setRotMatrix(R0.data());
 
-		if (glfwWindow) glfwWindow->ioUsers.push_back(camera.get());
+		window->addIoUser(camera.get());
 		renderState.camera = camera.get();
 
 		renderer.init(mainDevice, dpool, simpleRenderPass, mainQueue, frameDatas[0].cmd, cfg);
@@ -79,13 +94,15 @@ struct TestFtrApp : public BaseApp {
 		tstImg.alloc();
 		for (int y=0; y<512; y++)
 		for (int x=0; x<512; x++) {
-			uint8_t c = ((y/16)%2) == 1+((x/16)%2) ? 250 : 100;
+			uint8_t c = (y % 16 == 0 and x % 16 == 0) ? 200 : 0;
 			tstImg.buffer[y*512*4+x*4+0] = tstImg.buffer[y*512*4+x*4+1] = tstImg.buffer[y*512*4+x*4+2] = c;
 			tstImg.buffer[y*512*4+x*4+3] = 200;
 		}
 		renderer.cwd.setImage(tstImg);
 		renderer.cwd.setColor1(color);
 		renderer.cwd.setMask(0b01);
+
+		if (1) earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
@@ -99,9 +116,9 @@ struct TestFtrApp : public BaseApp {
 			renderer.cwd.setMatrix1(matrix.data());
 		}
 
-		fd.cmd.begin();
 		simpleRenderPass.begin(fd.cmd, fd);
 		renderer.render(rs, fd.cmd);
+		if (earthEllipsoid) earthEllipsoid->render(rs,fd.cmd);
 		simpleRenderPass.end(fd.cmd, fd);
 		// fd.cmd.clearImage(*fd.swapchainImg, {(float)(fd.n%3==0), (float)(fd.n%3==1), (float)(fd.n%3==2), 1.f});
 
@@ -110,13 +127,27 @@ struct TestFtrApp : public BaseApp {
 	}
 
 
-		inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
-			if (action == GLFW_PRESS and key == GLFW_KEY_U) {
-				bool updateAllowed = renderer.toggleUpdateAllowed();
-				fmt::print(fmt::fg(fmt::color::light_green), " - Toggling update allowed to {}\n", updateAllowed);
-			}
-			return BaseApp::handleKey(key,scancode,action,mods);
+	inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
+		if (action == GLFW_PRESS and key == GLFW_KEY_U) {
+			bool updateAllowed = renderer.toggleUpdateAllowed();
+			fmt::print(fmt::fg(fmt::color::light_green), " - Toggling update allowed to {}\n", updateAllowed);
 		}
+		return BaseApp::handleKey(key,scancode,action,mods);
+	}
+
+	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
+		helper_handleCompletedHeadlessRender(rs,fd);
+		Submission submission { DeviceQueueSpec{mainDevice,mainQueue} };
+		// submission.fence = nullptr;
+		submission.fence = fd.frameAvailableFence;
+		// submission.signalSemas = { headlessCopyDoneSema };
+		submission.waitSemas = { fd.renderCompleteSema };
+		submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
+		// submission.submit(&fd.cmd.cmdBuf, 1, false); // Do NOT block on fence, do NOT reset fence -- that way frameAvailableFence won't be set until we read it in acquireNextFrame()!!!
+		submission.submit(&fd.cmd.cmdBuf, 1);
+		fmt::print(" - handled done\n");
+	}
+
 };
 
 
@@ -125,6 +156,7 @@ int main() {
 	AppConfig cfg;
 	cfg.width = 1024;
 	cfg.height = 1024;
+	cfg.windowSys = AppConfig::WindowSys::eHeadless;
 	TestFtrApp app{cfg};
 	app.initVk();
 

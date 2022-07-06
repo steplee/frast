@@ -421,6 +421,47 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 }
 
+// Helper function
+template <class GtTypes, class Derived>
+void GtRenderer<GtTypes,Derived>::defaultUpdate(Camera* cam) {
+		GtUpdateCameraData gtucd;
+
+		Eigen::Map<const RowMatrix4d> view { cam->view() };
+		Eigen::Map<const RowMatrix4d> proj { cam->proj() };
+		gtucd.mvp = (proj * view).cast<float>();
+
+		// gtucd.two_tan_half_fov_y = 1.;
+		gtucd.two_tan_half_fov_y = cam->spec().h / cam->spec().fy_;
+		// gtucd.two_tan_half_fov_y = cam->spec().fy_ / cam->spec().h;
+		gtucd.wh << cam->spec().w, cam->spec().h;
+
+
+		//gtucd.mvp.setIdentity();
+		// renderState.mvpf(gtuc.mvp.data());
+
+		// MatrixStack mstack;
+		// mstack.push(camera->proj());
+		// mstack.push(camera->view());
+		// double* mvpd = mstack.peek();
+		// for (int i=0; i<16; i++) gtucd.mvp.data()[i] = mvp.data()[i];
+		// fmt::print(" - MVP Matrix:\n{}\n", gtucd.mvp);
+
+
+		RowMatrix4f imvp = gtucd.mvp.inverse();
+		RowMatrix84f corners;
+		for (int i=0; i<8; i++) corners.row(i) << (float)((i%4)==1 or (i%4)==2), (i%4)>=2, (i/4), 1.f;
+		gtucd.frustumCorners = (corners * imvp.transpose()).rowwise().hnormalized();
+
+		gtucd.zplus = decltype(gtucd.zplus)::UnitZ();
+		const double* viewInv = cam->viewInv();
+		gtucd.eye = Vector3f { viewInv[0*4+3], viewInv[1*4+3], viewInv[2*4+3] };
+
+		GtUpdateContext<GtTypes> gtuc { loader, *obbMap, gtpd, gtucd };
+		gtuc.sseThresholdClose = .9;
+		gtuc.sseThresholdOpen = 1.5;
+		this->update(gtuc);
+}
+
 template <class GtTypes, class Derived>
 void GtRenderer<GtTypes,Derived>::render(RenderState& rs, Command& cmd) {
 

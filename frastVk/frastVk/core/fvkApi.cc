@@ -122,6 +122,16 @@ Command& Command::clearImage(ExImage& image, const std::vector<float>& color) {
 	return *this;
 }
 
+Command& Command::copyImageToBuffer(ExBuffer& out, ExImage& in, VkImageLayout finalLayout) {
+	Barriers barriers;
+#error TODO: STopped here
+
+	return *this;
+}
+Command& Command::copyBufferToImage(ExImage& out, ExBuffer& in, VkImageLayout finalLayout) {
+	return *this;
+}
+
 void Submission::submit(VkCommandBuffer* cmds, uint32_t n, bool block) {
 		VkSubmitInfo si {
 				VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -170,6 +180,7 @@ TheDescriptorPool::~TheDescriptorPool() {
 
 static VkInstance makeInstance(const AppConfig& cfg) {
 
+	/*
 #ifndef VK_HEADER_VERSION_COMPLETE
 #ifdef VK_MAKE_API_VERSION
 	#define VK_HEADER_VERSION_COMPLETE VK_MAKE_API_VERSION(0, 1, 3, VK_HEADER_VERSION)
@@ -177,10 +188,12 @@ static VkInstance makeInstance(const AppConfig& cfg) {
 	#define VK_HEADER_VERSION_COMPLETE VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION)
 #endif
 #endif
+	*/
 	uint32_t desiredApiVersion = VK_HEADER_VERSION_COMPLETE;
 
 	// If using raytracing, we need 1.2+
 	//if (rti.enablePipeline) desiredApiVersion = VK_MAKE_VERSION(1,3,0);
+	desiredApiVersion = VK_MAKE_VERSION(1,3,0);
 
 	VkApplicationInfo appInfo;
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -220,6 +233,18 @@ static VkInstance makeInstance(const AppConfig& cfg) {
 
 	VkInstance instance;
 	assertCallVk(vkCreateInstance(&ici, nullptr, &instance));
+
+	uint32_t instanceVersion;
+	vkEnumerateInstanceVersion(&instanceVersion);
+	if (VK_API_VERSION_MAJOR(instanceVersion) <= 1 and VK_API_VERSION_MINOR(instanceVersion) < 3) {
+		fmt::print(" - instance version was ({} :: {} {} {}), but must be AT LEAST 1.3.x\n", instanceVersion, VK_API_VERSION_MAJOR(instanceVersion), VK_API_VERSION_MINOR(instanceVersion), VK_API_VERSION_PATCH(instanceVersion));
+		fmt::print(" - Did you install the vulkan SDK, or if not, does your OS package manager provide a recent enough vulkan loader?\n");
+		fmt::print(" - If you installed the SDK, make sure ld is finding it (i.e. LD_CONFIG_PATH includes sdk lib dir)\n");
+		fmt::print(" - If the loader is sufficient, is your graphics driver recent enough?\n");
+		assert(false and "instance version (vulkan loader) too old");
+	}
+	fmt::print(" - instance version {} :: {} {} {}\n", instanceVersion, VK_API_VERSION_MAJOR(instanceVersion), VK_API_VERSION_MINOR(instanceVersion), VK_API_VERSION_PATCH(instanceVersion));
+
 	return instance;
 }
 
@@ -238,9 +263,8 @@ BaseApp::BaseApp(const AppConfig& cfg)
 BaseApp::~BaseApp() {
 	fmt::print(" - ~BaseApp()\n");
 	destroyFrameDatas();
-	if (glfwWindow) {
-		glfwWindow->destroyWindow();
-		delete glfwWindow;
+	if (window) {
+		delete window;
 	}
 }
 
@@ -250,7 +274,24 @@ FrameData& BaseApp::acquireNextFrame() {
 
 	FrameData& fd = frameDatas[frameIdx];
 
-	vkAcquireNextImageKHR(mainDevice, swapchain.displaySwapchain, 99999999999lu, fd.swapchainAcquireSema, fd.frameAvailableFence, &fd.scIndx);
+	if (swapchain.displaySwapchain) {
+		vkAcquireNextImageKHR(mainDevice, swapchain.displaySwapchain, 99999999999lu, nullptr, fd.frameAvailableFence, &fd.scIndx);
+		// vkAcquireNextImageKHR(mainDevice, swapchain.displaySwapchain, 99999999999lu, fd.swapchainAcquireSema, fd.frameAvailableFence, &fd.scIndx);
+
+		// TODO I don't think you need this
+		if (1) {
+			vkWaitForFences(mainDevice, 1, &fd.frameAvailableFence, true, 9999999999);
+			vkResetFences(mainDevice, 1, &fd.frameAvailableFence);
+		}
+	} else {
+		fd.scIndx++;
+		if (fd.scIndx >= swapchain.numImages) fd.scIndx = 0;
+
+		if (1) {
+			// vkWaitForFences(mainDevice, 1, &fd.frameAvailableFence, true, 9999999999);
+			// vkResetFences(mainDevice, 1, &fd.frameAvailableFence);
+		}
+	}
 
 	// Spec seemed to indicate after acquire img will be presentSrcKhr, but actuall is undefined...
 	// fd.swapchainImg.setFromSwapchain(mainDevice, swapchain.images[fd.scIndx], swapchain.size, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
@@ -259,11 +300,6 @@ FrameData& BaseApp::acquireNextFrame() {
 	//fd.swapchainImg->setFromSwapchain(mainDevice, swapchain.images[fd.scIndx].img, swapchain.images[fd.scIndx].view, swapchain.size, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT, swapchain.surfFormat.format);
 	// fmt::print(" - using frameDatas[{}] (scIndx {}) fence {}, img {}\n", frameIdx, fd.scIndx, (void*)fd.frameAvailableFence, (void*)fd.swapchainImg->img);
 
-	// TODO I don't think you need this
-	if (1) {
-		vkWaitForFences(mainDevice, 1, &fd.frameAvailableFence, true, 9999999999);
-		vkResetFences(mainDevice, 1, &fd.frameAvailableFence);
-	}
 
 	frameIdx++;
 	if (frameIdx >= frameOverlap) frameIdx = 0;
@@ -274,7 +310,7 @@ FrameData& BaseApp::acquireNextFrame() {
 void BaseApp::render() {
 	assert(camera);
 
-	if (glfwWindow) bool proc = glfwWindow->pollWindowEvents();
+	if (window) window->pollWindowEvents();
 
 	if (isDone() or frameDatas.size() == 0) {
 		return;
@@ -305,11 +341,12 @@ void BaseApp::render() {
 		renderState.frameBegin(&fd);
 	}
 
+	fd.cmd.begin();
 	doRender(renderState);
 
 
 	DeviceQueueSpec dqs { mainDevice, mainQueue };
-	fd.cmd.executeAndPresent(dqs, swapchain, fd);
+	executeAndPresent(renderState, fd);
 
 	postRender();
 }
@@ -328,9 +365,16 @@ void BaseApp::initVk() {
 	swapchain = std::move(SwapChain(*this));
 	mainCommandPool = std::move(CommandPool{mainDevice, mainDevice.queueFamilyGfxIdxs[0]});
 
+	windowWidth = cfg.width;
+	windowHeight = cfg.height;
+
 	if (cfg.windowSys == AppConfig::WindowSys::eGlfw) {
 		makeGlfwWindow();
 		makeRealSwapChain();
+	} else if (cfg.windowSys == AppConfig::WindowSys::eHeadless) {
+		window = new MyHeadlessWindow(windowHeight,windowHeight);
+		window->setupWindow();
+		makeFakeSwapChain();
 	}
 
 	makeFrameDatas();

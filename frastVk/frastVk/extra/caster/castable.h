@@ -44,8 +44,8 @@ struct CasterWaitingData {
 		Image image;
 		float casterMatrix1[16];
 		float casterMatrix2[16];
-		float color1[16];
-		float color2[16];
+		float color1[4];
+		float color2[4];
 		uint32_t mask = 0;
 		bool haveMatrix1=false, haveMatrix2=false;
 		bool haveColor1=false, haveColor2=false;

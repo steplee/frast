@@ -58,7 +58,13 @@ float GtOrientedBoundingBox::computeSse(const GtUpdateCameraData& gtcd, float ge
 	for (int i=0; i<8; i++) cornersWorld.row(i) << (float)((i%4)==1 or (i%4)==2), (i%4)>=2, (i/4);
 	RowMatrix3f R_world_from_tile = q.inverse().toRotationMatrix();
 	cornersWorld = (((cornersWorld.array() * 2 - 1).array().rowwise() * extents.transpose()).matrix() * R_world_from_tile.transpose()).rowwise() + ctr.transpose();
-	RowMatrix83f cornersCamera = (cornersWorld.rowwise().homogeneous() * gtcd.mvp.transpose()).rowwise().hnormalized();
+
+	// RowMatrix83f cornersCamera = (cornersWorld.rowwise().homogeneous() * gtcd.mvp.transpose()).rowwise().hnormalized();
+	RowMatrix84f cornersCamera_ = (cornersWorld.rowwise().homogeneous() * gtcd.mvp.transpose());
+	// RowMatrix83f cornersCamera = cornersCamera_.topLeftCorner<8,3>().array() / cornersCamera_.col(3).array();
+	RowMatrix83f cornersCamera = cornersCamera_.topLeftCorner<8,3>();
+	for (int i=0; i<8; i++) cornersCamera.row(i) /= std::max(cornersCamera_(i,3), .00001f);
+
 	{
 		/*
 		int cnt;
@@ -89,7 +95,7 @@ float GtOrientedBoundingBox::computeSse(const GtUpdateCameraData& gtcd, float ge
 				or (cornersCamera.col(2).array() >  3.f).all()
 				) return 0.f;
 
-		cornersWorld = (cornersWorld.rowwise() - ctr.transpose()) * R_world_from_tile.transpose();
+		cornersWorld = (cornersWorld.rowwise() - ctr.transpose()) * R_world_from_tile;
 		if (
 				   (cornersWorld.col(0).array() >  extents(0)).all()
 				or (cornersWorld.col(0).array() < -extents(0)).all()
@@ -109,6 +115,10 @@ float GtOrientedBoundingBox::computeSse(const GtUpdateCameraData& gtcd, float ge
 	Vector3f p = R_world_from_tile.transpose() * (gtcd.eye - ctr);
 	Vector3f q = p.cwiseAbs() - extents.matrix();
 	float exteriorDistance = q.array().max(0.f).matrix().norm() + std::min(q.maxCoeff(), 0.f);
+
+	// When inside a box, we get a negative number, which ruins the sse. Clamp so that smallest SDF value is one-half a meter.
+	constexpr float R1 = (6378137.0f);
+	exteriorDistance = std::max(exteriorDistance, .5f / R1);
 
 	float sse = geoError * gtcd.wh(1) / (exteriorDistance * gtcd.two_tan_half_fov_y);
 	// fmt::print(" - (sse {}) (extDist {})\n", sse, exteriorDistance);

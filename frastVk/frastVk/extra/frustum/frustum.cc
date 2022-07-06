@@ -44,6 +44,7 @@ void FrustumSet::init() {
 		inds.set(inds_.size()*2, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 		verts.create(app->mainDevice);
 		inds.create(app->mainDevice);
+		verts.map();
 
 		app->generalUploader.enqueueUpload(inds, inds_.data(), inds_.size() * 2, 0);
 		app->generalUploader.execute();
@@ -69,7 +70,7 @@ void FrustumSet::init() {
 
 		VertexInputDescription vid;
 		VkVertexInputAttributeDescription attrPos { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
-		VkVertexInputAttributeDescription attrCol { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8 };
+		VkVertexInputAttributeDescription attrCol { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 3*4 };
 		vid.attributes = { attrPos, attrCol };
 		vid.bindings = { VkVertexInputBindingDescription { 0, 7*4, VK_VERTEX_INPUT_RATE_VERTEX } };
 
@@ -101,6 +102,7 @@ void FrustumSet::init() {
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 	paths.create(app->mainDevice);
+	paths.map();
 	// Make path stuff
 	/*
 	paths.setAsVertexBuffer(maxPaths*maxPathLen*4*3, true);
@@ -177,19 +179,25 @@ void FrustumSet::setColor(int n, const float color[4]) {
 	Eigen::Vector4f c2 { color[0], color[1], color[2], color[3] * .2f };
 	Eigen::Vector4f c3 { color[0], color[1], color[2], color[3] * .01f };
 
-	void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
-	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
+	// void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
+	float* dbuf = ((float*)verts.mappedAddr) + 14*7*n;
+	// Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
 
-	vs.topRightCorner<8,4>().rowwise() = c.transpose();
-	vs.block<1,4>(8,3).rowwise() = c2.transpose();
-	vs.bottomRightCorner<5,4>().rowwise() = c3.transpose();
-	verts.unmap();
+	// vs.topRightCorner<8,4>().rowwise() = c.transpose();
+	// vs.block<1,4>(8,3).rowwise() = c2.transpose();
+	// vs.bottomRightCorner<5,4>().rowwise() = c3.transpose();
+	for (int i=0; i<8; i++)  for (int j=0; j<4; j++) dbuf[i*7+(j+3)] = c(j);
+	for (int i=8; i<9; i++)  for (int j=0; j<4; j++) dbuf[i*7+(j+3)] = c2(j);
+	for (int i=9; i<14; i++) for (int j=0; j<4; j++) dbuf[i*7+(j+3)] = c3(j);
+
+	// verts.unmap();
 
 	pathColors[n] = c;
 }
 
 void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
-	void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
+	// void* dbuf = (void*) verts.map(14*4*7*n, 14*4*7);
+	float* dbuf = (float*)(((char*) verts.mappedAddr) + 14*4*7*n);
 	float z = -1.f, o = 1.f;
 	// const float ray_far = 19000.0 / 6378137.0;
 	Eigen::Map<RowMatrix4d> model { modelMatrices.data() + n * 16 };
@@ -217,9 +225,13 @@ void FrustumSet::setIntrin(int n, float w, float h, float fx, float fy) {
 	new_vs.block<4,2>(0,0) *= near;
 	new_vs.block<4,2>(4,0) *= far;
 	new_vs.block<4,2>(10,0) *= ray_far;
-	Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
-	vs.leftCols(3) = new_vs;
-	verts.unmap();
+
+	// Eigen::Map<RowMatrix<float,14,7>> vs { (float*) dbuf };
+	// vs.leftCols(3) = new_vs;
+	for (int i=0; i<14; i++)
+		for (int j=0; j<3; j++) dbuf[i*7+j] = new_vs.data()[i*3+j];
+
+	// verts.unmap();
 }
 
 void FrustumSet::setNextPath(int n, const Vector4f& color) {
@@ -258,16 +270,17 @@ void FrustumSet::setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R
 		int pi = pathLens[pid];
 		// simple case
 		if (pi < maxPathLen) {
-			float* dbuf = (float*) paths.map(4*3*(maxPathLen*pid + pi), 4*3);
+			// float* dbuf = (float*) paths.map(4*3*(maxPathLen*pid + pi), 4*3);
+			float* dbuf = ((float*) paths.mappedAddr) + 3*(maxPathLen*pid + pi);
 			dbuf[0] = (float)pos(0);
 			dbuf[1] = (float)pos(1);
 			dbuf[2] = (float)pos(2);
-			paths.unmap();
+			// paths.unmap();
 			pathLens[pid]++;
 		} else {
 			// Must decimate
 
-			float* dbuf = (float*) paths.map(4*3*(maxPathLen*pid), 4*3*maxPathLen);
+			float* dbuf = ((float*) paths.mappedAddr) + 3*(maxPathLen*pid + pi);
 			for (int i=0; i<maxPathLen/2; i++) {
 				dbuf[i*3+0] = dbuf[i*2*3+0];
 				dbuf[i*3+1] = dbuf[i*2*3+1];
@@ -278,7 +291,7 @@ void FrustumSet::setPose(int n, const Eigen::Vector3d& pos, const RowMatrix3d& R
 			dbuf[pi*3+0] = (float)pos(0);
 			dbuf[pi*3+1] = (float)pos(1);
 			dbuf[pi*3+2] = (float)pos(2);
-			paths.unmap();
+			// paths.unmap();
 		}
 	}
 

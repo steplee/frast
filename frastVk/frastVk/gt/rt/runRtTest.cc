@@ -27,6 +27,7 @@ struct TestRtApp : public BaseApp {
 	inline TestRtApp(const AppConfig& cfg)
 		: BaseApp(cfg),
 		  renderer(RtTypes::Config {
+				.debugMode = true,
 				// .obbIndexPath = "/data/gearth/tpAois_wgs/index.v1.bin",
 				// .rootDir = "/data/gearth/tpAois_wgs"
 				.obbIndexPath = "/data/gearth/many3_wgs/index.v1.bin",
@@ -71,7 +72,7 @@ struct TestRtApp : public BaseApp {
 	inline virtual void initVk() override {
 		BaseApp::initVk();
 
-		CameraSpec spec { (double)windowWidth, (double)windowHeight, 45. };
+		CameraSpec spec { (double)windowWidth, (double)windowHeight, 45*M_PI/180. };
 		camera = std::make_shared<SphericalEarthMovingCamera>(spec);
 
 		Eigen::Vector3d pos0 { 0.136273, -1.03348, 0.552593 };
@@ -83,7 +84,7 @@ struct TestRtApp : public BaseApp {
 		camera->setPosition(pos0.data());
 		camera->setRotMatrix(R0.data());
 
-		if (glfwWindow) glfwWindow->ioUsers.push_back(camera.get());
+		window->addIoUser(camera.get());
 		renderState.camera = camera.get();
 
 		renderer.init(mainDevice, dpool, simpleRenderPass, mainQueue, frameDatas[0].cmd, cfg);
@@ -93,7 +94,7 @@ struct TestRtApp : public BaseApp {
 		tstImg.alloc();
 		for (int y=0; y<512; y++)
 		for (int x=0; x<512; x++) {
-			uint8_t c = ((y/16)%2) == 1+((x/16)%2) ? 250 : 100;
+			uint8_t c = (y % 16 <= 4 and x % 16 <= 4) ? 200 : 0;
 			tstImg.buffer[y*512*4+x*4+0] = tstImg.buffer[y*512*4+x*4+1] = tstImg.buffer[y*512*4+x*4+2] = c;
 			tstImg.buffer[y*512*4+x*4+3] = 200;
 		}
@@ -106,12 +107,12 @@ struct TestRtApp : public BaseApp {
 			frustumSet = std::make_shared<FrustumSet>(this, 2);
 			float f_color[4] = {1.f,0.f,1.f,1.f};
 			frustumSet->setIntrin(0, 512,512,512,512);
-			frustumSet->setColor(0, f_color);
 			Vector3d fpos0 {0.115938, -0.879261  ,0.468235 };
 			for (int i=0; i<10; i++) {
 				Vector3d pos = fpos0 + Vector3d{1.,0.,0.} * ((i/10.)/100.);
 				frustumSet->setPose(0, pos,R0,true);
 			}
+			frustumSet->setColor(0, f_color);
 		}
 
 		if (1) {
@@ -130,8 +131,7 @@ struct TestRtApp : public BaseApp {
 		if (1)
 			textSet = std::make_shared<SimpleTextSet>(this);
 
-		if (1)
-			earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
+		if (1) earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
 
 	}
 
@@ -166,7 +166,6 @@ struct TestRtApp : public BaseApp {
 			textSet->setAreaAndSize(0,0, windowWidth, windowHeight, 1.f, mvpf.data());
 		}
 
-		fd.cmd.begin();
 
 		simpleRenderPass.begin(fd.cmd, fd);
 
