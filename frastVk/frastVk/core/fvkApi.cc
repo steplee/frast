@@ -122,13 +122,46 @@ Command& Command::clearImage(ExImage& image, const std::vector<float>& color) {
 	return *this;
 }
 
-Command& Command::copyImageToBuffer(ExBuffer& out, ExImage& in, VkImageLayout finalLayout) {
-	Barriers barriers;
-#error TODO: STopped here
+Command& Command::copyImageToBuffer(ExBuffer& out, ExImage& in, VkImageLayout finalLayout_) {
+	VkImageLayout finalLayout = finalLayout_ == VK_IMAGE_LAYOUT_MAX_ENUM ? in.prevLayout : finalLayout_;
 
+	Barriers inBarriers, outBarriers;
+	inBarriers.append(in, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	this->barriers(inBarriers);
+
+	VkBufferImageCopy region {
+		0, in.extent.width, in.extent.height,
+		VkImageSubresourceLayers { in.aspect, 0, 0, 1 },
+		VkOffset3D{0,0,0},
+		VkExtent3D{in.extent.width,in.extent.height,1},
+	};
+
+	//typedef void (VKAPI_PTR *PFN_vkCmdCopyImageToBuffer)(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* pRegions);
+	vkCmdCopyImageToBuffer(cmdBuf, in, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1, &region);
+
+	outBarriers.append(in, finalLayout);
+	this->barriers(outBarriers);
 	return *this;
 }
-Command& Command::copyBufferToImage(ExImage& out, ExBuffer& in, VkImageLayout finalLayout) {
+Command& Command::copyBufferToImage(ExImage& out, ExBuffer& in, VkImageLayout finalLayout_) {
+	VkImageLayout finalLayout = finalLayout_ == VK_IMAGE_LAYOUT_MAX_ENUM ? out.prevLayout : finalLayout_;
+
+	Barriers inBarriers, outBarriers;
+	inBarriers.append(out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	this->barriers(inBarriers);
+
+	VkBufferImageCopy region {
+		0, out.extent.width, out.extent.height,
+		VkImageSubresourceLayers { out.aspect, 0, 0, 1 },
+		VkOffset3D{0,0,0},
+		VkExtent3D{out.extent.width,out.extent.height,1},
+	};
+
+	//typedef void (VKAPI_PTR *PFN_vkCmdCopyBufferToImage)(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions);
+	vkCmdCopyBufferToImage(cmdBuf, in, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+	outBarriers.append(out, finalLayout);
+	this->barriers(outBarriers);
 	return *this;
 }
 
@@ -369,9 +402,11 @@ void BaseApp::initVk() {
 	windowHeight = cfg.height;
 
 	if (cfg.windowSys == AppConfig::WindowSys::eGlfw) {
+		fmt::print(" - [BaseApp::initVk] Selected windowSys was eGlfw, making GLFW window and 'real' swapchain\n");
 		makeGlfwWindow();
 		makeRealSwapChain();
 	} else if (cfg.windowSys == AppConfig::WindowSys::eHeadless) {
+		fmt::print(" - [BaseApp::initVk] Selected windowSys was eHeadless, making 'fake' swapchain\n");
 		window = new MyHeadlessWindow(windowHeight,windowHeight);
 		window->setupWindow();
 		makeFakeSwapChain();
@@ -418,6 +453,7 @@ void SimpleRenderPass::beginWithExternalFbo(Command& cmd, FrameData& fd, VkFrame
 void SimpleRenderPass::end(Command& cmd, FrameData& fd) {
 	vkCmdEndRenderPass(cmd);
 	fd.swapchainImg->prevLayout = outputLayout;
+	if (depthImages.size()) depthImages[fd.scIndx].prevLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 }
 
 SimpleRenderPass::~SimpleRenderPass() {

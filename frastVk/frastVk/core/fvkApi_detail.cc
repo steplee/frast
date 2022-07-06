@@ -1008,7 +1008,8 @@ void ExImage::deallocate() {
 
 void Barriers::append(ExImage& img, VkImageLayout to) {
 
-	if (img.prevLayout != to) {
+	if (img.prevLayout != to and to != VK_IMAGE_LAYOUT_UNDEFINED) {
+	// if (img.prevLayout != to) {
 		imgBarriers.push_back(
 				VkImageMemoryBarrier {
 				VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

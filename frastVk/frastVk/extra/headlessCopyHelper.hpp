@@ -12,6 +12,9 @@ struct HeadlessCopyMixin : public Derivee {
 template <class Derived>
 struct HeadlessCopyMixin {
 		inline HeadlessCopyMixin() {
+		}
+
+		inline void initHeadlessCopyMixin() {
 			Derived* self = (Derived*) this;
 
 			bufColor.set(self->windowWidth*self->windowHeight*4,
@@ -29,26 +32,39 @@ struct HeadlessCopyMixin {
 		}
 
 		// After calling this, bufColor/Depth will be populated with new frames output, mapped to cpu
-		inline void helper_handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) {
+		inline void helper_handleCompletedHeadlessRender(RenderState& rs, FrameData& fd, ExImage* depthImagePtr) {
 			Derived* self = (Derived*) this;
 
 			// We can re-use the command+fence, because render() waits on the frameDoneFence so cpu is in sync.
 			Command& cmd = fd.cmd;
-			Fence& fence = fd.frameDoneFence;
 
-			cmd.copy
+			// cmd.copy
+
+			cmd.begin();
+			if (wantColor) cmd.copyImageToBuffer(bufColor, *fd.swapchainImg);
+			if (wantDepth and depthImagePtr != nullptr) cmd.copyImageToBuffer(bufDepth, *depthImagePtr, VK_IMAGE_LAYOUT_UNDEFINED);
+			cmd.end();
+
+			if (wantColor) {
+				lastRenderState = rs;
+				lastRenderState.frameData = nullptr;
+			}
 
 			Submission submission { DeviceQueueSpec{self->mainDevice,self->mainQueue} };
-			submission.fence = fence;
-			// submission.signalSemas = { headlessCopyDoneSema };
-			// submission.waitSemas = { fd.renderCompleteSema };
-			// submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
-			// submission.submit(&fd.cmd.cmdBuf, 1, false); // Do NOT block on fence, do NOT reset fence -- that way frameAvailableFence won't be set until we read it in acquireNextFrame()!!!
+			submission.fence = fd.frameAvailableFence;
+			submission.waitSemas = { fd.renderCompleteSema };
+			submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
 			submission.submit(&cmd.cmdBuf, 1);
-			fmt::print(" - handled done\n");
+
+			// std::ofstream ofs("frame.bin", std::ios::out | std::ios::binary);
+			// ofs.write((const char*)bufColor.mappedAddr, fd.swapchainImg->extent.width*fd.swapchainImg->extent.height*4);
 		}
 
 	protected:
 
+		bool wantColor:1 = true;
+		bool wantDepth:1 = true;
+
 		ExBuffer bufColor, bufDepth;
+		RenderState lastRenderState;
 };

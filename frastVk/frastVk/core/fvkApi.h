@@ -375,6 +375,8 @@ struct ExUploader {
 		VkBufferUsageFlags scratchFlags;
 };
 
+// Note a barrier to UNDEFINED is invalid, so I use this throughout the code
+// to indicate that a barrier should *not* be created
 struct Barriers {
 	VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
 	VkDependencyFlags depFlags = VK_DEPENDENCY_DEVICE_GROUP_BIT;

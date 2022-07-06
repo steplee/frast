@@ -103,6 +103,8 @@ struct TestFtrApp : public Super, public HeadlessCopyMixin<TestFtrApp> {
 		renderer.cwd.setMask(0b01);
 
 		if (1) earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
+
+		initHeadlessCopyMixin();
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
@@ -136,27 +138,38 @@ struct TestFtrApp : public Super, public HeadlessCopyMixin<TestFtrApp> {
 	}
 
 	inline virtual void handleCompletedHeadlessRender(RenderState& rs, FrameData& fd) override {
-		helper_handleCompletedHeadlessRender(rs,fd);
-		Submission submission { DeviceQueueSpec{mainDevice,mainQueue} };
-		// submission.fence = nullptr;
-		submission.fence = fd.frameAvailableFence;
-		// submission.signalSemas = { headlessCopyDoneSema };
-		submission.waitSemas = { fd.renderCompleteSema };
-		submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
-		// submission.submit(&fd.cmd.cmdBuf, 1, false); // Do NOT block on fence, do NOT reset fence -- that way frameAvailableFence won't be set until we read it in acquireNextFrame()!!!
-		submission.submit(&fd.cmd.cmdBuf, 1);
-		fmt::print(" - handled done\n");
+		if (window->headless()) {
+			helper_handleCompletedHeadlessRender(rs,fd, &simpleRenderPass.depthImages[fd.scIndx]);
+			/*
+			Submission submission { DeviceQueueSpec{mainDevice,mainQueue} };
+			// submission.fence = nullptr;
+			submission.fence = fd.frameAvailableFence;
+			// submission.signalSemas = { headlessCopyDoneSema };
+			submission.waitSemas = { fd.renderCompleteSema };
+			submission.waitStages = { VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT };
+			// submission.submit(&fd.cmd.cmdBuf, 1, false); // Do NOT block on fence, do NOT reset fence -- that way frameAvailableFence won't be set until we read it in acquireNextFrame()!!!
+			submission.submit(&fd.cmd.cmdBuf, 1);
+			*/
+			fmt::print(" - handled done\n");
+		}
 	}
 
 };
 
 
-int main() {
+int main(int argc, char** argv) {
+
+
 
 	AppConfig cfg;
 	cfg.width = 1024;
 	cfg.height = 1024;
-	cfg.windowSys = AppConfig::WindowSys::eHeadless;
+
+	cfg.windowSys = AppConfig::WindowSys::eGlfw;
+	for (int i=0; i<argc; i++)
+		if (strcmp(argv[i], "-h") == 0 or strcmp(argv[i], "--headless") == 0)
+			cfg.windowSys = AppConfig::WindowSys::eHeadless;
+
 	TestFtrApp app{cfg};
 	app.initVk();
 
