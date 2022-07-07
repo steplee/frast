@@ -131,7 +131,8 @@ std::vector<std::string> MyGlfwWindow::getWindowExtensions() {
 MyHeadlessWindow::MyHeadlessWindow(int w, int h) : Window(w,h) {
 }
 std::vector<std::string> MyHeadlessWindow::getWindowExtensions() {
-	return { "VK_KHR_surface" };
+	// return { "VK_KHR_surface" };
+	return { };
 }
 void MyHeadlessWindow::setupWindow() {
 }

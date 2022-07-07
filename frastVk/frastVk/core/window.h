@@ -41,7 +41,7 @@ class Window {
 class MyGlfwWindow : public Window, public UsesIO {
 	public:
 
-		MyGlfwWindow(int h, int w);
+		MyGlfwWindow(int w, int h);
 		MyGlfwWindow();
 		virtual ~MyGlfwWindow();
 		void destroyWindow();
@@ -73,7 +73,7 @@ class MyGlfwWindow : public Window, public UsesIO {
 
 class MyHeadlessWindow : public Window {
 	public:
-		MyHeadlessWindow(int h, int w);
+		MyHeadlessWindow(int w, int h);
 		virtual ~MyHeadlessWindow();
 
 		virtual std::vector<std::string> getWindowExtensions() override;

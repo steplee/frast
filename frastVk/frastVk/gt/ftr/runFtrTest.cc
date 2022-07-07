@@ -162,8 +162,8 @@ int main(int argc, char** argv) {
 
 
 	AppConfig cfg;
-	cfg.width = 1024;
-	cfg.height = 1024;
+	cfg.width = 1600;
+	cfg.height = 1000;
 
 	cfg.windowSys = AppConfig::WindowSys::eGlfw;
 	for (int i=0; i<argc; i++)

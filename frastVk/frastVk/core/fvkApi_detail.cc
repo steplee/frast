@@ -389,7 +389,7 @@ void BaseApp::executeAndPresent(RenderState& rs, FrameData& fd) {
 
 
 void BaseApp::makeGlfwWindow() {
-	window = new MyGlfwWindow(cfg.height, cfg.width);
+	window = new MyGlfwWindow(cfg.width, cfg.height);
 	window->setupWindow();
 	window->addIoUser(this);
 }
