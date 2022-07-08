@@ -142,8 +142,8 @@ struct Image {
 
 	// Destination image should be allocated.
 	void warpAffine(Image& out, const float H[6]) const;
-	// H is not const: it may be divided by H[8].
-	void warpPerspective(Image& out, float H[9]) const;
+	void warpPerspective(Image& out, float H[9]) const; // H is not const: it may be divided by H[8].
+	void halfscale(Image& out) const;
 
 	// Remap pixels, where the map is possibly a different size.
 	// This is like doing two bilinear interpolations: once on map coords, once on pixels.

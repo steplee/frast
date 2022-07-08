@@ -6,8 +6,9 @@
 #include <iomanip>
 #include <fstream>
 
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
+// #include <opencv2/imgproc.hpp>
+// #include <opencv2/imgcodecs.hpp>
+#include "utils/memcpy_utils.hpp"
 
 
 namespace {
@@ -23,7 +24,8 @@ int image_signature(const Image& i) {
 int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 	auto f = dset.format();
 	int ts = dset.tileSize();
-	Image img { ts, ts, f }; img.alloc();
+	Image tmpImg { ts, ts, f };
+	tmpImg.alloc();
 
 	if (x == -1 or y == -1) {
 		uint64_t tlbr[4];
@@ -34,25 +36,39 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		h = tlbr[3] - tlbr[1];
 	}
 
-	auto c = dset.channels();
-	auto cv_type = dset.format() == Image::Format::TERRAIN_2x8 ? CV_16UC1 : c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
-	cv::Mat mat ( ts * h, ts * w, cv_type );
+	auto channels = dset.channels();
+	auto format = dset.format();
+	// auto cv_type = dset.format() == Image::Format::TERRAIN_2x8 ? CV_16UC1 : c == 1 ? CV_8U : c == 3 ? CV_8UC3 : CV_8UC4;
+	// cv::Mat mat ( ts * h, ts * w, cv_type );
+	Image img { ts*h, ts*w, dset.format() };
+	img.alloc();
 
 	for (uint64_t yy=y, yi=0; yy<y+h; yy++, yi++)
 	for (uint64_t xx=x, xi=0; xx<x+w; xx++, xi++) {
 		BlockCoordinate coord { z,yy,xx };
-		cv::Mat imgRef ( ts, ts, cv_type, img.buffer );
-		if (dset.get(img, coord, nullptr)) {
+
+		// cv::Mat imgRef ( ts, ts, cv_type, img.buffer );
+		if (dset.get(tmpImg, coord, nullptr)) {
 			printf(" - accessed bad block %d %lu %lu.\n", z,yy,xx);
-			imgRef = cv::Scalar{0};
+			for (int i=0; i<tmpImg.size(); i++) ((uint8_t*)(tmpImg.buffer))[i] = 0;
+			// imgRef = cv::Scalar{0};
 			//return 1;
 		}
 
-		imgRef.copyTo(mat(cv::Rect({((int)xi)*ts, (int)(h-1-yi)*ts, ts, ts})));
+		// imgRef.copyTo(mat(cv::Rect({((int)xi)*ts, (int)(h-1-yi)*ts, ts, ts})));
+
+		auto rowStride = ts*w;
+		uint8_t* src = tmpImg.buffer;
+		uint8_t* dst = img.buffer + img.eleSize()*ts*channels*(xi) + img.eleSize()*channels*rowStride*(h-1-yi)*ts;
+		if (format == Image::Format::TERRAIN_2x8) memcpyStridedOutputFlatInput<uint16_t,1>((uint16_t*)dst, (uint16_t*)src, rowStride, ts, ts);
+		else if (channels == 1) memcpyStridedOutputFlatInput<uint8_t,1>(dst, src, rowStride, ts, ts);
+		else if (channels == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, src, rowStride, ts, ts);
+		else if (channels == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, src, rowStride, ts, ts);
 	}
 
 
 	// Handle terrain case
+	/*
 	if (dset.format() == Image::Format::TERRAIN_2x8) {
 		cv::Mat tmp = mat.clone();
 		mat = cv::Mat(ts*h, ts*w, CV_8UC3);
@@ -78,19 +94,41 @@ int dumpTile(Dataset& dset, uint64_t z, uint64_t y, uint64_t x, int w, int h) {
 		cv::putText(mat, a, {20,20}, 0, 1.f, cv::Scalar{0,255,0});
 		cv::putText(mat, b, {20,50}, 0, 1.f, cv::Scalar{0,255,0});
 	}
+	*/
+	if (dset.format() == Image::Format::TERRAIN_2x8) {
+		Image tmp = std::move(img);
+		img = std::move(Image { tmp.h, tmp.w, Image::Format::GRAY });
+		img.alloc();
+
+		uint16_t min_ = 65534, max_ = 0;
+		for (int y=0; y<tmp.h; y++)
+		for (int x=0; x<tmp.w; x++) {
+			uint16_t val = ((uint16_t*)tmp.buffer)[y*tmp.w+x];
+			if (val < min_) min_ = val;
+			if (val > max_) max_ = val;
+		}
+
+		for (int y=0; y<tmp.h; y++)
+		for (int x=0; x<tmp.w; x++) {
+			uint16_t val_ = ((uint16_t*)tmp.buffer)[y*tmp.w+x] - min_;
+			float val = 255.9f * static_cast<float>(val_) / max_;
+			((uint8_t*)img.buffer)[y*tmp.w+x] = val;
+		}
+	}
 
 	// if (img.channels() == 3) cv::cvtColor(mat, mat, cv::COLOR_RGB2BGR);
 	// cv::imwrite("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + ".jpg", mat);
 
 	std::ofstream ofs("out/tile_" + std::to_string(z) + "_" + std::to_string(y) + "_" + std::to_string(x) + "_.jpg", std::ofstream::out | std::ofstream::binary);
-			EncodedImage eimg;
-			Image img_ { mat.rows, mat.cols, dset.format(), mat.data };
-			encode(eimg, img_);
+	EncodedImage eimg;
+	// Image img_ { mat.rows, mat.cols, dset.format(), mat.data };
+	encode(eimg, img);
 	ofs.write((char*)eimg.data(), eimg.size());
 
 	return 0;
 }
 
+/*
 int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
 	Image img {512,512,Image::Format::RGB};
 	img.alloc();
@@ -106,7 +144,9 @@ int rasterIo_it(DatasetReader& dset, double tlbr[4]) {
 	cv::imwrite("out/rasterIoed.jpg", mat);
 	return 0;
 }
-int testGray() {
+*/
+
+/*int testGray() {
 	Image img1 { 256, 256, Image::Format::RGB };
 	Image img2 { 256, 256, Image::Format::GRAY };
 	img1.calloc();
@@ -126,7 +166,7 @@ int testGray() {
 	cv::imwrite("out/grayTest2.jpg", mat2);
 
 	return 0;
-}
+}*/
 }
 
 int do_subaoi(DatasetWritable& dsetOut, DatasetReader& dsetIn, double tlbr[4]) {
@@ -195,9 +235,8 @@ int do_subaoi(DatasetWritable& dsetOut, DatasetReader& dsetIn, double tlbr[4]) {
 }
 
 int main(int argc, char** argv) {
-	if (argc > 1 and strcmp(argv[1],"testGray") == 0) {
-		return testGray();
-	}
+	// if (argc > 1 and strcmp(argv[1],"testGray") == 0) return testGray();
+
 	if (argc > 1 and strcmp(argv[1],"dumpTile") == 0) {
 		assert(argc == 6 or argc == 8);
 		int z = std::atoi(argv[3]);
@@ -209,6 +248,7 @@ int main(int argc, char** argv) {
 		return dumpTile(dset, z,y,x, w,h);
 	}
 
+	/*
 	if (argc > 1 and strcmp(argv[1],"rasterIo") == 0) {
 		assert(argc == 7);
 		double tlbr[4] = {
@@ -219,6 +259,7 @@ int main(int argc, char** argv) {
 		DatasetReader dset(std::string{argv[2]});
 		return rasterIo_it(dset, tlbr);
 	}
+	*/
 
 	if (argc > 1 and strcmp(argv[1],"subaoi") == 0) {
 		if (argc != 8) {

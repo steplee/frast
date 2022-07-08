@@ -28,7 +28,7 @@ python3 -m pysrc.compile_shaders --srcFiles frastVk/shaders/**/*.glsl --dstName 
 FrastVk does not support frame overlap. That is, even though the swapchain has three or more entries, only one frame can be rendering at once (of course one is also being presented, so it is double buffered). To get as many frames as possible, Vulkan applications can actually render more than one frame ahead of time. But this requires N-way buffering *all* UBOs, textures, etc. which is outside the scope of frastVk. Doing all that extra buffering is not worth the trouble, considering how smooth the results already are. Besides that, it is usually impossible to get future data to even fill the buffers with! I guess the idea of a framework with frame-overlap is to render as many frames with inter/extrapolated data not just to get more frames, but so that the data is always most recent -- even if it is not as valid.
 
 # Dockerization
-Building with docker is currently support on x864_64. I need to remove OpenCV because it is a massive depedency. You must download the Vulkan SDK version 1.3.211 and put `./docker/dist/`, then use
+Building with docker is currently support on x864_64. I need to remove  OpenCV because it is a massive depedency. (*update: done. Unfortunately libgdal is still requires a bunch of shared objects present...) You must download the Vulkan SDK version 1.3.211 and put `./docker/dist/`, then use
 ```
 sudo docker build -t frast:0.9 -f docker/Dockerfile.dev .
 ```
@@ -37,7 +37,6 @@ sudo docker build -t frast:0.9 -f docker/Dockerfile.dev .
 ### Dependencies
   - Eigen
   - LMDB
-  - OpenCV 4+
   - Clang
 
 

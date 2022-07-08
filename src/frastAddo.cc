@@ -1,8 +1,10 @@
 #include "db.h"
+#include "utils/memcpy_utils.hpp"
 
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/highgui.hpp>
+// #include <opencv2/imgproc.hpp>
+// #include <opencv2/imgcodecs.hpp>
+// #include <opencv2/highgui.hpp>
+#include <algorithm>
 
 #include <omp.h>
 #include <chrono>
@@ -168,22 +170,29 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 	assert(format == Image::Format::RGB or format == Image::Format::GRAY or format == Image::Format::TERRAIN_2x8);
 	int channels = dset.channels();
 	int tileSize = dset.tileSize();
-	auto cv_type = format == Image::Format::TERRAIN_2x8 ? CV_16UC1 : channels == 1 ? CV_8U : channels == 3 ? CV_8UC3 : CV_8UC4;
+
+	// auto cv_type = format == Image::Format::TERRAIN_2x8 ? CV_16UC1 : channels == 1 ? CV_8U : channels == 3 ? CV_8UC3 : CV_8UC4;
+	// cv::Mat tmpMat_[ADDO_THREADS];
+	// cv::Mat parent_[ADDO_THREADS];
+	// cv::Mat child_[ADDO_THREADS];
+	Image parent_[ADDO_THREADS];
+	Image child_[ADDO_THREADS];
 
 	Image tmpImage_[ADDO_THREADS];
-	cv::Mat tmpMat_[ADDO_THREADS];
-	cv::Mat parent_[ADDO_THREADS];
-	cv::Mat child_[ADDO_THREADS];
 	//MDB_txn* r_txn_[ADDO_THREADS];
 	EncodedImage eimg_[ADDO_THREADS];
 
 	for (int i=0; i<ADDO_THREADS; i++) {
 		tmpImage_[i] = Image { tileSize, tileSize, format };
 		tmpImage_[i].alloc();
-		tmpMat_[i]   = cv::Mat ( tileSize, tileSize, cv_type, tmpImage_[i].buffer );
-		parent_[i]   = cv::Mat ( tileSize*2, tileSize*2, cv_type );
-		child_[i]    = cv::Mat ( tileSize  , tileSize  , cv_type );
+		// tmpMat_[i]   = cv::Mat ( tileSize, tileSize, cv_type, tmpImage_[i].buffer );
+		// parent_[i]   = cv::Mat ( tileSize*2, tileSize*2, cv_type );
+		// child_[i]    = cv::Mat ( tileSize  , tileSize  , cv_type );
 		//r_txn_[i]    = nullptr;
+		parent_[i] = Image { 2*tileSize, 2*tileSize, format };
+		child_[i] = Image { tileSize, tileSize, format };
+		parent_[i].alloc();
+		child_[i].alloc();
 	}
 
 #pragma omp parallel num_threads(ADDO_THREADS) shared(lvlTlbr)
@@ -211,9 +220,8 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 
 			int tid = omp_get_thread_num();
 			Image& tmpImage = tmpImage_[tid];
-			cv::Mat& tmpMat = tmpMat_[tid];
-			cv::Mat& parent = parent_[tid];
-			cv::Mat& child = child_[tid];
+			Image& parent = parent_[tid];
+			Image& child = child_[tid];
 			EncodedImage& eimg = eimg_[tid];
 			int tilesInRow = 0;
 			auto startTime = std::chrono::high_resolution_clock::now();
@@ -247,7 +255,16 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					//cv::waitKey(1);
 					{
 						AtomicTimerMeasurement tg(t_memcpyStrided);
-						tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
+						// tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
+						//inline void memcpyStridedOutputFlatInput(T* dst, const T* src, size_t rowStride, size_t w, size_t h) {
+						auto rowStride = tileSize*2;
+						uint8_t* src = tmpImage.buffer;
+						uint8_t* dst = parent.buffer + parent.eleSize()*tileSize*channels*(j%2) + parent.eleSize()*channels*rowStride*(1-j/2)*tileSize;
+						// uint8_t* dst = parent.buffer + tileSize*channels*(j%2) + channels*rowStride*(j/2)*tileSize;
+						if (format == Image::Format::TERRAIN_2x8) memcpyStridedOutputFlatInput<uint16_t,1>((uint16_t*)dst, (uint16_t*)src, rowStride, tileSize, tileSize);
+						else if (channels == 1) memcpyStridedOutputFlatInput<uint8_t,1>(dst, src, rowStride, tileSize, tileSize);
+						else if (channels == 3) memcpyStridedOutputFlatInput<uint8_t,3>(dst, src, rowStride, tileSize, tileSize);
+						else if (channels == 4) memcpyStridedOutputFlatInput<uint8_t,4>(dst, src, rowStride, tileSize, tileSize);
 					}
 				}
 
@@ -259,17 +276,21 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					// Downsample
 					{
 						AtomicTimerMeasurement tg(t_warp);
-						cv::resize(parent, child, cv::Size{tileSize,tileSize});
+						// cv::resize(parent, child, cv::Size{tileSize,tileSize});
+						// constexpr float H[6] = { .5, 0, 0, 0, .5, 0, };
+						// parent.warpAffine(child, H);
+						parent.halfscale(child);
 					}
 
 					//if (tid == 0) { cv::imshow("parent",parent); cv::waitKey(1); }
 
 					// Put
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);
-					Image childImg { child.cols, child.rows, format, child.data };
+					// Image childImg { child.cols, child.rows, format, child.data };
 					{
 						AtomicTimerMeasurement tg(t_encodeImage);
-						encode(wtile.eimg, childImg);
+						// encode(wtile.eimg, childImg);
+						encode(wtile.eimg, child);
 					}
 					wtile.coord = myCoord;
 					dset.sendCommand(DbCommand{DbCommand::TileReady, wtile.bufferIdx});

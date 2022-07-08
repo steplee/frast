@@ -183,6 +183,7 @@ bool encode_jpeg(EncodedImage& out, const Image& img) {
 #ifdef USE_MY_WARP
 
 #include "detail/image_warp_impl.hpp"
+#include "detail/image_halfscale_impl.hpp"
 
 void Image::warpAffine(Image& out, const float H[6]) const {
 
@@ -210,6 +211,15 @@ void Image::warpPerspective(Image& out, float H[9]) const {
 			 out.format == Image::Format::RGBN) my_warpPerspective<uint8_t,4>(out, *this, H);
 	else if (out.format == Image::Format::TERRAIN_2x8) my_warpPerspective<uint16_t,1>(out, *this, H);
 	else throw std::runtime_error(std::string{"Image::warpPerspective() unsupported format/channels "} + std::to_string(out.channels()));
+}
+
+void Image::halfscale(Image& out) const {
+	if (out.format == Image::Format::GRAY) my_halfscale<uint8_t,1,1>(out, *this);
+	else if (out.format == Image::Format::RGB) my_halfscale<uint8_t,3,3>(out, *this);
+	else if (out.format == Image::Format::RGBA or
+			 out.format == Image::Format::RGBN) my_halfscale<uint8_t,4,4>(out, *this);
+	else if (out.format == Image::Format::TERRAIN_2x8) my_halfscale<uint16_t,1,1>(out, *this);
+	else throw std::runtime_error(std::string{"Image::halfscale() unsupported format/channels "} + std::to_string(out.channels()));
 }
 
 #else

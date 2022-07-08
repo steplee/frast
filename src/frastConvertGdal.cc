@@ -1,5 +1,6 @@
 #include "db.h"
 #include "image.h"
+#include "utils/solve.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -12,7 +13,7 @@
 #include <ogr_spatialref.h>
 
 //#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
+// #include <opencv2/imgproc.hpp>
 //#include <opencv2/imgcodecs.hpp>
 //#include <opencv2/highgui.hpp>
 
@@ -250,52 +251,18 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
         //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
         if (read_w <= 0 or read_h <= 0) return 1;
+
+		/*
 		auto cv_type = imgPrj.format == Image::Format::TERRAIN_2x8 ? CV_16UC1 : imgPrj.channels() == 3 ? CV_8UC3 : CV_8U;
         cv::Mat         buf(read_h, read_w, cv_type);
         auto            err = dset->RasterIO(GF_Read,
-                                  inner(0),
-                                  inner(1),
-                                  inner_w,
-                                  inner_h,
+                                  inner(0), inner(1), inner_w, inner_h,
                                   buf.data,
-                                  read_w,
-                                  read_h,
-                                  gdalType,
-                                  nbands,
-                                  nullptr,
-                                  eleSize * nbands,
-                                  eleSize * nbands * read_w,
-                                  eleSize * 1,
-                                  nullptr);
+                                  read_w, read_h, gdalType,
+                                  nbands, nullptr,
+                                  eleSize * nbands, eleSize * nbands * read_w, eleSize * 1, nullptr);
         if (err != CE_None) return true;
 
-		// TODO If converting from other terrain then GMTED, must modify here
-		if (out.format == Image::Format::TERRAIN_2x8)
-			transform_gmted((uint16_t*) buf.data, read_h, read_w);
-
-		// Nevermind: This won't work if input tiffs are split exactly on edges.
-		// This will work if tiffs have some overlap, but that is rare
-		/*
-		// Make edges of sampled buffer black (nodata).
-		// This helps frastMerge avoid weighting bilinear sampled nodata/realData
-		// edges, which causes black seams!
-		if (yoff < 0)
-		buf(cv::Rect{0,0,buf.cols,5})            = cv::Scalar{0};
-		if (xoff < 0)
-		buf(cv::Rect{0,0,5,buf.rows})            = cv::Scalar{0};
-		if (xoff+xsize > w)
-		buf(cv::Rect{buf.cols-5,0,5,buf.rows}) = cv::Scalar{0};
-		if (yoff+ysize > h)
-		buf(cv::Rect{0,buf.rows-5,buf.cols,5}) = cv::Scalar{0};
-		*/
-
-        float in_pts[6]  = {0, 0, sx * inner_w, 0, 0, sy * inner_h};
-        float out_pts[6] = {sx * (inner(0) - xoff),
-                            sy * (inner(1) - yoff),
-                            sx * (inner(2) - xoff),
-                            sy * (inner(1) - yoff),
-                            sx * (inner(0) - xoff),
-                            sy * (inner(3) - yoff)};
 
         cv::Mat in_pts_(3, 2, CV_32F, in_pts);
         cv::Mat out_pts_(3, 2, CV_32F, out_pts);
@@ -304,6 +271,47 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
 			cv::cvtColor(buf,buf,cv::COLOR_RGB2GRAY);
 		cv::Mat out_(outh, outw, cv_type, out.buffer);
         cv::warpAffine(buf, out_, A, cv::Size{outw, outh});
+		*/
+
+		Image buf { read_h, read_w, imgPrj.format };
+		buf.alloc();
+        auto            err = dset->RasterIO(GF_Read,
+                                  inner(0), inner(1), inner_w, inner_h,
+                                  buf.buffer,
+                                  read_w, read_h, gdalType,
+                                  nbands, nullptr,
+                                  eleSize * nbands, eleSize * nbands * read_w, eleSize * 1, nullptr);
+        if (err != CE_None) return true;
+
+		// TODO If converting from other terrain then GMTED, must modify here
+		if (out.format == Image::Format::TERRAIN_2x8)
+			transform_gmted((uint16_t*) buf.buffer, read_h, read_w);
+
+        float in_pts[8]  = {0, 0, sx * inner_w, 0, 0, sy * inner_h, sx*inner_w, sy*inner_h};
+        float out_pts[8] = {sx * (inner(0) - xoff),
+                            sy * (inner(1) - yoff),
+                            sx * (inner(2) - xoff),
+                            sy * (inner(1) - yoff),
+                            sx * (inner(0) - xoff),
+                            sy * (inner(3) - yoff),
+                            sx * (inner(2) - xoff),
+                            sy * (inner(3) - yoff)};
+
+        /*cv::Mat in_pts_(3, 2, CV_32F, in_pts);
+        cv::Mat out_pts_(3, 2, CV_32F, out_pts);
+        cv::Mat A = cv::getAffineTransform(in_pts_, out_pts_);
+		if (out.format == Image::Format::GRAY and imgPrj.format == Image::Format::RGB)
+			cv::cvtColor(buf,buf,cv::COLOR_RGB2GRAY);
+		cv::Mat out_(outh, outw, cv_type, out.buffer);
+        cv::warpAffine(buf, out_, A, cv::Size{outw, outh});*/
+
+		// void solveHomography(float H[9], const float A_[8], const float B_[8]) {
+		// void warpPerspective(Image& out, float H[9]) const; // H is not const: it may be divided by H[8].
+		float H[9];
+		solveHomography(H, in_pts, out_pts);
+		buf.warpPerspective(out, H);
+
+
         return false;
     } else {
 		memset(out.buffer, 0, out.w*out.h*out.channels());
