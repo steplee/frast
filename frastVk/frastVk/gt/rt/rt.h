@@ -52,6 +52,7 @@ struct RtTypes {
 	struct Config {
 		bool allowCaster = true;
 		bool debugMode = false;
+		float sseThresholdClose=.9f, sseThresholdOpen=1.5f;
 		std::string obbIndexPath;
 		std::string rootDir;
 	};
@@ -104,12 +105,39 @@ struct RtCoordinate {
 			key[i] = s[i];
 		}
 		len = i;
+		// fmt::print(" - Coord from buffer {} -> {}/{}\n", s, toString(), len);
 	}
 	inline RtCoordinate(const RtCoordinate& other, char next) {
 		memcpy(key, other.key, MAX_LEN);
 		key[other.len] = next;
 		len = other.len + 1;
 	}
+	inline RtCoordinate(const RtCoordinate& other) {
+		memcpy(key, other.key, MAX_LEN);
+		len = other.len;
+	}
+	inline RtCoordinate& operator=(const RtCoordinate& other) {
+		memcpy(key, other.key, MAX_LEN);
+		len = other.len;
+		return *this;
+	}
+	/*
+	inline RtCoordinate(RtCoordinate&& other) {
+		memcpy(key, other.key, MAX_LEN);
+		len = other.len;
+		other.len = 0;
+		memset(other.key, 0, MAX_LEN);
+	}
+	inline RtCoordinate& operator=(RtCoordinate&& other) {
+		memcpy(key, other.key, MAX_LEN);
+		len = other.len;
+		other.len = 0;
+		memset(other.key, 0, MAX_LEN);
+		return *this;
+	}
+	*/
+	RtCoordinate(RtCoordinate&& other) = delete;
+	RtCoordinate& operator=(RtCoordinate&& other) = delete;
 
 	inline RtCoordinate parent() const {
 		RtCoordinate out;
@@ -119,7 +147,7 @@ struct RtCoordinate {
 	}
 
 	inline std::string toString() const {
-		return std::string{key, len};
+		return std::string{key, (size_t)len};
 	}
 
 	bool operator==(const RtCoordinate& b) const {
@@ -130,6 +158,24 @@ struct RtCoordinate {
 	inline int level() const {
 		return len;
 	}
+
+	// Used for fvkGtGenSets, returns all possible children
+	std::vector<RtCoordinate> enumerateChildren() const;
+
+	// Note: this is not simple string comparison. And this is different from FtCoordinate.
+	//       The idea is to not take level into account (don't want to order lvl-by-lvl)
+	inline bool operator<(const RtCoordinate& b) const {
+		// return toString() < o.toString();
+
+		uint8_t minLen = std::min(len, b.len);
+		// fmt::print(" - Compare {}/{} {}/{} ml \n", toString(), b.toString(), len, b.len, minLen);
+		for (int i=0; i<minLen; i++) {
+			if (key[i] < b.key[i]) return true;
+			if (key[i] > b.key[i]) return false;
+		}
+		return len < b.len;
+	}
+
 	struct Hash {
 		inline uint64_t operator()(const RtCoordinate& nc) const {
 			uint64_t acc = 0;
@@ -137,6 +183,7 @@ struct RtCoordinate {
 			return acc;
 		}
 	};
+
 };
 
 struct RtDataLoader : public GtDataLoader<RtTypes, RtDataLoader> {

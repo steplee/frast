@@ -553,7 +553,7 @@ void BaseApp::makeFrameDatas() {
 		VkFenceCreateInfo fci1 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, {} };
 		// VkFenceCreateInfo fci2 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT };
 		VkFenceCreateInfo fci2 { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, {} };
-		if (window->headless()) fci2.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+		// if (window->headless()) fci2.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 		assertCallVk(vkCreateFence(mainDevice, &fci1, nullptr, &fd.frameDoneFence));
 		assertCallVk(vkCreateFence(mainDevice, &fci2, nullptr, &fd.frameAvailableFence));
 		fmt::print(" - frameDatas[{}] fence {}\n", i, (void*)fd.frameAvailableFence);
@@ -1348,7 +1348,8 @@ void ExUploader::uploadScratch(void* data, size_t len) {
 }
 
 ExUploader::~ExUploader() {
-	vkDestroyFence(*device, fence, nullptr);
+	if (fence and device)
+		vkDestroyFence(*device, fence, nullptr);
 }
 
 Fence::Fence(Device& d, bool signaled) : device(&d) {

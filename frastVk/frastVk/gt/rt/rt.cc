@@ -10,6 +10,7 @@
 // Just need to instantiate the templated functions here.
 // TODO Have a macro do this in gt_impl.hpp, given for example "RtTypes"
 
+template GtRenderer<RtTypes, RtTypes::Renderer>::GtRenderer(const typename RtTypes::Config &cfg_);
 template void GtRenderer<RtTypes, RtTypes::Renderer>::init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 // template void GtRenderer<RtTypes, RtTypes::Renderer>::initDebugPipeline(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
@@ -22,6 +23,14 @@ template GtPooledData<RtTypes>::GtPooledData();
 
 template void GtDataLoader<RtTypes, RtTypes::DataLoader>::pushAsk(GtAsk<RtTypes>& ask);
 template void GtDataLoader<RtTypes, RtTypes::DataLoader>::internalLoop();
+
+std::vector<RtCoordinate> RtCoordinate::enumerateChildren() const {
+	std::vector<RtCoordinate> cs;
+	for (int i=0; i<8; i++) {
+		cs.emplace_back(*this, i+'0');
+		return cs;
+	}
+}
 
 RtRenderer::~RtRenderer() {
 }

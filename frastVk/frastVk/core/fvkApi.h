@@ -677,6 +677,8 @@ struct BaseApp : public UsesIO {
 	void makeFrameDatas();
 	void destroyFrameDatas();
 
+	VkDebugUtilsMessengerEXT debugMessenger { nullptr };
+
 
 	float timeZero = 0;
 

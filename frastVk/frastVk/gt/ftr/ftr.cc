@@ -10,6 +10,7 @@
 // Just need to instantiate the templated functions here.
 // TODO Have a macro do this in gt_impl.hpp, given for example "FtTypes"
 
+template GtRenderer<FtTypes, FtTypes::Renderer>::GtRenderer(const typename FtTypes::Config &cfg_);
 template void GtRenderer<FtTypes, FtTypes::Renderer>::init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 // template void GtRenderer<FtTypes, FtTypes::Renderer>::initDebugPipeline(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
@@ -27,6 +28,16 @@ static uint32_t log2_(uint32_t x) {
 	uint32_t y = 0;
 	while (x>>=1) y++;
 	return y;
+}
+
+std::vector<FtCoordinate> FtCoordinate::enumerateChildren() const {
+	std::vector<FtCoordinate> cs;
+	for (uint64_t i=0; i<4; i++) {
+		uint64_t dx = i % 2;
+		uint64_t dy = (i/2) % 2;
+		cs.emplace_back(z()+1, y()*2+dx, x()*2+dy );
+		}
+	return cs;
 }
 
 FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader<FtTypes, FtDataLoader>(renderer_) {

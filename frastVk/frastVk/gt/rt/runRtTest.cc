@@ -62,7 +62,7 @@ struct TestRtApp : public BaseApp {
 		const double* viewInv = camera->viewInv();
 		gtucd.eye = Vector3f { viewInv[0*4+3], viewInv[1*4+3], viewInv[2*4+3] };
 
-		GtUpdateContext<RtTypes> gtuc { renderer.loader, *renderer.obbMap, renderer.gtpd, gtucd };
+		GtUpdateContext<RtTypes> gtuc { renderer.loader, *renderer.obbMap, renderer.gtpd, renderer.nReq, gtucd };
 		gtuc.sseThresholdClose = .9;
 		gtuc.sseThresholdOpen = 1.5;
 		renderer.update(gtuc);
@@ -136,6 +136,7 @@ struct TestRtApp : public BaseApp {
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
+		if (renderer.asksInflight() > 0) fmt::print(" - Asks in Flight : {} ({} - {})\n", renderer.asksInflight(), renderer.nReq, renderer.nRes);
 		auto &fd = *rs.frameData;
 		auto &cmd = fd.cmd;
 

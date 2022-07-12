@@ -103,11 +103,20 @@ class GtObbMap {
 			return map[c];
 		}
 
+
 	private:
 		std::string path;
 		std::vector<typename GtTypes::Coord> roots;
 
 		std::unordered_map<typename GtTypes::Coord, typename GtTypes::BoundingBox, typename GtTypes::Coord::Hash> map;
+
+	public:
+
+		using Iterator = typename decltype(map)::const_iterator;
+		inline Iterator begin() const { return map.begin(); }
+		inline Iterator end()   const { return map.end();   }
+		inline uint32_t size()  const { return map.size();  }
+
 };
 
 // -----------------------------------------------------------
@@ -156,6 +165,7 @@ struct GtUpdateContext {
 	typename GtTypes::DataLoader& dataLoader;
 	typename GtTypes::ObbMap& obbMap;
 	GtPooledData<GtTypes>& pooledData;
+	uint32_t& nReq; // held by GtRenderer: incremented for each pushAsk() call
 
 	// Camera/Screen info
 	// RowMatrix4f mvp;
@@ -359,29 +369,7 @@ struct GtRenderer : public Castable {
 	public:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-		inline GtRenderer(const typename GtTypes::Config &cfg_)
-			:
-			  cfg(cfg_),
-			  debugMode(cfg_.debugMode),
-			  loader((Derived&)*this),
-			  // obbMap(new typename GtTypes::ObbMap("/data/gearth/tpAois_wgs/index.v1.bin"))
-			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPath))
-		{
-
-			GtAsk<GtTypes> ask;
-			ask.isOpen = true;
-			ask.ancestor = nullptr;
-			for (auto &rootCoord : obbMap->getRootCoords()) {
-				auto root = new typename GtTypes::Tile(rootCoord);
-				root->bb = obbMap->get(rootCoord);
-				fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
-				root->state = GtTypes::Tile::INVALID;
-				root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
-				roots.push_back(root);
-				ask.tiles.push_back(root);
-			}
-			loader.pushAsk(ask);
-		}
+		GtRenderer(const typename GtTypes::Config &cfg_);
 
 		inline ~GtRenderer() {
 			loader.join();
@@ -437,6 +425,10 @@ struct GtRenderer : public Castable {
 		GraphicsPipeline dbgPipeline;
 
 		Sampler sampler;
+
+		// The number asked, and the number answered
+		uint32_t nReq = 0, nRes = 0;
+		uint32_t asksInflight() const { return nReq - nRes; }
 
 		inline uint32_t activeTiles() { return GT_NUM_TILES - gtpd.available.size(); }
 };

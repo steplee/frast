@@ -1,8 +1,23 @@
 #include "fvkApi.h"
+#include <iostream>
+#include <fmt/color.h>
 
 #include <chrono>
 namespace {
 static std::chrono::time_point<std::chrono::high_resolution_clock> __tp0;
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback_(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData) {
+
+    // std::cout << "validation layer: " << pCallbackData->pMessage << std::endl;
+	fmt::print(fmt::fg(fmt::color::orange), "{}\n", pCallbackData->pMessage);
+
+    return VK_FALSE;
+}
+
 }
 float getSeconds(bool first) {
 	if (first) {
@@ -211,7 +226,7 @@ TheDescriptorPool::~TheDescriptorPool() {
 	if (pool != nullptr) vkDestroyDescriptorPool(*device, pool, {});
 }
 
-static VkInstance makeInstance(const AppConfig& cfg) {
+static VkInstance makeInstance(const AppConfig& cfg, VkDebugUtilsMessengerEXT& debugMessenger) {
 
 	/*
 #ifndef VK_HEADER_VERSION_COMPLETE
@@ -250,6 +265,7 @@ static VkInstance makeInstance(const AppConfig& cfg) {
 #endif
 
 
+
 	for (auto ext : cfg.extraInstanceExtensions()) exts.push_back(ext);
 
 
@@ -278,6 +294,25 @@ static VkInstance makeInstance(const AppConfig& cfg) {
 	}
 	fmt::print(" - instance version {} :: {} {} {}\n", instanceVersion, VK_API_VERSION_MAJOR(instanceVersion), VK_API_VERSION_MINOR(instanceVersion), VK_API_VERSION_PATCH(instanceVersion));
 
+#ifdef VULKAN_DEBUG
+	if (getenv("NO_VULKAN_DEBUG") == 0) {
+		VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		createInfo.pfnUserCallback = debugCallback_;
+		createInfo.pUserData = nullptr; // Optional
+
+		// VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
+		auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+		if (func != nullptr) {
+			func(instance, &createInfo, nullptr, &debugMessenger);
+		} else {
+			//return VK_ERROR_EXTENSION_NOT_PRESENT;
+		}
+	}
+#endif
+
 	return instance;
 }
 
@@ -295,6 +330,11 @@ BaseApp::BaseApp(const AppConfig& cfg)
 
 BaseApp::~BaseApp() {
 	fmt::print(" - ~BaseApp()\n");
+	if (debugMessenger) {
+		auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+		if (func)
+			func(instance, debugMessenger, nullptr);
+	}
 	destroyFrameDatas();
 	if (window) {
 		delete window;
@@ -391,7 +431,7 @@ void BaseApp::initVk() {
 		// mainQueue(mainDevice, mainDevice.queueFamilyGfxIdxs[0], 0),
 		// dpool(*this), swapchain(*this),
 		// mainCommandPool(mainDevice, mainDevice.queueFamilyGfxIdxs[0])
-	instance = makeInstance(cfg);
+	instance = makeInstance(cfg, debugMessenger);
 	mainDevice = std::move(createStandardDevice(cfg, instance));
 	mainQueue = std::move(Queue{mainDevice, mainDevice.queueFamilyGfxIdxs[0], 0});
 	dpool = std::move(TheDescriptorPool(*this));

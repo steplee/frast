@@ -41,9 +41,11 @@ struct FtTypes {
 
 		bool allowCaster = true;
 		bool debugMode = false;
+		float sseThresholdClose=.9f, sseThresholdOpen=1.5f;
 		std::string obbIndexPath;
 		std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
 		std::string elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
+
 	};
 
 
@@ -119,6 +121,15 @@ struct FtCoordinate : public BlockCoordinate {
 	inline int level() const {
 		return z();
 	}
+
+	// Used for fvkGtGenSets, returns all possible children
+	std::vector<FtCoordinate> enumerateChildren() const;
+
+	// Note: This is completely different from RtCoordinate
+	inline bool operator<(const FtCoordinate& o) const {
+		return c < o.c;
+	}
+
 	struct Hash {
 		inline uint64_t operator()(const FtCoordinate& nc) const {
 			return nc.c;

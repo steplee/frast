@@ -48,12 +48,6 @@
 
 
 
-// Implemented below, either directly with turbojpeg or with opencv
-bool encode_jpeg(EncodedImage& eimg, const Image& img);
-bool decode_jpeg(Image& out, const EncodedImageRef& eimg);
-
-bool encode_terrain_2x8(EncodedImage& eimg, const Image& img);
-bool decode_terrain_2x8(Image& out, const EncodedImageRef& eimg);
 
 bool decode(Image& out, const EncodedImageRef& eimg) {
 	if (out.format == Image::Format::TERRAIN_2x8)

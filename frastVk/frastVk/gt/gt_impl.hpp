@@ -112,7 +112,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 					child->lastSSE = child->bb.computeSse(gtuc.cameraData,child->geoError);
 					if (child->lastSSE > gtuc.sseThresholdOpen) {
 						anyChildrenWantOpen = true;
-						fmt::print(" - {} has sse {} (wants to shortcut open, ge {})\n", child->coord.toString(), child->lastSSE, child->geoError);
+						// fmt::print(" - {} has sse {} (wants to shortcut open, ge {})\n", child->coord.toString(), child->lastSSE, child->geoError);
 					}
 				}
 
@@ -120,7 +120,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 				// #warning "cascading open disabled, there is a bug: TODO"
 				// if (false and anyChildrenWantOpen) {
 				if (anyChildrenWantOpen) {
-					fmt::print(" - (t {}) some children want to open, shortcutting.\n", coord.toString());
+					// fmt::print(" - (t {}) some children want to open, shortcutting.\n", coord.toString());
 					loadMe = false;
 					// state = INNER;
 					flags |= OPENING;
@@ -153,6 +153,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 			if (gtuc.currentOpenAsk.ancestor == (Derived*)this) {
 				ask.isOpen = true;
 				gtuc.dataLoader.pushAsk(ask);
+				gtuc.nReq++;
 				gtuc.currentOpenAsk.ancestor = nullptr;
 			}
 
@@ -201,6 +202,7 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 			newAsk.tiles.push_back((Derived*)this);
 			// fmt::print(" - Asking to close {} ({} children)\n", coord.toString(), children.size());
 			gtuc.dataLoader.pushAsk(newAsk);
+			gtuc.nReq++;
 
 			// Must return none!
 			return UpdateStatus::eNone;
@@ -260,6 +262,29 @@ typename GtTile<GtTypes,Derived>::UpdateStatus GtTile<GtTypes,Derived>::update(t
 ////////////////////////////
 // GtRenderer
 ////////////////////////////
+
+template <class GtTypes, class Derived>
+GtRenderer<GtTypes,Derived>::GtRenderer(const typename GtTypes::Config &cfg_) :
+			  cfg(cfg_),
+			  debugMode(cfg_.debugMode),
+			  loader((Derived&)*this),
+			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPath))
+{
+	GtAsk<GtTypes> ask;
+	ask.isOpen = true;
+	ask.ancestor = nullptr;
+	for (auto &rootCoord : obbMap->getRootCoords()) {
+		auto root = new typename GtTypes::Tile(rootCoord);
+		root->bb = obbMap->get(rootCoord);
+		fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
+		root->state = GtTypes::Tile::INVALID;
+		root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
+		roots.push_back(root);
+		ask.tiles.push_back(root);
+	}
+	loader.pushAsk(ask);
+	nReq++;
+}
 
 template <class GtTypes, class Derived>
 void GtRenderer<GtTypes,Derived>::pushResult(GtAsk<GtTypes>& ask) {
@@ -330,9 +355,10 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 	if (theResults.size()) {
 		int ntot = 0;
 		for (auto &r : theResults) ntot += r.tiles.size();
-		fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results ({} total tiles)\n", theResults.size(), ntot);
+		// fmt::print(fmt::fg(fmt::color::yellow), " - [#update] handling {} loaded results ({} total tiles)\n", theResults.size(), ntot);
 
 		for (auto &r : theResults) {
+			nRes++;
 			/*
 			auto parent = r.ancestor;
 
@@ -456,9 +482,11 @@ void GtRenderer<GtTypes,Derived>::defaultUpdate(Camera* cam) {
 		const double* viewInv = cam->viewInv();
 		gtucd.eye = Vector3f { viewInv[0*4+3], viewInv[1*4+3], viewInv[2*4+3] };
 
-		GtUpdateContext<GtTypes> gtuc { loader, *obbMap, gtpd, gtucd };
-		gtuc.sseThresholdClose = .9;
-		gtuc.sseThresholdOpen = 1.5;
+		GtUpdateContext<GtTypes> gtuc { loader, *obbMap, gtpd, nReq, gtucd };
+		gtuc.sseThresholdOpen = cfg.sseThresholdOpen;
+		gtuc.sseThresholdClose = cfg.sseThresholdClose;
+		// fmt::print(" - [defaultUpdate] sse {} {}\n", gtuc.sseThresholdOpen, gtuc.sseThresholdClose);
+
 		this->update(gtuc);
 }
 
@@ -653,7 +681,7 @@ void GtDataLoader<GtTypes,Derived>::internalLoop() {
 			lck.unlock();
 		}
 
-		fmt::print(fmt::fg(fmt::color::olive), " - [#loader] handling {} asks\n", curAsks.size());
+		// fmt::print(fmt::fg(fmt::color::olive), " - [#loader] handling {} asks\n", curAsks.size());
 		// for (auto ask : curAsks)
 			// if (ask.ancestor) fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor {}\n", ask.ancestor->coord.toString());
 			// else fmt::print(fmt::fg(fmt::color::olive), " - [#loader] ancestor <null>\n");
@@ -778,7 +806,7 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs, Command& cmd) {
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dbgPipeline);
 
 	auto drawWithColor = [&](typename GtTypes::Tile* cur, float color[4]) {
-			auto obb = obbMap->get(cur->coord);
+			const auto& obb = obbMap->get(cur->coord);
 			RowMatrix83f corners;
 			obb.getEightCorners(corners);
 
