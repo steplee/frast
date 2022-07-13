@@ -592,7 +592,7 @@ void GtRenderer<GtTypes,Derived>::init(Device& d, TheDescriptorPool& dpool, Simp
 
 	if (GT_DEBUG) initDebugPipeline(dpool, pass, q, cmd, cfg);
 
-	loader.init(d, 1);
+	loader.init(d, this->cfg.uploadQueueNumber);
 }
 
 ////////////////////////////

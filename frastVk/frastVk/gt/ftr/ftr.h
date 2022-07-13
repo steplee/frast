@@ -45,6 +45,7 @@ struct FtTypes {
 		std::string obbIndexPath;
 		std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
 		std::string elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
+		int uploadQueueNumber = 1;
 
 	};
 
@@ -130,6 +131,10 @@ struct FtCoordinate : public BlockCoordinate {
 		return c < o.c;
 	}
 
+	inline float geoError() const {
+		return (4.0f / 255.f) / (1 << level());
+	}
+
 	struct Hash {
 		inline uint64_t operator()(const FtCoordinate& nc) const {
 			return nc.c;
@@ -153,6 +158,7 @@ struct FtDataLoader : public GtDataLoader<FtTypes, FtDataLoader> {
 		bool loadTile(FtTile* tile);
 
 		DatasetReader* colorDset = nullptr;
+		// std::vector<DatasetReader*> colorDsets;
 		DatasetReader* elevDset  = nullptr;
 
 		Image colorBuf;
@@ -180,7 +186,7 @@ struct FtTile : public GtTile<FtTypes, FtTile> {
 	inline FtTile(const FtCoordinate& coord_) : GtTile<FtTypes,FtTile>(coord_) {
 		// constexpr float R1         = (6378137.0f);
 		// geoError = (1.f) / static_cast<float>(1 << coord.level());
-		geoError = (4.0f / 255.f) / (1 << coord.level());
+		geoError = coord_.geoError();
 	}
 
 	inline void createChildren(typename FtTypes::UpdateContext& gtuc) {

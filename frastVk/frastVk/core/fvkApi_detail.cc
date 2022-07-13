@@ -160,7 +160,7 @@ Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
 	//    1) Each DeviceQueueCreateInfo specifies one family, and a number to create in that one family.
 	//    2) The DeviceCreateInfo allows multiple such families.
 	constexpr uint32_t n_q_family = 1;
-	uint32_t qcnt = 3;
+	uint32_t qcnt = cfg.queueCount;
 	std::vector<float> qprior;
 	for (int i=0; i<qcnt; i++) qprior.push_back(1.f);
 

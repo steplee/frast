@@ -74,6 +74,7 @@ struct AppConfig {
 
 	uint32_t width=512, height=512;
 	bool depth = true;
+	uint32_t queueCount = 3;
 
 	enum class WindowSys {
 		eGlfw,

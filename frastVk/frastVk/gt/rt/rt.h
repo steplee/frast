@@ -55,6 +55,7 @@ struct RtTypes {
 		float sseThresholdClose=.9f, sseThresholdOpen=1.5f;
 		std::string obbIndexPath;
 		std::string rootDir;
+		int uploadQueueNumber = 1;
 	};
 
 
@@ -176,6 +177,10 @@ struct RtCoordinate {
 		return len < b.len;
 	}
 
+	inline float geoError() const {
+		return (4.0f / 255.f) / (1 << level());
+	}
+
 	struct Hash {
 		inline uint64_t operator()(const RtCoordinate& nc) const {
 			uint64_t acc = 0;
@@ -225,7 +230,7 @@ struct RtTile : public GtTile<RtTypes, RtTile> {
 		// constexpr float R1         = (6378137.0f);
 		// geoError = (1.f / R1) / static_cast<float>(1 << coord.level());
 		// geoError = (1.f) / static_cast<float>(1 << coord.level());
-		geoError = (4.0f / 255.f) / (1 << coord.level());
+		geoError = coord_.geoError();
 	}
 
 	inline void createChildren(typename RtTypes::UpdateContext& gtuc) {

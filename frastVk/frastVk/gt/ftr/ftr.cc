@@ -30,6 +30,14 @@ static uint32_t log2_(uint32_t x) {
 	return y;
 }
 
+static bool isAncestorOf(const FtCoordinate& ancestor, const FtCoordinate& descendent) {
+	if (descendent.level() < ancestor.level()) return false;
+	FtCoordinate cur = descendent;
+	// TODO: inefficient
+	while (cur.level() > ancestor.level()) cur = cur.parent();
+	return ancestor.c == cur.c;
+}
+
 std::vector<FtCoordinate> FtCoordinate::enumerateChildren() const {
 	std::vector<FtCoordinate> cs;
 	for (uint64_t i=0; i<4; i++) {
@@ -73,6 +81,8 @@ FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader
 
 void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh) {
 	auto& tex = renderer.gtpd.datas[tile->meshIds[0]].tex;
+
+	auto colorDset = this->colorDset;
 
 	//int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	uint64_t tlbr[4] = { tile->coord.x(), tile->coord.y(), tile->coord.x()+1lu, tile->coord.y()+1lu };

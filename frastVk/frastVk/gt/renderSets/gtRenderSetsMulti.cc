@@ -1,149 +1,45 @@
-#include <Eigen/StdVector>
-#include "frastVk/gt/gt.h"
-#include "frastVk/gt/rt/rt.h"
-#include "frastVk/extra/headlessCopyHelper.hpp"
-#include "thirdparty/nlohmann/json.hpp"
+#include "utils.hpp"
+#include "frastVk/gt/ftr/ftr.h"
 
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <random>
-
-// frast/image.h defines:
-//    using EncodedImage = std::vector<uint8_t>;
-//    struct EncodedImageRef { size_t len; uint8_t* data; };
-//    bool encode_jpeg(EncodedImage& eimg, const Image& img);
-//    bool decode_jpeg(Image& out, const EncodedImageRef& eimg);
-#include "frast/image.h"
-
-using namespace Eigen;
-
-// false on success (EEXIST counts as success)
-static bool mkdirs(const std::string& d) {
-	int stat = mkdir(d.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH);
-	if (stat and errno == EEXIST) {
-		fmt::print(fmt::fg(fmt::color::steel_blue), " - Dir '{}' already exists.\n", d);
-		return false;
-	}
-	else if (stat and errno == ENOENT) {
-		fmt::print(fmt::fg(fmt::color::steel_blue), " - No path to '{}', creating subdirs.\n", d);
-		int e = d.rfind("/");
-		if (e == std::string::npos) {
-			fmt::print(" - Failed to make dir... no more substrings. Err {}\n", d, strerror(errno));
-		}
-		while (e>1 and d[e-1] == '/') e--;
-		std::string dd = d.substr(0,e);
-		if (mkdirs(dd)) {
-			fmt::print(" - Failed to make dir '{}' (subcall for '{}' failed)\n", d, dd);
-		} else {
-			stat = mkdir(d.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH);
-			if (stat) {
-				fmt::print(" - Failed to make dir '{}' (subcall for '{}' succeeded, then failed with {})\n", d, dd, strerror(errno));
-				return true;
-			}
-		}
-	} else if (stat) {
-		fmt::print(fmt::fg(fmt::color::steel_blue), " - Failed mkdirs '{}':: {}\n", d, strerror(errno));
-		return true;
-	}
-	return false;
-}
-
-RowMatrix3d getLtp(const Vector3d& eye) {
-	RowMatrix3d R;
-	R.col(2) = (eye).normalized();
-	R.col(0) = Vector3d::UnitZ().cross(R.col(2)).normalized();
-	R.col(1) = -R.col(0).cross(R.col(2)).normalized();
-	// fmt::print(" - LTP det {}\n", R.determinant());
-	return R;
-}
-
-struct RenderSetsConfig {
-	// uint32_t N = 100;
-	uint32_t N = 3000;
-	// std::vector<double> chaoses { 1.f, 1.f, 1.f, 2.f, 2.f };
-	std::vector<double> chaoses { .2f, .2f, .25f, .3f, .35f };
+struct RenderSetsMultiConfig {
+	// uint32_t N = 3000;
+	uint32_t N = 30;
+	std::vector<double> chaoses { 0.001f, .1f, .2f };
+	// std::vector<double> chaoses { .2f, .2f, .25f, .3f, .35f };
 	inline uint32_t M() { return 1 + chaoses.size(); }
 
-	std::string outDir = "/data/gearth/gtSets1/";
+	std::string outDir = "/data/gearth/gtSetsMulti1/";
 };
 
+static bool DO_STOP = false;
+static void sighandler(int sig) { DO_STOP = true; }
 
-using Pose = RowMatrix4d;
-struct BasePose {
-	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	Pose pose;
-	Vector3d eye, tgt, up;
 
-	inline operator Pose&() { return pose; }
-	inline operator const Pose&() const { return pose; }
-};
-
-using CameraInfo = CameraSpec;
-/*struct CameraInfo {
-	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	CameraSpec spec;
-};*/
-struct Set {
-	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	std::vector<Pose> poses;
-	std::vector<CameraInfo> camInfos;
-};
-
-struct SetAppCamera : public Camera {
-	public:
-		inline SetAppCamera() : Camera() {}
-		inline SetAppCamera(const CameraSpec& spec) : Camera(spec) {}
-		inline virtual ~SetAppCamera() {}
-
-		inline virtual void setPosition(double* t) override { assert(false); }
-		inline virtual void setRotMatrix(double* R) override { assert(false); }
-		inline virtual void step(double dt) override { }
-
-		inline virtual bool handleKey(int key, int scancode, int action, int mods) override { return false; }
-		inline virtual bool handleMousePress(int button, int action, int mods) override { return false; }
-		inline virtual bool handleMouseMotion(double x, double y) override { return false; }
-
-		inline void set(const Pose& pose, const CameraInfo& camInfo) {
-			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
-			viewInv = pose;
-			recompute_view();
-			spec_ = camInfo;
-			compute_projection();
-		}
-		inline void recompute_view() {
-			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
-			Map<Matrix<double,4,4,RowMajor>> view ( view_ );
-			view.topLeftCorner<3,3>() = viewInv.topLeftCorner<3,3>().transpose();
-			view.topRightCorner<3,1>() = -(viewInv.topLeftCorner<3,3>().transpose() * viewInv.topRightCorner<3,1>());
-			view.row(3) << 0,0,0,1.;
-		}
-
-	protected:
-};
-
-class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
+class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMultiApp> {
 
 	public:
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 		std::shared_ptr<RtRenderer> rtr;
+		std::shared_ptr<FtRenderer> ftr;
+
 		RtTypes::Config rtCfg;
-		RenderSetsConfig rsCfg;
+		FtTypes::Config ftCfg;
+		RenderSetsMultiConfig rsCfg;
+		bool renderWithRt = true;
 
 		uint32_t setIdx=0, viewIdx=0;
 
 		nlohmann::json meta;
 
-		inline RenderSetsApp(const AppConfig& cfg, const RtTypes::Config& rtCfg, const RenderSetsConfig& rsCfg) : BaseApp(cfg), rtCfg(rtCfg), rsCfg(rsCfg) {
+		inline RenderSetsMultiApp(const AppConfig& cfg, const RtTypes::Config& rtCfg, const FtTypes::Config& ftCfg, const RenderSetsMultiConfig& rsCfg) : BaseApp(cfg), ftCfg(ftCfg), rtCfg(rtCfg), rsCfg(rsCfg) {
 			std::string img_dir = fmt::format("{}images", rsCfg.outDir);
 			bool err = mkdirs(img_dir);
 			if (err) exit(1);
 		}
 
-		inline virtual ~RenderSetsApp() {
+		inline virtual ~RenderSetsMultiApp() {
 			std::string imageInfoPath = fmt::format("{}imageInfo.json", rsCfg.outDir);
 			std::ofstream ofs{imageInfoPath, std::ios::out|std::ios::binary};
 			ofs << meta;
@@ -175,6 +71,8 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 
 			rtr = std::make_shared<RtRenderer>(rtCfg);
 			rtr->init(mainDevice, dpool, simpleRenderPass, mainQueue, frameDatas[0].cmd, cfg);
+			ftr = std::make_shared<FtRenderer>(ftCfg);
+			ftr->init(mainDevice, dpool, simpleRenderPass, mainQueue, frameDatas[0].cmd, cfg);
 
 			initHeadlessCopyMixin();
 
@@ -218,6 +116,7 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 
 		inline void update() {
 			rtr->defaultUpdate(camera.get());
+			ftr->defaultUpdate(camera.get());
 		}
 
 		virtual void doRender(RenderState& rs) override {
@@ -226,16 +125,18 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 
 			// while (rtr->asksInflight() > 0) { usleep(10'000); }
 			assert(rtr->asksInflight() == 0);
+			assert(ftr->asksInflight() == 0);
 
 			// RowMatrix4f mvpf;
 			// rs.mvpf(mvpf.data());
 
 			simpleRenderPass.begin(fd.cmd, fd);
-			rtr->render(rs, fd.cmd);
+			if (renderWithRt) rtr->render(rs, fd.cmd);
+			else              ftr->render(rs, fd.cmd);
 			simpleRenderPass.end(fd.cmd, fd);
 
 			// if (fd.n % 60 == 0)
-			if (fd.n % 1 == 0)
+			if (fd.n % 50 == 0)
 				fmt::print(" - Rendering frame {} with {} active tiles\n", fd.n, rtr->activeTiles());
 		}
 
@@ -362,10 +263,15 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 		std::vector<Set> sets;
 		inline void buildSets() {
 
-			struct CoordAndBbox {
+			struct RtCoordAndBbox {
 				EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 				RtTypes::Coord coord;
 				RtTypes::BoundingBox bbox;
+			};
+			struct FtCoordAndBbox {
+				EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+				FtTypes::Coord coord;
+				FtTypes::BoundingBox bbox;
 			};
 
 			//
@@ -373,67 +279,126 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 			//
 
 			// Step 1: gather all obbs
-			std::vector<CoordAndBbox> allObbs;
+			std::vector<RtCoordAndBbox> allRtObbs;
+			std::vector<FtCoordAndBbox> allFtObbs;
 			for (auto &it : *rtr->obbMap) {
-				allObbs.push_back({it.first, it.second});
+				allRtObbs.push_back({it.first, it.second});
+			}
+			for (auto &it : *ftr->obbMap) {
+				allFtObbs.push_back({it.first, it.second});
 			}
 
 
-			// Step 2: pick random obbs
-			/*
-			std::vector<CoordAndBbox> obbs;
-			for (int i=0; obbs.size() < rsCfg.n; i++) {
-				auto j = (rand() % allObbs.size());
+			// Step 2: pick random tiles from @ftr that have valid @rtr tiles nearby
+			//
+			// That would require a O(n^2) matching process
+			// So, it is accelerated by a pretty hacky approximate search method.
+			// Roughly:
+			//		- @rtr & @ftr tiles are mapped to a joint layer index by looking at log2(geoError)
+			//		- @rtr & @ftr tiles are further organized to a 3d grid according to the center of the bbox.
+			//		         A grid cell has a max occupancy of CELL_SIZE^3 elements.
+			//		- Based on the cell that the tile is mapped to, @rtr tiles are stored in an unordered_map
+			//		- Finally, the same level + cell mapping is performed on shuffled @ftr tiles.
+			//		  Each @ftr tiles searches the list of @ftr tiles corresponding to its level:cell
+			//		  If an @ftr tile has any @rtr tiles within a radius of its max(extents), it is considered good.
+			//
+			//	The pose creation will happen with respect to the @ftr OBB. Because each @ftr tile is verified to have
+			//	a similar @rtr tile nearby, the basePose and modifiedPoses will also render well for @rtr.
+			//
+			//  NOTE XXX TODO:
+			//  I did not really test this other than verifying that it appears to work.
+			//  There's several possible issues:
+			//		- Cell boundaries are too harsh and may true-positive matches are missed
+			//		- The geoError quantization is not aligned well (e.g. ftr matches to wrong rtr level)
+			//		- Cell coordinates overflow (only 21 bits are used per x/y/z float)
+			//		- Cell mapping breaks at low or hi levels
+			//
 
-				// We want that a tile should have at-least 4 sibilings at its same level.
-				// This should prevent cases where 
-				obbs.push_back(allObbs[j]);
+			auto computeLevelFromGeoError = [](float geoError) {
+				int lvl = std::log2f(geoError) + 32;
+				assert(lvl > 0 and lvl < 32);
+				return lvl;
+			};
+			auto computeCellFromCtr = [](const Vector3f& ctr, int lvl) {
+				Vector3f a = (ctr * .499f).array() + .5f;
+				// Group into blocks of max size 100^3
+				constexpr float CELL_SIZE = 500.f;
+				// TODO XXX NOTE: I did not really think if overflow on a deep level is possible here (it probably is?)
+				uint64_t c = (static_cast<uint64_t>(a(0) * static_cast<float>(1 << lvl) / CELL_SIZE) << 42)
+				           | (static_cast<uint64_t>(a(1) * static_cast<float>(1 << lvl) / CELL_SIZE) << 21)
+				           | (static_cast<uint64_t>(a(2) * static_cast<float>(1 << lvl) / CELL_SIZE) <<  0);
+				return c;
+			};
+
+			fmt::print(" - Organizing {} rt OBBs into hacky search structure...\n", allRtObbs.size());
+			std::vector<std::unordered_map<uint64_t,std::vector<RtCoordAndBbox>>> rtObbMapPerLvl(30);
+			std::vector<float> rtErrorLevels;
+			for (auto& cb : allRtObbs) {
+				int lvl = computeLevelFromGeoError(cb.coord.geoError());
+				uint64_t cell = computeCellFromCtr(cb.bbox.ctr, lvl);
+				rtObbMapPerLvl[lvl][cell].push_back(cb);
 			}
-			*/
 
-			std::vector<CoordAndBbox> obbs;
-			std::shuffle(allObbs.begin(), allObbs.end(), std::default_random_engine(0));
-			for (int i=0; obbs.size() < rsCfg.N and i < allObbs.size(); i++) {
-				auto &cb = allObbs[i];
+			fmt::print(" - Scanning through {} ft OBBs and attempting matching to rt tiles...\n", allFtObbs.size());
+			std::vector<FtCoordAndBbox> ftObbs;
+			std::shuffle(allFtObbs.begin(), allFtObbs.end(), std::default_random_engine(0));
+			int i;
+			for (i=0; ftObbs.size() < rsCfg.N and i < allFtObbs.size(); i++) {
+				if (DO_STOP) break;
+				auto &cb = allFtObbs[i];
+				int lvl = computeLevelFromGeoError(cb.coord.geoError());
+				uint64_t cell = computeCellFromCtr(cb.bbox.ctr, lvl);
 
-				int cnt = 0;
+				float maxExtent = cb.bbox.extents.maxCoeff();
+				bool good = false;
+				int nNearby = 0;
 
-				auto parent = cb.coord.parent();
 
-				// TODO XXX NOTE: This is *not correct*.
-				// Actually what is needed is way more complicated, and non-local. We want to check for 4+ North-West-South-East neighbours.
-				// This may require walking up to a distant ancestor and back down.
-				auto neighbors = parent.enumerateChildren();
+				// Two methods:
+				//		1) Check for any 1 neighbor
+				//		2) Check four >4 neighbors
+				if (1) {
+					for (const auto& rtCb : rtObbMapPerLvl[lvl][cell]) {
+						float dist = (cb.bbox.ctr - rtCb.bbox.ctr).norm();
+						if (dist < maxExtent * 1.1f) {
+							fmt::print(" - found {}th good match {} <-> {} (dist {})\n", ftObbs.size(), cb.coord.toString(), rtCb.coord.toString(), dist);
+							good = true;
+							break;
+						}
+					}
+				}
+				else {
+					for (const auto& rtCb : rtObbMapPerLvl[lvl][cell]) {
+						float dist = (cb.bbox.ctr - rtCb.bbox.ctr).norm();
+						if (dist < maxExtent*3.f) {
+							nNearby++;
+						}
+					}
+					good = nNearby > 4;
+					if (good) fmt::print(" - found {}th good match ({} nearby)\n", ftObbs.size(), nNearby);
+				}
 
-				// std::vector<RtCoordinate> neighbors;
 
-				for (const auto& neighbor : neighbors)
-					if (rtr->obbMap->tileExists(neighbor)) cnt++;
-
-				if (cnt >= 4)
-					obbs.push_back(cb);
+				if (good) {
+					ftObbs.push_back(cb);
+				}
+				// else fmt::print(" - candidate bbox {} had no good nearby rtr tiles! Skipping.\n", i);
 			}
+			fmt::print(fmt::fg(fmt::color::lime_green),
+					" - Scanned {} / {} ft tiles to find {} valid / {} asked obbs.\n", i, allFtObbs.size(), ftObbs.size(), rsCfg.N);
+
 
 			// Sorting will should greatly speed up the rendering. This is for two reasons:
 			//    1) Tiles may not need to re-loaded at all if the next view is close to the previous.
 			//    2) The disk cache will have the tiles hot.
-			std::sort(obbs.begin(), obbs.end(), [](const auto& a, const auto& b) {
-					// return a.bbox.ctr(0) < b.bbox.ctr(0);
+			std::sort(ftObbs.begin(), ftObbs.end(), [](const auto& a, const auto& b) {
 					return a.coord < b.coord;
-					// return rand() % 2 == 0;
 			});
-			/*
-			fmt::print(" - Sorted coords:");
-			for (int i=0; i<obbs.size(); i++) {
-				fmt::print("{}, ", obbs[i].coord.toString());
-				if (i % 6 == 5) fmt::print("\n");
-			}
-			*/
 
 			sets.resize(rsCfg.N);
 			for (int i=0; i<rsCfg.N; i++) {
-				auto &coord = obbs[i].coord;
-				auto &obb   = obbs[i].bbox;
+				auto &coord = ftObbs[i].coord;
+				auto &obb   = ftObbs[i].bbox;
 				auto &set = sets[i];
 
 				CameraSpec baseSpec { createCameraSpec(i,0) };
@@ -481,8 +446,6 @@ class RenderSetsApp : public BaseApp, public HeadlessCopyMixin<RenderSetsApp> {
 		inline SetAppCamera* getCamera() { return dynamic_cast<SetAppCamera*>(camera.get()); }
 };
 
-static bool DO_STOP = false;
-static void sighandler(int sig) { DO_STOP = true; }
 
 static void run_rt(std::vector<std::string> args) {
 
@@ -491,28 +454,40 @@ static void run_rt(std::vector<std::string> args) {
 	appCfg.windowSys = AppConfig::WindowSys::eHeadless;
 	appCfg.width  = 512;
 	appCfg.height = 512;
+	appCfg.queueCount = 4;
 
 	RtTypes::Config rtCfg;
-	// rtCfg.debugMode = true;
-	// rtCfg.rootDir = "/data/gearth/tpAois_wgs/";
-	// rtCfg.obbIndexPath = "/data/gearth/tpAois_wgs/index.v1.bin";
 	rtCfg.rootDir = "/data/gearth/many3_wgs/";
 	rtCfg.obbIndexPath = "/data/gearth/many3_wgs/index.v1.bin";
+	rtCfg.uploadQueueNumber = 1;
+
+	FtTypes::Config ftCfg;
+	ftCfg.colorDsetPath = "/data/naip/mocoNaip/out.ft";
+	ftCfg.obbIndexPath = "/data/naip/mocoNaip/index.v1.bin";
+	ftCfg.elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
+	ftCfg.uploadQueueNumber = 2;
 
 	// Put thresholds such that it looks nicer :: not though, this could result to aliasing as mip-mapping is not done
 	rtCfg.sseThresholdOpen = .45f;
 	rtCfg.sseThresholdClose = .7f;
+	ftCfg.sseThresholdOpen = .45f;
+	ftCfg.sseThresholdClose = .7f;
 
-	RenderSetsConfig rsCfg;
+	RenderSetsMultiConfig rsCfg;
 
-	RenderSetsApp app(appCfg, rtCfg, rsCfg);
+	RenderSetsMultiApp app(appCfg, rtCfg, ftCfg, rsCfg);
 	app.initVk();
+
+	// M should be even so that ft/rt have same number of images
+	assert(rsCfg.M() % 2 == 0);
 
 
 	for (int i=0; i<rsCfg.N; i++) {
 		for (int j=0; j<rsCfg.M(); j++) {
 			app.setIdx = i;
 			app.viewIdx = j;
+			app.renderWithRt = ((i + j) % 2) == 0;
+			
 			SetAppCamera* cam = app.getCamera();
 			cam->set(app.sets[i].poses[j], app.sets[i].camInfos[j]);
 
@@ -520,7 +495,7 @@ static void run_rt(std::vector<std::string> args) {
 			uint32_t sleeps = 0;
 			app.update();
 			app.update();
-			while (app.rtr->asksInflight() != 0) {
+			while (app.rtr->asksInflight() != 0 or app.ftr->asksInflight() != 0) {
 				usleep(25'000);
 				app.update();
 				app.update();
@@ -528,7 +503,7 @@ static void run_rt(std::vector<std::string> args) {
 				if (DO_STOP) return;
 			}
 			// fmt::print(" - Setting ViewInv\n{}\n   And Proj\n{}\n   Done loading after {} sleeps\n", Map<const RowMatrix4d>{cam->viewInv()}, Map<const RowMatrix4d>{cam->proj()}, sleeps);
-			fmt::print(" - Done loading after {} sleeps\n", sleeps);
+			// fmt::print(" - Done loading after {} sleeps\n", sleeps);
 			if (DO_STOP) return;
 
 			app.render();
@@ -552,3 +527,4 @@ int main(int argc, char** argv) {
 
 	return 0;
 }
+

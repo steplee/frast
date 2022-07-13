@@ -221,8 +221,10 @@ target_link_libraries(fvkRunRt frastVk)
 add_executable(fvkRunFtr frastVk/gt/ftr/runFtrTest.cc)
 target_link_libraries(fvkRunFtr frastVk)
 
-add_executable(fvkGtRenderSets frastVk/gt/gtRenderSets.cc)
+add_executable(fvkGtRenderSets frastVk/gt/renderSets/gtRenderSets.cc)
 target_link_libraries(fvkGtRenderSets frastVk)
+add_executable(fvkGtRenderSetsMulti frastVk/gt/renderSets/gtRenderSetsMulti.cc)
+target_link_libraries(fvkGtRenderSetsMulti frastVk)
 
 #[[
 add_executable(testParseRt frastVk/rt/parse.cc frastVk/rt/protos/rocktree.pb.cc)
