@@ -385,7 +385,7 @@ static void run_rt(std::vector<std::string> args) {
 	// rtCfg.rootDir = "/data/gearth/tpAois_wgs/";
 	// rtCfg.obbIndexPath = "/data/gearth/tpAois_wgs/index.v1.bin";
 	rtCfg.rootDir = "/data/gearth/many3_wgs/";
-	rtCfg.obbIndexPath = "/data/gearth/many3_wgs/index.v1.bin";
+	rtCfg.obbIndexPaths = {"/data/gearth/many3_wgs/index.v1.bin"};
 
 	// Put thresholds such that it looks nicer :: not though, this could result to aliasing as mip-mapping is not done
 	rtCfg.sseThresholdOpen = .45f;

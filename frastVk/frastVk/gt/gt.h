@@ -50,10 +50,7 @@ static constexpr bool GT_DEBUG = true;
 template <class GtTypes, class Derived>
 class GtObbMap {
 	public:
-		inline GtObbMap(const std::string& path) : path(path) {
-			std::ifstream ifs(path);
-
-			assert(ifs.good());
+		inline GtObbMap(const std::vector<std::string>& paths) : paths(paths) {
 
 			fmt::print(" - [GtObbMap] loading obbs.\n");
 
@@ -63,16 +60,20 @@ class GtObbMap {
 			std::string buffer(row_size, '\0');
 
 			// Decode version 1:
-			while (ifs.good()) {
-				ifs.read(buffer.data(), row_size);
+			for (const auto& path : paths) {
+				std::ifstream ifs(path);
+				assert(ifs.good());
+				while (ifs.good()) {
+					ifs.read(buffer.data(), row_size);
 
-				// typename GtTypes::Coord coord = typename GtTypes::Coord::fromString(line);
-				typename GtTypes::Coord coord(buffer);
-				float *start = (float*)(buffer.data() + GtTypes::Coord::SerializedSize);
-				Vector3f  ctr { start[0], start[1], start[2] };
-				Vector3f  ext { start[3], start[4], start[5] };
-				Quaternionf q { start[6], start[7], start[8], start[9] };
-				map[coord] = typename GtTypes::BoundingBox { ctr, ext, q };
+					// typename GtTypes::Coord coord = typename GtTypes::Coord::fromString(line);
+					typename GtTypes::Coord coord(buffer);
+					float *start = (float*)(buffer.data() + GtTypes::Coord::SerializedSize);
+					Vector3f  ctr { start[0], start[1], start[2] };
+					Vector3f  ext { start[3], start[4], start[5] };
+					Quaternionf q { start[6], start[7], start[8], start[9] };
+					map[coord] = typename GtTypes::BoundingBox { ctr, ext, q };
+				}
 			}
 
 			fmt::print(" - [GtObbMap] loaded {} tile obbs.\n", map.size());
@@ -105,7 +106,7 @@ class GtObbMap {
 
 
 	private:
-		std::string path;
+		std::vector<std::string> paths;
 		std::vector<typename GtTypes::Coord> roots;
 
 		std::unordered_map<typename GtTypes::Coord, typename GtTypes::BoundingBox, typename GtTypes::Coord::Hash> map;

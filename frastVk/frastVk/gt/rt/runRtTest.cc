@@ -30,8 +30,10 @@ struct TestRtApp : public BaseApp {
 				.debugMode = true,
 				// .obbIndexPath = "/data/gearth/tpAois_wgs/index.v1.bin",
 				// .rootDir = "/data/gearth/tpAois_wgs"
-				.obbIndexPath = "/data/gearth/many3_wgs/index.v1.bin",
-				.rootDir = "/data/gearth/many3_wgs"
+				// .obbIndexPaths = {"/data/gearth/many3_wgs/index.v1.bin"},
+				// .rootDir = "/data/gearth/many3_wgs"
+				.obbIndexPaths = {"/data/gearth/naipAoisWgs/index.v1.bin"},
+				.rootDir = "/data/gearth/naipAoisWgs"
 		  })
 	{
 	}

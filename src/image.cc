@@ -241,7 +241,7 @@ void Image::warpPerspective(Image& out, float H[9]) const {
 void Image::remapRemap(Image& out, const float* map, int mapSizeW, int mapSizeH) const {
 	if (out.format == Image::Format::GRAY) my_remapRemap<uint8_t,1>(out, *this, map, mapSizeW, mapSizeH);
 	else if (out.format == Image::Format::RGB) my_remapRemap<uint8_t,3>(out, *this, map, mapSizeW, mapSizeH);
-	else if (out.format == Image::Format::RGB or
+	else if (out.format == Image::Format::RGBN or
 			 out.format == Image::Format::RGBA) my_remapRemap<uint8_t,4>(out, *this, map, mapSizeW, mapSizeH);
 	else if (out.format == Image::Format::TERRAIN_2x8) my_remapRemap<uint16_t,1>(out, *this, map, mapSizeW, mapSizeH);
 	else throw std::runtime_error(std::string{"Image::remapReamp() unsupported type/channels "} + std::to_string(out.channels()));

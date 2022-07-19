@@ -48,23 +48,35 @@ std::vector<FtCoordinate> FtCoordinate::enumerateChildren() const {
 	return cs;
 }
 
+FtDataLoader::~FtDataLoader() {
+	for (auto cd : colorDsets) delete cd;
+	if (elevDset) delete elevDset;
+}
+
 FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader<FtTypes, FtDataLoader>(renderer_) {
 	DatasetReaderOptions dopts1, dopts2;
 	dopts1.allowInflate = false;
 	dopts2.allowInflate = true;
-	colorDset = new DatasetReader(renderer.cfg.colorDsetPath, dopts1);
+
+	// if (renderer.cfg.obbIndexPaths.size() != renderer.cfg.colorDsetPaths.size())
+
 	if (renderer.cfg.elevDsetPath.length())
 		elevDset  = new DatasetReader(renderer.cfg.elevDsetPath,  dopts2);
-
-	colorDset->beginTxn(&color_txn, true);
 	if (elevDset)
 		elevDset->beginTxn(&elev_txn, true);
 
-	assert(renderer.cfg.texSize == colorDset->tileSize());
+	for (const auto& dsetPath : renderer.cfg.colorDsetPaths) {
+		auto colorDset = new DatasetReader(dsetPath, dopts1);
+		MDB_txn* color_txn;
+		colorDset->beginTxn(&color_txn, true);
+		color_txns.push_back(color_txn);
+		assert(renderer.cfg.texSize == colorDset->tileSize());
+		colorDsets.push_back(colorDset);
+	}
 
 	renderer.colorFormat = Image::Format::RGBA;
 	// if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) renderer.colorFormat = Image::Format::GRAY;
-	colorBuf = Image { (int)colorDset->tileSize(), (int)colorDset->tileSize(), renderer.colorFormat };
+	colorBuf = Image { (int)colorDsets[0]->tileSize(), (int)colorDsets[0]->tileSize(), renderer.colorFormat };
 	colorBuf.alloc();
 	if (renderer.colorFormat == Image::Format::RGBA)
 		for (int y=0; y<renderer.cfg.texSize; y++)
@@ -82,17 +94,23 @@ FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader
 void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh) {
 	auto& tex = renderer.gtpd.datas[tile->meshIds[0]].tex;
 
-	auto colorDset = this->colorDset;
-
-	//int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4], MDB_txn* txn0) {
 	uint64_t tlbr[4] = { tile->coord.x(), tile->coord.y(), tile->coord.x()+1lu, tile->coord.y()+1lu };
-	int n_missing = colorDset->fetchBlocks(colorBuf, tile->coord.z(), tlbr, color_txn);
-	// fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
-	// if (n_missing > 0) return true;
-	if (n_missing > 0) return;
 
-	mesh.img_buffer_cpu.resize(colorBuf.size());
-	memcpy(mesh.img_buffer_cpu.data(), colorBuf.buffer, colorBuf.size());
+	// TODO: Not the most efficient thing to loop through each...
+	for (int i=0; i<colorDsets.size(); i++) {
+		auto colorDset = this->colorDsets[i];
+
+		if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord, color_txns[i])) {
+			int n_missing = colorDset->fetchBlocks(colorBuf, tile->coord.z(), tlbr, color_txns[i]);
+			// fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
+			// if (n_missing > 0) return true;
+			if (n_missing == 0) {
+				mesh.img_buffer_cpu.resize(colorBuf.size());
+				memcpy(mesh.img_buffer_cpu.data(), colorBuf.buffer, colorBuf.size());
+				return;
+			}
+		}
+	}
 }
 
 void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh, const FtTypes::Config& cfg) {

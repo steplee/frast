@@ -53,7 +53,7 @@ struct RtTypes {
 		bool allowCaster = true;
 		bool debugMode = false;
 		float sseThresholdClose=.9f, sseThresholdOpen=1.5f;
-		std::string obbIndexPath;
+		std::vector<std::string> obbIndexPaths;
 		std::string rootDir;
 		int uploadQueueNumber = 1;
 	};
@@ -212,7 +212,7 @@ struct RtTypes;
 struct RtCoordinate;
 struct RtObbMap : public GtObbMap<RtTypes, RtObbMap> {
 
-	inline RtObbMap(const std::string& path) : GtObbMap<RtTypes, RtObbMap>(path) {}
+	inline RtObbMap(const std::vector<std::string>& paths) : GtObbMap<RtTypes, RtObbMap>(paths) {}
 
 	/*inline bool tileIsTerminal(const RtCoordinate& coord) {
 		for (int i=0; i<8; i++) {

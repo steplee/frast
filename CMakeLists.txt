@@ -92,6 +92,8 @@ endif()
 set(CMAKE_CXX_FLAGS ${cxx_opts})
 
 
+set(X_LIBS xcb xcb-image xcb-keysyms xcb-util X11)
+
 ##################
 #   Main Lib
 ##################
@@ -99,7 +101,9 @@ set(CMAKE_CXX_FLAGS ${cxx_opts})
 add_library(frast
 	src/image.cc
 	#src/image2.cc # Shockingly slow.
-	src/db.cc)
+	src/db.cc
+	src/utils/displayImage.cc
+	)
 
 set_target_properties(frast PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(frast INTERFACE ${COMMON_LIBS})
@@ -119,6 +123,7 @@ add_executable(frastInfo src/frastInfo.cc)
 add_executable(frastMerge src/frastMerge.cc)
 
 target_link_libraries(frastAddo PUBLIC frast)
+# target_link_libraries(frastConvertGdal PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES} ${X_LIBS})
 target_link_libraries(frastConvertGdal PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES})
 target_link_libraries(frastDump PUBLIC frast)
 target_link_libraries(frastInfo PUBLIC frast)
@@ -145,6 +150,7 @@ install(FILES
 	"src/utils/data_structures.hpp"
 	"src/utils/solve.hpp"
 	"src/utils/timer.hpp"
+	"src/utils/displayImage.h"
 	DESTINATION /usr/local/include/frast/utils)
 install(TARGETS frastAddo RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastConvertGdal RUNTIME DESTINATION /usr/local/bin)

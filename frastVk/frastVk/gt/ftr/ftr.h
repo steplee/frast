@@ -39,11 +39,14 @@ struct FtTypes {
 		static constexpr uint64_t vertsAlongEdge = 8;
 		static constexpr uint64_t vertsPerTile = vertsAlongEdge * vertsAlongEdge;
 
+
 		bool allowCaster = true;
 		bool debugMode = false;
 		float sseThresholdClose=.9f, sseThresholdOpen=1.5f;
-		std::string obbIndexPath;
-		std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
+		// std::string obbIndexPath;
+		// std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
+		std::vector<std::string> obbIndexPaths;
+		std::vector<std::string> colorDsetPaths;
 		std::string elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
 		int uploadQueueNumber = 1;
 
@@ -146,6 +149,7 @@ struct FtDataLoader : public GtDataLoader<FtTypes, FtDataLoader> {
 
 	// Unfortunately, we need an adaptor to the generic constructor :(
 	FtDataLoader(typename FtTypes::Renderer& renderer_);
+	~FtDataLoader();
 
 	int loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& td, bool isOpen);
 
@@ -153,12 +157,12 @@ struct FtDataLoader : public GtDataLoader<FtTypes, FtDataLoader> {
 		void loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh);
 		void loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh, const FtTypes::Config& cfg);
 
-		MDB_txn* color_txn = nullptr;
+		std::vector<MDB_txn*> color_txns;
 		MDB_txn* elev_txn = nullptr;
 		bool loadTile(FtTile* tile);
 
-		DatasetReader* colorDset = nullptr;
-		// std::vector<DatasetReader*> colorDsets;
+		// DatasetReader* colorDset = nullptr;
+		std::vector<DatasetReader*> colorDsets;
 		DatasetReader* elevDset  = nullptr;
 
 		Image colorBuf;
@@ -170,7 +174,7 @@ struct FtTypes;
 struct FtCoordinate;
 struct FtObbMap : public GtObbMap<FtTypes, FtObbMap> {
 
-	inline FtObbMap(const std::string& path) : GtObbMap<FtTypes, FtObbMap>(path) {}
+	inline FtObbMap(const std::vector<std::string>& paths) : GtObbMap<FtTypes, FtObbMap>(paths) {}
 
 	/*inline bool tileIsTerminal(const FtCoordinate& coord) {
 		for (int i=0; i<8; i++) {

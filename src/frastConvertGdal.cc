@@ -12,6 +12,8 @@
 #include <ogr_core.h>
 #include <ogr_spatialref.h>
 
+#include "utils/displayImage.h"
+
 //#include <opencv2/core.hpp>
 // #include <opencv2/imgproc.hpp>
 //#include <opencv2/imgcodecs.hpp>
@@ -21,6 +23,9 @@
 #include <Eigen/LU>
 //#include <Eigen/Geometry>
 #include <chrono>
+
+// #undef CONVERT_THREADS
+// #define CONVERT_THREADS 1
 
 
 // Moved to makefile
@@ -466,8 +471,12 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	Image& src = *srcImg;
 	Image& dst = out;
 	{
+		// Debugged the streaks here; fount out the VRT shared issue
+		// imshow("thread" + std::to_string(0), src); usleep(1'000'000);
+
 		AtomicTimerMeasurement tg(t_warp);
 		src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
+		// dst = src;
 	}
 #endif
 
@@ -676,9 +685,12 @@ static int test3(const std::string& srcTiff, const std::string& outPath, std::ve
 
 int main(int argc, char** argv) {
 
-	//test1();
-	//test2();
-	//return 0;
+	// With VRTs we need 'shared mode' disabled when using multiple threads.
+	// This is the best way to set it (user can still override, but should not)
+	//
+	// I had a verrry strange issue on my first time using VRTs with this, where I got long
+	// horizontal streaks.
+	setenv("VRT_SHARED_SOURCE", "0", false);
 
 	if (argc <= 3) {
 		printf("\n - Usage:\n\tconvertGdal <src.tif> <outPath> <format> <lvls>+ --subaoi <tlbr_wm>\n");

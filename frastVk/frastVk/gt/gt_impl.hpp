@@ -268,7 +268,7 @@ GtRenderer<GtTypes,Derived>::GtRenderer(const typename GtTypes::Config &cfg_) :
 			  cfg(cfg_),
 			  debugMode(cfg_.debugMode),
 			  loader((Derived&)*this),
-			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPath))
+			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPaths))
 {
 	GtAsk<GtTypes> ask;
 	ask.isOpen = true;

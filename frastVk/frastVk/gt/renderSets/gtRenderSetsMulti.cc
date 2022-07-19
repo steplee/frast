@@ -86,7 +86,7 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			Image color { (int)windowWidth, (int)windowHeight, Image::Format::RGB };
 			color.alloc();
 			depthScaled.alloc();
-			float min_depth, max_depth;
+			float min_depth=1.f, max_depth=0.f;
 			{
 				Map<Matrix<uint8_t,-1,3,RowMajor>> dst_ { color.buffer, color.w*color.h, 3 };
 				Map<Matrix<uint8_t,-1,4,RowMajor>> src_ { (uint8_t*)bufColor.mappedAddr, color.w*color.h, 4 };
@@ -95,8 +95,10 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			{
 				Map<Matrix<uint8_t,-1,1>> dst_ { depthScaled.buffer, depthScaled.w*depthScaled.h, 1 };
 				Map<Matrix<float,-1,1>> rawDepth_ { (float*)bufDepth.mappedAddr, depthScaled.w*depthScaled.h, 1 };
-				min_depth = rawDepth_.minCoeff();
-				max_depth = rawDepth_.maxCoeff();
+				for (int i=0; i<depthScaled.w*depthScaled.h; i++) if (rawDepth_[i] != 1.f and rawDepth_[i] != 0.f) min_depth = std::min(rawDepth_[i], min_depth);
+				for (int i=0; i<depthScaled.w*depthScaled.h; i++) if (rawDepth_[i] != 1.f and rawDepth_[i] != 0.f) max_depth = std::max(rawDepth_[i], max_depth);
+				// min_depth = rawDepth_.minCoeff();
+				// max_depth = rawDepth_.maxCoeff();
 				rawDepth_.array() -= min_depth;
 				rawDepth_.array() /= (max_depth - min_depth);
 				dst_ = (rawDepth_ * 255.999).cwiseMax(0).cwiseMin(255.).cast<uint8_t>();
@@ -458,13 +460,18 @@ static void run_rt(std::vector<std::string> args) {
 
 	RtTypes::Config rtCfg;
 	rtCfg.rootDir = "/data/gearth/many3_wgs/";
-	rtCfg.obbIndexPath = "/data/gearth/many3_wgs/index.v1.bin";
+	rtCfg.obbIndexPaths = {"/data/gearth/many3_wgs/index.v1.bin"};
 	rtCfg.uploadQueueNumber = 1;
 
-	FtTypes::Config ftCfg;
-	ftCfg.colorDsetPath = "/data/naip/mocoNaip/out.ft";
-	ftCfg.obbIndexPath = "/data/naip/mocoNaip/index.v1.bin";
-	ftCfg.elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
+	FtTypes::Config ftCfg {
+			// .obbIndexPaths = {"/data/naip/tampa/index.v1.bin", "/data/naip/mocoNaip/index.v1.bin"},
+			// .colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft", "/data/naip/mocoNaip/out.ft"},
+			// .obbIndexPaths = {"/data/naip/tampa/index.v1.bin", "/data/naip/mocoNaip/index.v1.bin", "/data/naip/md/index.v1.bin"},
+			// .colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft", "/data/naip/mocoNaip/out.ft", "/data/naip/md/md16.ft"},
+			.obbIndexPaths = { "/data/naip/md/index.v1.bin"},
+			.colorDsetPaths = { "/data/naip/md/md16.ft"},
+			.elevDsetPath  = "/data/elevation/srtm/usa.11.ft"
+	};
 	ftCfg.uploadQueueNumber = 2;
 
 	// Put thresholds such that it looks nicer :: not though, this could result to aliasing as mip-mapping is not done
