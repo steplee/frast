@@ -2,8 +2,14 @@ cmake_minimum_required(VERSION 3.16)
 
 project(frastVk)
 
+# I want to setup the GLFW headers in frastVk's include dir when installed
+# To get the same directory structure during the build, I need to use the cmake --install with a local prefix,
+# Then also copy the headers into a local directory that I setup as ./build/include/frastVk/GLFW,
+# which has the same structure as it will be when installed.
 set (LOCAL_GLFW_BUILD_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/glfw/)
-set (LOCAL_GLFW_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/glfw/include)
+set (LOCAL_GLFW_INCLUDE_DIR_0 ${CMAKE_CURRENT_BINARY_DIR}/glfw/include/GLFW)
+set (LOCAL_GLFW_INCLUDE_DIR_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/include/) # this will be include_directoried() below
+set (LOCAL_GLFW_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include/frastVk/)
 set (LOCAL_GLFW_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/glfw/lib)
 
 # Build GLFW
@@ -25,10 +31,12 @@ ExternalProject_Add(glfw
 	# INSTALL_COMMAND ""
 	INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "install"
 	COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix ${LOCAL_GLFW_BUILD_PREFIX}
+	COMMAND mkdir -p ${LOCAL_GLFW_INCLUDE_DIR}
+	COMMAND cp -r ${LOCAL_GLFW_INCLUDE_DIR_0} ${LOCAL_GLFW_INCLUDE_DIR}
 	)
 
 link_directories(${LOCAL_GLFW_LIB_DIR})
-include_directories(${LOCAL_GLFW_INCLUDE_DIR})
+include_directories(${LOCAL_GLFW_INCLUDE_DIR_PREFIX})
 
 EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
 if (${ARCHITECTURE} STREQUAL "x86_64")
