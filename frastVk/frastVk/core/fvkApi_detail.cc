@@ -71,9 +71,13 @@ uint32_t findMemoryTypeIndex(const VkPhysicalDevice& pdev, const VkMemoryPropert
 
 
 Device makeGpuDeviceAndQueues(const AppConfig& cfg, VkInstance instance) {
-	uint32_t ndevices = 8;
-	VkPhysicalDevice pdevices[8];
-	vkEnumeratePhysicalDevices(instance, &ndevices, pdevices);
+	uint32_t ndevices = 0;
+	auto res = vkEnumeratePhysicalDevices(instance, &ndevices, nullptr);
+	assertCallVk(res);
+  assert(ndevices > 0);
+  std::vector<VkPhysicalDevice> pdevices(ndevices);
+	res = vkEnumeratePhysicalDevices(instance, &ndevices, pdevices.data());
+	assertCallVk(res);
 
 	// Pick first device that amongst class of (discrete/integrated/cpu)
 	uint32_t myDeviceIdx = 99999;
