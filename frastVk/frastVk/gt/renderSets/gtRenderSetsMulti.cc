@@ -191,6 +191,9 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 		}
 
 		inline Pose createModifiedPose(RtTypes::BoundingBox& obb, CameraSpec& spec, const BasePose& base, double chaos) {
+      if (chaos < 1e-8) {
+        return base;
+      }
 			Vector3d ctr = obb.ctr.cast<double>();
 			Vector3d nrl = obb.ctr.normalized().cast<double>();
 
@@ -451,6 +454,7 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 
 static void run_rt(std::vector<std::string> args) {
 
+	RenderSetsMultiConfig rsCfg;
 	AppConfig appCfg;
 	// appCfg.windowSys = AppConfig::WindowSys::eGlfw;
 	appCfg.windowSys = AppConfig::WindowSys::eHeadless;
@@ -498,6 +502,23 @@ static void run_rt(std::vector<std::string> args) {
 			i++;
 			fmt::print(fmt::fg(fmt::color::magenta), " - added ft dataset {} with index {}\n", c,idx);
 		}
+
+    if (args[i] == "-n" or args[i] == "--n") {
+      rsCfg.N = std::stoi(args[i+1]);
+      i++;
+    }
+
+    if (args[i] == "--chaoses" or args[i] == "--chaos" or args[i] == "-c") {
+      rsCfg.chaoses.clear();
+      while (i+1 < args.size() and args[i+1][0] != '-') {
+        i++;
+        rsCfg.chaoses.push_back(std::stod(args[i]));
+      }
+			fmt::print(fmt::fg(fmt::color::magenta), " - parsed chaoses");
+      for (auto c : rsCfg.chaoses) fmt::print(" {}", c);
+      fmt::print("\n");
+    }
+
 	}
 
 
@@ -508,7 +529,6 @@ static void run_rt(std::vector<std::string> args) {
 	ftCfg.sseThresholdOpen = .45f;
 	ftCfg.sseThresholdClose = .7f;
 
-	RenderSetsMultiConfig rsCfg;
 
 	RenderSetsMultiApp app(appCfg, rtCfg, ftCfg, rsCfg);
 	app.initVk();
