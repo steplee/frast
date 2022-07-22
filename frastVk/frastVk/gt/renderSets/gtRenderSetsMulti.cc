@@ -458,6 +458,7 @@ static void run_rt(std::vector<std::string> args) {
 	appCfg.height = 512;
 	appCfg.queueCount = 4;
 
+	/*
 	RtTypes::Config rtCfg;
 	rtCfg.rootDir = "/data/gearth/many3_wgs/";
 	rtCfg.obbIndexPaths = {"/data/gearth/many3_wgs/index.v1.bin"};
@@ -472,7 +473,34 @@ static void run_rt(std::vector<std::string> args) {
 			.colorDsetPaths = { "/data/naip/md/md16.ft"},
 			.elevDsetPath  = "/data/elevation/srtm/usa.11.ft"
 	};
+	*/;
+
+	FtTypes::Config ftCfg;
+	RtTypes::Config rtCfg;
+	rtCfg.uploadQueueNumber = 1;
 	ftCfg.uploadQueueNumber = 2;
+
+	for (int i=0; i<args.size(); i++) {
+		if (args[i] == "--rt") {
+
+			std::string c = args[i+1];
+			std::string idx = c + "/index.v1.bin";
+			rtCfg.rootDir = c;
+			rtCfg.obbIndexPaths = {idx};
+			fmt::print(fmt::fg(fmt::color::magenta), " - added rt dataset {} with index {}\n", c,idx);
+			i++;
+		}
+		if (args[i] == "--ft") {
+			std::string c = args[i+1];
+			std::string idx = c.substr(0, c.rfind("/")) + "/index.v1.bin";
+			ftCfg.colorDsetPaths.push_back(c);
+			ftCfg.obbIndexPaths.push_back(idx);
+			i++;
+			fmt::print(fmt::fg(fmt::color::magenta), " - added ft dataset {} with index {}\n", c,idx);
+		}
+	}
+
+
 
 	// Put thresholds such that it looks nicer :: not though, this could result to aliasing as mip-mapping is not done
 	rtCfg.sseThresholdOpen = .45f;
