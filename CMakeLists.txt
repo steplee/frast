@@ -20,6 +20,7 @@ option(DEBUG "debug mode" OFF)
 option(DEBUG_SYMBOLS "include -g" OFF)
 option(TIMING "time certain operations, print on exit" ON)
 option(USE_TURBOJPEG "use turbojpeg directly, instead of opencv" ON)
+option(TESTS "build tests" OFF)
 
 set(ADDO_THREADS 8 CACHE INT "threads used")
 set(CONVERT_THREADS 8 CACHE INT "threads used")
@@ -32,15 +33,7 @@ set(COMPRESS_TERRAIN 1 CACHE INT "use zlib to compress terrain")
 #   Setup Deps
 ##################
 
-# TODO: I am in the middle of completely phasing out OpenCV (except for DEBUG_RASTERIO)
 #find_package(OpenCV REQUIRED)
-#[[set(OpenCV_LIBRARIES opencv_highgui opencv_core opencv_imgcodecs opencv_imgproc)
-if (EXISTS /usr/local/include/opencv4/)
-	set(OpenCV_INCLUDE_DIRS /usr/local/include/opencv4/)
-else()
-	set(OpenCV_INCLUDE_DIRS /usr/include/opencv4/)
-endif()#]]
-
 set(includes "")
 
 find_package(Fmt REQUIRED)
@@ -51,9 +44,6 @@ else()
 	include_directories(/usr/include/eigen3)
 endif()
 include_directories(/usr/include/gdal)
-# set(COMMON_LIBS pthread lmdb fmt::fmt ${OpenCV_LIBRARIES} ${GDAL_LIBRARIES})
-# list(APPEND includes ${OpenCV_INCLUDE_DIRS})
-# set(COMMON_LIBS pthread lmdb fmt::fmt ${GDAL_LIBRARIES})
 set(COMMON_LIBS pthread lmdb fmt::fmt)
 
 if (USE_TURBOJPEG)
@@ -116,11 +106,11 @@ endif()
 #   Apps
 ##################
 
-add_executable(frastAddo src/frastAddo.cc)
-add_executable(frastConvertGdal src/frastConvertGdal.cc)
-add_executable(frastDump src/frastDump.cc)
-add_executable(frastInfo src/frastInfo.cc)
-add_executable(frastMerge src/frastMerge.cc)
+add_executable(frastAddo src/apps/frastAddo.cc)
+add_executable(frastConvertGdal src/apps/frastConvertGdal.cc)
+add_executable(frastDump src/apps/frastDump.cc)
+add_executable(frastInfo src/apps/frastInfo.cc)
+add_executable(frastMerge src/apps/frastMerge.cc)
 
 target_link_libraries(frastAddo PUBLIC frast)
 # target_link_libraries(frastConvertGdal PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES} ${X_LIBS})
@@ -138,6 +128,32 @@ target_compile_definitions(frastConvertGdal PUBLIC CONVERT_THREADS=${CONVERT_THR
 
 pybind11_add_module(frastpy src/frastPy.cc)
 target_link_libraries(frastpy PUBLIC frast)
+
+
+##################
+#   Tests
+##################
+
+if (TESTS)
+	include(FetchContent)
+	FetchContent_Declare(
+		googletest
+		GIT_REPOSITORY https://github.com/google/googletest.git
+		GIT_TAG release-1.12.1
+	)
+	FetchContent_MakeAvailable(googletest)
+	include(GoogleTest)
+	enable_testing()
+
+	add_executable(test_db src/tests/db.cc)
+	target_link_libraries(test_db frast GTest::gtest_main)
+	gtest_discover_tests(test_db)
+
+	add_executable(test_gdalConversion src/tests/gdalConversion.cc)
+	target_link_libraries(test_gdalConversion frast GTest::gtest_main)
+	gtest_discover_tests(test_gdalConversion)
+	target_compile_definitions(test_gdalConversion PUBLIC CONVERT_THREADS=${CONVERT_THREADS} WRITER_NBUF=${WRITER_NBUF})
+endif()
 
 ##################
 #   Install

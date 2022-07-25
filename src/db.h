@@ -16,7 +16,7 @@ extern "C" {
 #include "utils/timer.hpp"
 #include "image.h"
 
-
+class DatasetReaderTester;
 class DatasetReaderIterator;
 class DatasetReaderIteratorNoImages;
 
@@ -410,6 +410,8 @@ class DatasetReader : public Dataset {
 		uint64_t findBestLvlForBoxAndRes(int imgH, int imgW, const double bboxWm[4]);
 		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], uint32_t outCapacity, int imgH, int imgW, const double bboxWm[4], MDB_txn* txn);
 		uint64_t findBestLvlAndTlbr_dataDependent(uint64_t tileTlbr[4], uint32_t outCapacity, int imgH, int imgW, float edgeLen, const double bboxWm[4], MDB_txn* txn);
+
+		friend class DatasetReaderTester;
 
 };
 
