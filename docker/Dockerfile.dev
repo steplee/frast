@@ -1,4 +1,4 @@
-FROM ubuntu:focal
+FROM ubuntu:focal AS builder
 
 #
 # This should be run from the frast repo root.
@@ -10,13 +10,6 @@ FROM ubuntu:focal
 #       https://drive.google.com/drive/folders/1389YBOBoqb2CM_VSndh4bdk_GD6AYe1z?usp=sharing
 #
 
-#RUN apt-get update && \
-#	DEBIAN_FRONTEND=noninteractive TZ=America/New_York apt-get -y install tzdata && \
-#	apt-get install --yes liblmdb-dev libjpeg-turbo8-dev libeigen3-dev clang-12 python3 libpython3-dev cmake make libprotobuf-c-dev libprotobuf-c1 protobuf-c-compiler libopencv-imgcodecs-dev libopencv-imgproc-dev libopencv-core-dev libopencv-highgui-dev libfmt-dev libgdal-dev python3-distutils python3-setuptools libturbojpeg0-dev \
-#	libxi-dev libxi6 mesa-common-dev libprotobuf-dev protobuf-compiler libwayland-dev wayland-protocols libwayland-client0 libwayland-egl1 libxcb-keysyms1-dev libxcb-keysyms1 \
-#	git libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrandr2 libxinerama-dev libxinerama1 libxcursor-dev libxcursor1 && \
-#	ln -s /usr/bin/python3 /usr/bin/python
-
 # Dont use opencv
 RUN apt-get update && \
 	DEBIAN_FRONTEND=noninteractive TZ=America/New_York apt-get -y install tzdata && \
@@ -24,19 +17,13 @@ RUN apt-get update && \
 	libtiff-dev libtiff5 libtiffxx5 libtool autoconf automake autotools-dev binutils binutils-common libssh-4 libssl-dev libssl1.1 libpng-dev libpng-tools libpng16-16 openssl libjpeg-dev libjpeg-turbo8 libjpeg-turbo8-dev libjpeg8 libjpeg8-dev \
 	libxi-dev libxi6 mesa-common-dev libprotobuf-dev protobuf-compiler  libxcb-keysyms1-dev libxcb-keysyms1 \
 	libwayland-dev wayland-protocols libwayland-client0 libwayland-egl1 \
-	git libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrandr2 libxinerama-dev libxinerama1 libxcursor-dev libxcursor1 && \
+	git libx11-dev libxcb-image0-dev libxcb-util-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrandr2 libxinerama-dev libxinerama1 libxcursor-dev libxcursor1 && \
 	ln -s /usr/bin/python3 /usr/bin/python
 
 ENV CXX=clang++-12 CC=clang-12
 
 # Pybind11 (system one does not work with clang12)
 RUN cd /opt/ && git clone https://github.com/pybind/pybind11.git --single-branch --branch v2.9.2 --depth 1 && cd pybind11 && mkdir build && cd build && cmake .. -DPYBIND11_TEST=OFF && make -j4 && make install && cd /opt && rm -rf pybind11
-
-
-# Lighter version (non entire sdk -- probably have issues compiling shaders in container)
-#RUN apt-get install --yes libxi-dev libxi6 glslang-dev glslang-tools mesa-common-dev libprotobuf-dev protobuf-compiler
-#RUN cd /opt && git clone https://github.com/KhronosGroup/Vulkan-Headers.git --single-branch --branch v1.3.219 --depth 1 && cd Vulkan-Headers && mkdir build && cd build && cmake .. && make -j5 && make install
-#RUN cd /opt && git clone https://github.com/KhronosGroup/Vulkan-Loader.git --single-branch --branch v1.3.219 --depth 1 && cd Vulkan-Loader && mkdir build && cd build && cmake .. -DBUILD_WSI_WAYLAND_SUPPORT=OFF && make -j5 && make install
 
 # Install entire vulkan sdk (allows compiling shaders in container -- takes a while...)
 COPY ./docker/dist/vulkansdk-linux-x86_64-1.3.211.0.tar.gz /opt/
@@ -67,9 +54,10 @@ COPY ./docker/listSharedObjectDeps.py /opt
 RUN export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/MrSID_Raster_DSDK/lib && \
 	mkdir /opt/sharedLibs && python3 /opt/listSharedObjectDeps.py /opt/sharedLibs /opt/frast/build/frastAddo /opt/frast/build/frastConvertGdal /opt/frast/build/frastInfo /opt/frast/build/frastMerge /opt/frast/build/frastDump /opt/frast/frastVk/build/libfrastVk.so /opt/frast/frastVk/build/fvkRunRt /usr/local/bin/gdalwarp /usr/local/bin/gdaladdo /usr/local/bin/gdalbuildvrt
 
-FROM ubuntu:focal
+FROM ubuntu:focal AS dist
+ENV LD_LIBRARY_PATH=:/usr/local/lib
 RUN apt-get update && apt-get install --yes python3-minimal vim proj-data && apt-get clean && \
 	ln -s /usr/bin/python3 /usr/bin/python
 COPY --from=0 /opt/sharedLibs /opt/frast/frastVk/build/libfrastVk.so /usr/local/lib/
-COPY --from=0 /opt/frast/build/frast* /opt/frast/frastVk/build/fvkRunRt /opt/frast/frastVk/build/fvkRunFtr /usr/local/bin/gdal_translate /usr/local/bin/gdalwarp /usr/local/bin/gdaladdo /usr/local/bin/gdalbuildvrt /usr/local/bin/
+COPY --from=0 /opt/frast/build/frast* /opt/frast/frastVk/build/fvkRunRt /opt/frast/frastVk/build/fvkRunFtr /usr/local/bin/gdal_translate /usr/local/bin/gdalwarp /usr/local/bin/gdaladdo /usr/local/bin/gdalsrsinfo /usr/local/bin/gdalinfo /usr/local/bin/gdalbuildvrt /usr/local/bin/
 #ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib

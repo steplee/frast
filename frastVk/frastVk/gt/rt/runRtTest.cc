@@ -166,6 +166,8 @@ struct TestRtApp : public BaseApp {
 
 			float color[4] = {1.f,1.f,.5f,1.f};
 			textSet->setText(0, "hello world", model.data(), color);
+			// model.block<3,1>(0,2) << -.116109, 0.876376, -.465961;
+			textSet->setText(1, "HELLO WORLD", model.data(), color);
 			textSet->setAreaAndSize(0,0, windowWidth, windowHeight, 1.f, mvpf.data());
 		}
 

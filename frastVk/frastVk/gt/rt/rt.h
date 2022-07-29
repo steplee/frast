@@ -137,8 +137,8 @@ struct RtCoordinate {
 		return *this;
 	}
 	*/
-	RtCoordinate(RtCoordinate&& other) = delete;
-	RtCoordinate& operator=(RtCoordinate&& other) = delete;
+	// RtCoordinate(RtCoordinate&& other) = delete;
+	// RtCoordinate& operator=(RtCoordinate&& other) = delete;
 
 	inline RtCoordinate parent() const {
 		RtCoordinate out;

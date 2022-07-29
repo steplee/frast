@@ -38,6 +38,7 @@ class SimpleTextSet {
 			float color[4];
 			uint8_t chars[maxLength];
 		};
+		static_assert(sizeof(TextBufferData) == ((16+4)*4 + maxLength) );
 
 		uint32_t stringLengths[maxStrings] = {0};
 		ExBuffer ubo;

@@ -17,9 +17,11 @@ void SimpleTextSet::render(RenderState& rs, Command &cmd) {
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &descSet.dset, 0, 0);
-	for (int i=0; i<maxStrings; i++)
-		if (stringLengths[i] > 0)
+	for (int i=0; i<maxStrings; i++) {
+		if (stringLengths[i] > 0) {
 			vkCmdDraw(cmd, 6*stringLengths[i], 1, 0, i);
+		}
+	}
 
 }
 
@@ -33,7 +35,7 @@ SimpleTextSet::SimpleTextSet(BaseApp* app_) {
 	// void create(Device& device, VkImageLayout initialLayout=VK_IMAGE_LAYOUT_UNDEFINED);
 
 	// Create buffers
-	ubo.set(sizeof(TextBufferData)*maxStrings,
+	ubo.set(sizeof(TextBufferHeader)+sizeof(TextBufferData)*maxStrings,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 	ubo.create(app->mainDevice);
@@ -73,7 +75,7 @@ SimpleTextSet::SimpleTextSet(BaseApp* app_) {
 	});
 
 
-	VkDescriptorBufferInfo bufferInfo { ubo, 0, sizeof(TextBufferData) };
+	VkDescriptorBufferInfo bufferInfo { ubo, 0, sizeof(TextBufferHeader)+maxStrings*sizeof(TextBufferData) };
 	descSet.update(VkWriteDescriptorSet{
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 			descSet, 0,
@@ -125,6 +127,7 @@ void SimpleTextSet::reset() {
 
 void SimpleTextSet::setText(int i, const std::string& text, const float matrix[16], const float color[4]) {
 	stringLengths[i] = text.length();
+	assert(i < maxStrings);
 
 	// TextBufferData* tbd = (TextBufferData*) ubo.mem.mapMemory(sizeof(TextBufferHeader)+sizeof(TextBufferData)*i, sizeof(TextBufferData), {});
 	TextBufferData* tbd = (TextBufferData*)( static_cast<char*>(ubo.mappedAddr)+sizeof(TextBufferHeader)+sizeof(TextBufferData)*i );
