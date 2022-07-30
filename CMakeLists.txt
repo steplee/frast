@@ -149,6 +149,10 @@ if (TESTS)
 	target_link_libraries(test_db frast GTest::gtest_main)
 	gtest_discover_tests(test_db)
 
+	add_executable(test_utils src/tests/utils.cc)
+	target_link_libraries(test_utils frast GTest::gtest_main)
+	gtest_discover_tests(test_utils)
+
 	add_executable(test_gdalConversion src/tests/gdalConversion.cc)
 	target_link_libraries(test_gdalConversion frast GTest::gtest_main)
 	gtest_discover_tests(test_gdalConversion)

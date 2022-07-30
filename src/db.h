@@ -182,11 +182,11 @@ class Dataset {
 
 		int dropLvl(int lvl, MDB_txn* txn);
 
-		// TODO: Read this from header, it is not done right now.
-
 		// This is a slow and naive function. Only call after a modifying app is finished
 		// doing stuff on all levels.
 		// TODO: Replace with something more elegant
+		//       For example: DatasetWriter could keep the disjoint-union
+		//       connected-component structure and manage it when adding tiles
 		void recompute_meta_and_write_slow(MDB_txn* txn);
 
 		void setFormat(int32_t c) { meta.fixedSizeMeta.format = c; }
@@ -270,12 +270,29 @@ struct DbCommand {
  * (At least, inbetween BeginLvl and EndLvl commands)
  * This is because only one lonnnng write transaction is held the entire duration.
  *
+ * The Model:
+ *         This has ONE writer thread that touches the LMDB database.
+ *         A user app can have many threads writing asynchronously, but this class
+ *         contains just one internal thread that merges results from the worker threads.
+ *         The user app interacts with @DbCommand's, and via @blockingGetTileBufferForThread()
+ *         Typically, the user send BeginLvl, call blockingGetTileBufferForThread() a bunch, send TileReady
+ *         for every TileBuffer receieved, then send EndLvl
+ *
+ *
  * You must also call sendCommand with StartLvl and EndLvl when starting/ending a new pyramid level of writing.
  *
  *  This also has a tile cache like DatasetReader does.
  *  Unlike DatasetReader::tileCache, however, each cache should be *thread local*.
  *  It is not safe to use from other threads, and obviously within the current level being processed.
  *  TODO: barely tested the caching mechanism.
+ *
+ *  Note: This class uses mutexes, which may put the thread to sleep. I don't *believe*
+ *  this is bad here though. The writer thread should be encouraged to yield cpu time
+ *  to the workers. With a large enough @buffersPerWorker, the writer should sleep
+ *  long periods of time and wake and try to commit many blocks at once.
+ *  A bigger concern is also that the workers may sleep in @blockingGetTileBufferForThread().
+ *  However, even then there should be enough workers (and some of the image processing is
+ *  multithreaded) that the CPUs stay busy.
  *
  */
 using atomic_int = std::atomic_int;

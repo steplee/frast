@@ -6,8 +6,6 @@
 
 #include "common.h"
 
-
-// TODO: Test this a bit more rigorously
 template <class K, class V>
 class LruCache {
 	protected:
@@ -46,18 +44,30 @@ class LruCache {
 		inline LruCache(int cap) : capacity(cap) {}
 		inline LruCache() : capacity(0) {}
 
-		// Return true if hit cache
-		inline bool get(V& out, const K& k) const {
+		// Return true if key not in cache (failure)
+		// Otherwise, move to front and return value
+		inline bool get(V& out, const K& k) {
 			auto it = map.find(k);
-			if (it == map.end()) return false;
+			if (it == map.end()) return true;
+
+			// We have the entry in the cache.
+			// We must move it to front if it is not already.
+			if (it->second.i != lst.begin()) {
+				lst.erase(it->second.i);
+				lst.push_front(k);
+				it->second.i = lst.begin();
+			}
+
+			// Note: This is a copy
 			out = it->second.v;
-			return true;
+
+			return false;
 		}
 
 		// Return true if key was in cache.
 		inline bool set(const K& k, const V& v) {
 			auto it = map.find(k);
-			assert(map.size() == lst.size());
+			// assert(map.size() == lst.size());
 			if (it == map.end()) {
 				// Maybe pop oldest, then add new.
 				if (lst.size() >= capacity) {
@@ -108,19 +118,19 @@ struct RingBuffer {
 		data.resize(cap);
 	}
 	inline bool pop_front(T& t) {
-		if (r_idx == w_idx) return false;
+		if (r_idx == w_idx) return true;
 		t = data[r_idx % cap];
 		//printf(" - ring buffer pop_front() idx %d val %d\n", r_idx, t); fflush(stdout);
 		r_idx++;
-		return true;
+		return false;
 	}
 	inline bool push_back(const T& t) {
-		//if (w_idx - r_idx >= cap) return false;
-		if (w_idx - r_idx >= cap) { assert(false); }
+		if (w_idx - r_idx >= cap) return true;
+		// if (w_idx - r_idx >= cap) { assert(false); }
 		data[w_idx % cap] = t;
 		//printf(" - ring buffer push_front() idx %d val %d\n", r_idx, t); fflush(stdout);
 		w_idx++;
-		return true;
+		return false;
 	}
 	inline int size()  const { return w_idx -  r_idx; }
 	inline bool empty() const { return w_idx == r_idx; }

@@ -1,9 +1,28 @@
 #pragma once
 
+// This file provides an API for timing code, that prints
+// a colored output when the RAII @Timer class is destroyed.
+//
+// You use it like this
+//       At top of file:
+//             #define USE_TIMER
+//             #include <frast/utils/timer.hpp>
+//
+//      If you not define USE_TIMER, the code is all no-ops and there is no runtime
+//      effect.
+//
+//      Then you can have a global or class member @AtomicTimer.
+//      Then in some scope of interest, you construct @AtomicTimerMeasurement with
+//      a reference to the timer.
+//      This is what keeps track of the time. When destructed, it increments
+//      the @AtomicTimer's statistics
+//
+//      You can use @Timer or @AtomicTimer. The latter stores data with std::atomic in
+//      case of multiple threads
+
 
 #ifndef USE_TIMER
 
-// Don't use timer: struct guards are just no-ops
 
 namespace timer {
 template <class D>
@@ -43,6 +62,7 @@ inline std::string to_string(double d) {
 	return o;
 
 	// This also looks decent
+	/*
 	std::string s = std::to_string(d);
 	if (s.find("e") != std::string::npos) return s;
 	auto dot = s.find(".");
@@ -51,6 +71,7 @@ inline std::string to_string(double d) {
 		if (s[i] != '0') return s.substr(0,i);
 	}
 	return "";
+	*/
 }
 
 template <class T>

@@ -792,25 +792,6 @@ void DatasetWritable::w_loop() {
 					nWaitingCommands--;
 				}
 
-
-
-
-
-				/*
-				if (theCommand.cmd == Command::TileReady) {
-					int theTileIdx = theCommand.data.tileBufferIdx;
-					int theWorker = theTileIdx / buffersPerWorker;
-					//printf(" - recv command to commit tilebuf %d (worker %d, buf %d), nWaiting: %d\n", theCommand.data.tileBufferIdx, theWorker, theTileIdx, nWaitingCommands); fflush(stdout);
-					WritableTile& tile = tileBuffers[theTileIdx];
-					this->put(tile.eimg.data(), tile.eimg.size(), tile.coord, &w_txn, false);
-					curTransactionWriteCount++;
-
-					tileBufferIdxMtx[theWorker].lock();
-					tileBufferCommittedIdx[theWorker] += 1;
-					tileBufferIdxMtx[theWorker].unlock();
-				}
-				*/
-
 				// Only commit a full set. That helps the in-order-ness
 				int setSize = buffersPerWorker / 2;
 				if (theCommand.cmd == DbCommand::TileReady or theCommand.cmd == DbCommand::TileReadyOverwrite) {
@@ -988,10 +969,7 @@ void DatasetWritable::configure(int numWorkerThreads, int buffersPerWorker) {
 		tileBufferCommittedIdx[i] = 0;
 	}
 	for (int i=0; i<nBuffers; i++) {
-		//tileBuffers[i].image = Image { tileSize(), tileSize(), channels() };
-		//tileBuffers[i].image.calloc();
 		tileBuffers[i].bufferIdx = i;
-		//printf(" - made buffer tile with idx %d\n", tileBuffers[i].bufferIdx);
 	}
 
 	for (int i=0; i<numWorkerThreads; i++) {
@@ -1029,33 +1007,6 @@ void DatasetWritable::sendCommand(const DbCommand& cmd) {
 		lck.unlock();
 		w_cv.notify_one();
 	}
-
-#if 0
-
-	//if (cmd.cmd == Command::EndLvl)
-	usleep(10'000);
-
-	{
-		//if (cmd.cmd == Command::EndLvl) printf(" - Acquiring w_mtx to EndLvl.\n"); fflush(stdout);
-		std::lock_guard<std::mutex> lck(w_mtx);
-		//if (cmd.cmd == Command::EndLvl) printf(" - Pushing EndLvl.\n"); fflush(stdout);
-		waitingCommands.push_back(cmd);
-	}
-	w_cv.notify_one();
-
-	/*
-	if (cmd.cmd == DbCommand::EndLvl)
-		while (w_txn) {
-			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
-			usleep(500'000);
-		}
-		*/
-	if (cmd.cmd == DbCommand::EndLvl)
-		while (w_txn) {
-			printf(" - sendCommand() waiting on EndLvl w_txn to end.\n");
-			usleep(100'000);
-		}
-#endif
 }
 
 void DatasetWritable::blockUntilEmptiedQueue() {
