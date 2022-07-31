@@ -1,3 +1,4 @@
+// clang-format off
 //
 // This file is included only in image.cc, and with correct headers and context.
 //

@@ -1,9 +1,7 @@
-
-#include "image.h"
-#include <iostream>
 #include <cmath>
 #include <cstdio>
-
+#include <iostream>
+#include "image.h"
 
 // These two flags offer alternatives to OpenCV's warping and image encoding.
 // I'm currently phasing opencv out, so I'll leave the old code for now.
@@ -37,8 +35,8 @@
 
 #ifdef USE_MY_WARP
 #include <Eigen/Core>
-#include <Eigen/LU>
 #include <Eigen/Geometry>
+#include <Eigen/LU>
 #ifndef _OPENMP
 #error "if using my warp (USE_MY_WARP defined), you must pass -fopenmp"
 //#include <omp.h>
@@ -50,83 +48,77 @@
 #ifdef USE_TURBOJPEG
 // Based on https://github.com/libjpeg-turbo/libjpeg-turbo/blob/c23672ce52ae53bd846b555439aa0a070b6d2c07/tjbench.c#L139
 bool decode(Image& out, const EncodedImageRef& eimg) {
-    tjhandle handle = tjInitDecompress();
+	tjhandle handle = tjInitDecompress();
 
-	long jpegSize = eimg.len;
-	uint8_t* jpegBuf = (uint8_t*) eimg.data;
-	uint8_t* destBuf = out.buffer;
-	auto pitch = out.w * out.channels();
+	long	 jpegSize = eimg.len;
+	uint8_t* jpegBuf  = (uint8_t*)eimg.data;
+	uint8_t* destBuf  = out.buffer;
+	auto	 pitch	  = out.w * out.channels();
 
-	//printf(" - Decode with channels %d\n", out.channels());
-    int pf = out.channels() == 1 ? TJPF_GRAY : TJPF_RGB;
+	// printf(" - Decode with channels %d\n", out.channels());
+	int pf	  = out.channels() == 1 ? TJPF_GRAY : TJPF_RGB;
 	int flags = 0;
 
-	if (tjDecompress2(handle, jpegBuf, jpegSize,
-				destBuf, out.w, pitch, out.h, pf,
-				flags) == -1)
+	if (tjDecompress2(handle, jpegBuf, jpegSize, destBuf, out.w, pitch, out.h, pf, flags) == -1)
 		throw std::runtime_error("executing tjDecompress2()");
 
 	if (tjDestroy(handle) == -1) throw std::runtime_error("executing tjDestroy()");
 	return false;
 }
 bool encode(EncodedImage& out, const Image& img) {
-    tjhandle handle = tjInitCompress();
+	tjhandle handle = tjInitCompress();
 
-    unsigned long jpegSize = tjBufSize(img.w, img.h, img.channels() == 3 ? TJSAMP_444 : TJSAMP_GRAY);
-	uint8_t *jpegBuf = (unsigned char *) tjAlloc(jpegSize);
+	unsigned long jpegSize = tjBufSize(img.w, img.h, img.channels() == 3 ? TJSAMP_444 : TJSAMP_GRAY);
+	uint8_t*	  jpegBuf  = (unsigned char*)tjAlloc(jpegSize);
 
-    if(handle == NULL)
-    {
-        const char *err = (const char *) tjGetErrorStr();
+	if (handle == NULL) {
+		const char* err = (const char*)tjGetErrorStr();
 		std::cerr << "TJ Error: " << err << " UNABLE TO INIT TJ Compressor Object\n";
-        return true;
-    }
-    int jpegQual = TURBOJPEG_QUALITY;
-    int width = img.w;
-    int height = img.h;
-    int nbands = img.channels();
-    int flags = 0;
-    //unsigned char* jpegBuf = NULL;
-    int pitch = width * nbands;
-    int pixelFormat = TJPF_GRAY;
-    int jpegSubsamp = TJSAMP_GRAY;
-    if(nbands == 3)
-    {
-        pixelFormat = TJPF_RGB;
-        jpegSubsamp = TJSAMP_411;
-    }
-	//printf(" - Encode with channels %d, %d %d\n", img.channels(), pixelFormat, jpegSubsamp);
+		return true;
+	}
+	int jpegQual = TURBOJPEG_QUALITY;
+	int width	 = img.w;
+	int height	 = img.h;
+	int nbands	 = img.channels();
+	int flags	 = 0;
+	// unsigned char* jpegBuf = NULL;
+	int pitch		= width * nbands;
+	int pixelFormat = TJPF_GRAY;
+	int jpegSubsamp = TJSAMP_GRAY;
+	if (nbands == 3) {
+		pixelFormat = TJPF_RGB;
+		jpegSubsamp = TJSAMP_411;
+	}
+	// printf(" - Encode with channels %d, %d %d\n", img.channels(), pixelFormat, jpegSubsamp);
 
-    int tj_stat = tjCompress2( handle, img.buffer, width, pitch, height,
-        pixelFormat, &(jpegBuf), &jpegSize, jpegSubsamp, jpegQual, flags);
-    if(tj_stat != 0)
-    {
-        const char *err = (const char *) tjGetErrorStr();
+	int tj_stat = tjCompress2(handle, img.buffer, width, pitch, height, pixelFormat, &(jpegBuf), &jpegSize, jpegSubsamp,
+							  jpegQual, flags);
+	if (tj_stat != 0) {
+		const char* err = (const char*)tjGetErrorStr();
 		std::cerr << "TurboJPEG Error: " << err << " UNABLE TO COMPRESS JPEG IMAGE\n";
-        tjDestroy(handle);
-        handle = NULL;
-        return true;
-    }
+		tjDestroy(handle);
+		handle = NULL;
+		return true;
+	}
 
 	if (out.capacity() < jpegSize) out.reserve(jpegSize * 2);
 	out.resize(jpegSize);
 	memcpy(out.data(), jpegBuf, jpegSize);
 
-    int tjstat = tjDestroy(handle); // should deallocate data buffer
+	int tjstat = tjDestroy(handle);	 // should deallocate data buffer
 	tjFree(jpegBuf);
-    handle = 0;
+	handle = 0;
 	return false;
 }
 #else
 bool decode(Image& out, const EncodedImageRef& eimg) {
-
-	cv::InputArray eimg_ { (uint8_t*) eimg.data, static_cast<int>(eimg.len) };
+	cv::InputArray eimg_{(uint8_t*)eimg.data, static_cast<int>(eimg.len)};
 
 	if (out.w > 0 and out.h > 0) {
-		auto old_c = out.channels();
+		auto old_c		 = out.channels();
 		auto old_cv_type = old_c == 3 ? CV_8UC3 : old_c == 4 ? CV_8UC4 : CV_8U;
-		//cv::Mat out_ { out.buffer, out.h, out.w, old_cv_type };
-		cv::Mat out_ { out.h, out.w, old_cv_type, out.buffer };
+		// cv::Mat out_ { out.buffer, out.h, out.w, old_cv_type };
+		cv::Mat out_{out.h, out.w, old_cv_type, out.buffer};
 
 		cv::imdecode(eimg_, cv::IMREAD_UNCHANGED, &out_);
 
@@ -138,11 +130,13 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 		std::cout << " - decoded:\n " << mat << "\n";
 		std::cout << " - decoded:\n " << mat.rows << " " << mat.cols << " " << mat.channels() << "\n";
 
-		out.w = mat.cols;
-		out.h = mat.rows;
-		out.format = mat.channels() == 1 ? Image::Format::GRAY : mat.channels() == 3 ? Image::Format::RGB : Image::Format::RGBA;
+		out.w		  = mat.cols;
+		out.h		  = mat.rows;
+		out.format	  = mat.channels() == 1	  ? Image::Format::GRAY
+						: mat.channels() == 3 ? Image::Format::RGB
+											  : Image::Format::RGBA;
 		size_t nbytes = out.size();
-		//out.buffer = (uint8_t*) malloc(nbytes);
+		// out.buffer = (uint8_t*) malloc(nbytes);
 		out.alloc();
 		memcpy(out.buffer, mat.data, nbytes);
 
@@ -151,12 +145,13 @@ bool decode(Image& out, const EncodedImageRef& eimg) {
 }
 bool encode(EncodedImage& out, const Image& img) {
 	auto cv_type = img.format == Image::Format::GRAY ? CV_8UC1 : img.format == Image::Format::RGB ? CV_8UC3 : CV_8UC4;
-	cv::Mat mat { img.h, img.w, cv_type, img.buffer };
+	cv::Mat mat{img.h, img.w, cv_type, img.buffer};
 	cv::imencode(".jpg", mat, out);
 	return false;
 }
 #endif
 
+// clang-format off
 
 // Should be optimized heavily with -O3.
 // But could also hand-implement SSE/NEON intrinsics to ensure fast.
@@ -603,4 +598,4 @@ void Image::makeGray(Image& out) const {
 	else if (channels() == 4) makeGray_<4>(out, *this);
 	else throw std::runtime_error("invalid # channels");
 }
-
+// clang-format on

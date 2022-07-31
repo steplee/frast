@@ -15,6 +15,8 @@ void my_halfscale(Image& out, const Image& in) {
 	const T* ibuf = (const T*) in.buffer;
 	T* obuf = (T*) out.buffer;
 
+	// clang-format off
+
 	auto IDX = [ih,iw,istep](int y_, int x_, int c) {
 		int y=y_, x=x_;
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
@@ -56,6 +58,7 @@ void my_halfscale(Image& out, const Image& in) {
 #endif
 	}
 	}
+	// clang-format on
 }
 
 }

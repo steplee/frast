@@ -1,3 +1,4 @@
+// clang-format off
 
 // Should be optimized heavily with -O3.
 // But could also hand-implement SSE/NEON intrinsics to ensure fast.
