@@ -994,7 +994,7 @@ bool DatasetWritable::getCached(int tid, Image& out, const BlockCoordinate& coor
 	}
 
 	auto& tileCache = perThreadTileCache[tid];
-	if (tileCache.get(out, coord.c)) {
+	if (not tileCache.get(out, coord.c)) {
 		// printf(" - (getCached) [thr %d] cache hit for tile %luz %luy %lux\n", tid, coord.z(), coord.y(), coord.x());
 		return false;
 	}
@@ -1328,7 +1328,7 @@ bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn*
 	AtomicTimerMeasurement g(t_getCached);
 	if (opts.nthreads > 1) tileCacheMtx.lock();
 	{
-		if (tileCache.get(out, coord.c)) {
+		if (not tileCache.get(out, coord.c)) {
 			// printf(" - (getCached) cache hit for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
 			if (opts.nthreads > 1) tileCacheMtx.unlock();
 			return false;
@@ -1342,7 +1342,7 @@ bool DatasetReader::getCached(Image& out, const BlockCoordinate& coord, MDB_txn*
 	}
 	// printf(" - (getCached) cache miss for tile %luz %luy %lux\n", coord.z(), coord.y(), coord.x());
 	if (opts.nthreads > 1) tileCacheMtx.lock();
-	{ tileCache.set(coord.c, out); }
+	tileCache.set(coord.c, out);
 	if (opts.nthreads > 1) tileCacheMtx.unlock();
 	return false;
 }
