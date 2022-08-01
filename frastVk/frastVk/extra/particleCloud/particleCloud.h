@@ -61,6 +61,7 @@ class ParticleCloudRenderer {
 
 		void setup(int capacity);
 		void setup_buffers(int capacity);
+		void setup_particle_buffer(int capacity_);
 		void setup_fbos();
 		void setup_pipelines();
 
@@ -92,6 +93,7 @@ class ParticleCloudRenderer {
 		DescriptorSet globalDescSet, particleDescSet;
 		DescriptorSet filterDescSet[2];
 		ExBuffer globalBuffer;
+		int capacity = 0;
 
 };
 

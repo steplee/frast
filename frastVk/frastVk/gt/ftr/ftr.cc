@@ -106,6 +106,14 @@ void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData
 			// if (n_missing > 0) return true;
 			if (n_missing == 0) {
 				mesh.img_buffer_cpu.resize(colorBuf.size());
+				bool allZero = true;
+				for (int i=0; i<256; i++)
+				for (int j=0; j<256; j++) {
+					if (colorBuf.buffer[i*256*4+i*4+0] != 0) allZero = false;
+					if (colorBuf.buffer[i*256*4+i*4+1] != 0) allZero = false;
+					if (colorBuf.buffer[i*256*4+i*4+2] != 0) allZero = false;
+				}
+				fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing) ALL ZERO :: {}\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing, allZero);
 				memcpy(mesh.img_buffer_cpu.data(), colorBuf.buffer, colorBuf.size());
 				return;
 			}

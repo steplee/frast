@@ -1389,6 +1389,8 @@ int DatasetReader::fetchBlocks(Image& out, uint64_t lvl, const uint64_t tlbr[4],
 
 	// If >2 tiles, and enabled, use bg threads
 	if (opts.nthreads == 0 or nx * ny <= 2) {
+		// fmt::print(" - Fetch Blocks {} {} {} {}\n", tlbr[0], tlbr[1], tlbr[2], tlbr[3]);
+
 		for (int yi = 0; yi < ny; yi++) {
 			for (int xi = 0; xi < nx; xi++) {
 				BlockCoordinate tileCoord{lvl, tlbr[1] + yi, tlbr[0] + xi};

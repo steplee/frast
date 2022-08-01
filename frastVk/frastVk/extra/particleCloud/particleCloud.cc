@@ -15,6 +15,8 @@
 
 ParticleCloudRenderer::ParticleCloudRenderer(BaseApp* app, int capacity) : app(app) {
 	setup(capacity);
+	setup_fbos();
+	setup_pipelines();
 }
 
 void ParticleCloudRenderer::setup(int capacity) {
@@ -22,14 +24,18 @@ void ParticleCloudRenderer::setup(int capacity) {
 	h = app->windowHeight;
 
 	setup_buffers(capacity);
-	setup_fbos();
-	setup_pipelines();
 }
 
-void ParticleCloudRenderer::setup_buffers(int capacity) {
+void ParticleCloudRenderer::setup_particle_buffer(int capacity_) {
+	capacity = capacity_;
+	particleBuffer.deallocate();
 	particleBuffer.set(capacity*4*4, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 	particleBuffer.create(app->mainDevice);
+}
+void ParticleCloudRenderer::setup_buffers(int capacity_) {
+	setup_particle_buffer(capacity_);
 
+	globalBuffer.deallocate();
 	globalBuffer.set(4*4*4,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -564,6 +570,11 @@ void ParticleCloudRenderer::setup_pipelines() {
 
 
 void ParticleCloudRenderer::uploadParticles(std::vector<float>& particles, bool normalizeMaxInplace, float divisor) {
+	// Resize to twice the input, if needed
+	// WARNING: This is not thread safe
+	if (particles.size()/4 > capacity)
+		setup_particle_buffer(2*particles.size()/4);
+
 	float m = 1e-9;
 	if (normalizeMaxInplace) {
 		for (int i=3; i<particles.size(); i+=4) m = std::max(m, particles[i]);

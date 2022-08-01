@@ -24,10 +24,10 @@ struct TestFtrApp : public Super, public HeadlessCopyMixin<TestFtrApp> {
 		: Super(cfg),
 		  renderer(FtTypes::Config {
 				.debugMode = true,
-				.obbIndexPaths = {"/data/naip/tampa/index.v1.bin", "/data/naip/mocoNaip/index.v1.bin"},
-				.colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft", "/data/naip/mocoNaip/out.ft"},
-				// .obbIndexPaths = {"/data/naip/tampa/index.v1.bin"},
-				// .colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft"},
+				// .obbIndexPaths = {"/data/naip/tampa/index.v1.bin", "/data/naip/mocoNaip/index.v1.bin"},
+				// .colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft", "/data/naip/mocoNaip/out.ft"},
+				.obbIndexPaths = {"/data/naip/tampa/index.v1.bin"},
+				.colorDsetPaths = {"/data/naip/tampa/tampaAoi.ft"},
 				// .obbIndexPaths = { "/data/naip/mocoNaip/index.v1.bin"},
 				// .colorDsetPaths = { "/data/naip/mocoNaip/out.ft"},
 				.elevDsetPath = "/data/elevation/srtm/usa.11.ft"
