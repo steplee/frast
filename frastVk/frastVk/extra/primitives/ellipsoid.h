@@ -19,6 +19,7 @@ struct EllipsoidSet {
 
 		void unset(int i);
 		void set(int i, const float matrix[16], const float color[4]);
+		void setFromPositionAndLtpSigmas(int i, const float pos[3], const float sigma[3], const float color[4]);
 
 	private:
 

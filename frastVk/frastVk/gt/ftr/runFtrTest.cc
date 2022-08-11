@@ -126,6 +126,7 @@ struct TestFtrApp : public Super, public HeadlessCopyMixin<TestFtrApp> {
 		simpleRenderPass.end(fd.cmd, fd);
 		// fd.cmd.clearImage(*fd.swapchainImg, {(float)(fd.n%3==0), (float)(fd.n%3==1), (float)(fd.n%3==2), 1.f});
 
+
 		if (fd.n % 60 == 0)
 			fmt::print(" - Rendering frame {} with {} active tiles\n", fd.n, renderer.activeTiles());
 	}

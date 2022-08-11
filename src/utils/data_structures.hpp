@@ -1,16 +1,22 @@
 #pragma once
 
-#include <deque>
+// #include <deque>
+#include <list>
 #include <unordered_map>
 #include <vector>
+#include <fmt/core.h>
 
 #include "common.h"
 
 template <class K, class V>
 class LruCache {
   protected:
-	int			  capacity;
-	std::deque<K> lst;
+
+	// You CANNOT use deque here, because erase() somewhere in the
+	// middle invalidates *all* iterators.
+	// Was an annoying bug...
+	// std::deque<K> lst;
+	std::list<K> lst;
 
 	struct ValueAndIdx {
 		using It = typename decltype(lst)::iterator;
@@ -37,6 +43,7 @@ class LruCache {
 	};
 
 	std::unordered_map<K, ValueAndIdx> map;
+	int			  capacity;
 
   public:
 	inline LruCache(int cap) : capacity(cap) {}
@@ -54,6 +61,8 @@ class LruCache {
 			lst.erase(it->second.i);
 			lst.push_front(k);
 			it->second.i = lst.begin();
+			// fmt::print(" - pushed already existent index, moving to front : {} {} {}",
+			// for (auto lit=lst.begin(); lit!=lst.end(); lit++) map[*lit].i = lit;
 		}
 
 		// Note: This is a copy
@@ -87,6 +96,15 @@ class LruCache {
 				node.key()		= k;
 				node.mapped().i = lst.begin();
 				map.insert(std::move(node));
+
+				/*
+				auto it	  = map.find(remove_k);
+				map.erase(it);
+				lst.pop_back();
+				lst.push_front(k);
+				map.emplace(std::make_pair(k, ValueAndIdx{v, lst.begin()}));
+				*/
+
 			} else {
 				// printf(" - not full, allocating new val.\n");
 				lst.push_front(k);

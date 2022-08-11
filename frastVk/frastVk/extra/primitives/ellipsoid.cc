@@ -2,6 +2,8 @@
 #include "frastVk/core/fvkShaders.h"
 #include "frastVk/utils/eigen.h"
 
+#include <Eigen/Core>
+
 void EllipsoidSet::unset(int i) {
 	if (residency[i]) n_resident--;
 	residency[i] = false;
@@ -11,11 +13,40 @@ void EllipsoidSet::set(int i, const float matrix[16], const float color[4]) {
 	residency[i] = true;
 
 	{
-		EllipsoidData* dbuf = (EllipsoidData*) globalBuffer.mappedAddr;
+		float *base = ((float*)globalBuffer.mappedAddr) + 16;
+		EllipsoidData* dbuf = ((EllipsoidData*) base) + i;
 		memcpy(dbuf->matrix, matrix, 16*4);
 		memcpy(dbuf->color, color, 4*4);
 	}
+}
 
+
+void EllipsoidSet::setFromPositionAndLtpSigmas(int i, const float pos[3], const float sigma[3], const float color[4]) {
+	RowMatrix4f matrix;
+	matrix.row(3) << 0,0,0,1;
+	matrix.topLeftCorner<3,3>().setIdentity();
+
+	// Local ENU cov inverse
+	RowMatrix3f iC(RowMatrix3f::Zero());
+	iC(0,0) = 1 / (sigma[0]);
+	iC(1,1) = 1 / (sigma[1]);
+	iC(2,2) = 1 / (sigma[2]);
+
+	// LTP Matrix
+	Vector3f p { pos };
+	RowMatrix3f R(RowMatrix3f::Zero());
+	R.col(2) = p;
+	R.col(0) = R.col(2).cross(Eigen::Vector3f::UnitZ()).normalized();
+	R.col(1) = R.col(2).cross(R.col(0)).normalized();
+
+	// Affine transform of covariance
+	// Note: actual transform is RPR', but we want inverse so swap R
+	matrix.topLeftCorner<3,3>() = R.transpose() * iC * R;
+
+	// Pos
+	matrix.topRightCorner<3,1>() = 	-matrix.topLeftCorner<3,3>().transpose() * p;
+
+	set(i, matrix.data(), color);
 }
 
 
@@ -50,7 +81,9 @@ void EllipsoidSet::init() {
 			(float)app->windowHeight
 		};
 		PipelineBuilder builder;
-		builder.depthTest = true;
+		builder.depthWrite = false;
+		builder.depthTest = false;
+		builder.additiveBlending = true;
 		builder.init(vid, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, pipeline.vs, pipeline.fs);
 
 		pipeline.create(app->mainDevice, viewportXYWH, builder, app->simpleRenderPass.pass, 0);

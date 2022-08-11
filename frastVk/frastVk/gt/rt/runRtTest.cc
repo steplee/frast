@@ -12,6 +12,7 @@
 #include "frastVk/extra/particleCloud/particleCloud.h"
 #include "frastVk/extra/text/textSet.h"
 #include "frastVk/extra/primitives/earthEllipsoid.h"
+#include "frastVk/extra/primitives/ellipsoid.h"
 
 
 struct TestRtApp : public BaseApp {
@@ -21,6 +22,7 @@ struct TestRtApp : public BaseApp {
 	std::shared_ptr<ParticleCloudRenderer> pset;
 	std::shared_ptr<SimpleTextSet> textSet;
 	std::shared_ptr<EarthEllipsoid> earthEllipsoid;
+	std::shared_ptr<EllipsoidSet> ellpSet;
 
 	bool moveCaster = true;
 
@@ -135,6 +137,46 @@ struct TestRtApp : public BaseApp {
 
 		if (1) earthEllipsoid = std::make_shared<EarthEllipsoid>(this);
 
+		if (1) {
+			ellpSet = std::make_shared<EllipsoidSet>(this);
+			ellpSet->init();
+
+			RowMatrix4f ellpMatrix;
+			ellpMatrix.row(3) << 0,0,0,1;
+			ellpMatrix.topLeftCorner<3,3>().setIdentity();
+			// Local ENU cov inverse
+			RowMatrix3f iC(RowMatrix3f::Zero());
+			iC(0,0) = .5 / (.0001);
+			iC(1,1) = .5 / (.0001);
+			iC(2,2) = .5 / (.0001);
+
+			Vector3f p {0.116107+10000/6e6 ,-0.876376  ,0.465961};
+
+			// LTP Matrix
+			RowMatrix3f R(RowMatrix3f::Zero());
+			R.col(2) = p;
+			R.col(0) = R.col(2).cross(Eigen::Vector3f::UnitZ()).normalized();
+			R.col(1) = R.col(2).cross(R.col(0)).normalized();
+			ellpMatrix.topLeftCorner<3,3>() = R * iC * R.transpose();
+
+			{
+				// Pos
+				ellpMatrix.topRightCorner<3,1>() = 	-ellpMatrix.topLeftCorner<3,3>().transpose() * p;
+				float ellpColor[4] = {0.4f,1.f,0.4f,.994f};
+				ellpSet->set(0,ellpMatrix.data(), ellpColor);
+			}
+			{
+				// This version uses the setFromPositionAndLtpSigmas util function
+				Vector3f sigmas { 1000/6.4e6, 1000/6.4e6, 1000/6.4e6 };
+				p(0) += 200 / 6e6;
+				p *= (1-1000/6.4e6);
+
+				float ellpColor[4] = {0.9f,0.2f,0.4f,.994f};
+				ellpSet->setFromPositionAndLtpSigmas(1, p.data(), sigmas.data(), ellpColor);
+			}
+
+		}
+
 	}
 
 	inline virtual void doRender(RenderState& rs) override {
@@ -179,6 +221,7 @@ struct TestRtApp : public BaseApp {
 		if (frustumSet) frustumSet->render(rs, fd.cmd);
 		if (textSet) textSet->render(rs,fd.cmd);
 		if (earthEllipsoid) earthEllipsoid->render(rs,fd.cmd);
+		if (ellpSet) ellpSet->render(rs, fd.cmd);
 
 		simpleRenderPass.end(fd.cmd, fd);
 

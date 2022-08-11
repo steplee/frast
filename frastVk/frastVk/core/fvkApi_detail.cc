@@ -1159,7 +1159,7 @@ void PipelineBuilder::init(
 		colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 		colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	} else if (replaceBlending) {
+	// } else if (replaceBlending) {
 		// TODO
 	} else {
 		colorBlendAttachment.colorWriteMask =
