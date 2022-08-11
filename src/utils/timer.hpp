@@ -27,11 +27,11 @@
 namespace {
 template <class D>
 struct Timer_ {
-	inline Timer(const std::string& name) {}
+	inline Timer_(const std::string& name) {}
 };
 template <class D, class T>
 struct TimerMeasurement_ {
-	inline TimerMeasurement(Timer<D>& timer, int N=1) {}
+	inline TimerMeasurement_(Timer_<D>& timer, int N=1) {}
 };
 }
 
