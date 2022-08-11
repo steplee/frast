@@ -197,7 +197,7 @@ GdalDset::~GdalDset() {
 
 
 bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const {
-	AtomicTimerMeasurement tg(t_gdal);
+	// AtomicTimerMeasurement tg(t_gdal);
     //out.create(outh, outw, cv_type);
 
     Vector2d tl = (prj2pix * Vector3d{bboxProj(0), bboxProj(1), 1.});

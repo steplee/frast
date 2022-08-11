@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <iostream>
 
+#include "utils/timer.hpp"
+extern AtomicTimer t_encodeImage;
+
 // These two flags offer alternatives to OpenCV's warping and image encoding.
 // I'm currently phasing opencv out, so I'll leave the old code for now.
 #define USE_MY_WARP

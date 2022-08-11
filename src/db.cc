@@ -1,7 +1,6 @@
 #include "db.h"
 #include <sys/stat.h>
 #include "image.h"
-#include "utils/memcpy_utils.hpp"
 #include "utils/solve.hpp"
 
 #include <cassert>
@@ -20,6 +19,8 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 
+#include "utils/timer.hpp"
+
 //#define DEBUG_RASTERIO
 #ifdef DEBUG_RASTERIO
 #include <opencv2/highgui.hpp>
@@ -37,7 +38,8 @@ AtomicTimer t_total("total"), t_encodeImage("encodeImage"), t_decodeImage("decod
 	t_rasterIo("rasterIo"), t_fetchBlocks("fetchBlocks"), t_warp("warp"), t_memcpyStrided("memcpyStrided"),
 	t_getCached("getCached"), t_solve("solve"), t_gdal("gdal"), t_dbWrite("dbWrite"), t_dbRead("dbRead"),
 	t_dbBeginTxn("dbBeginTxn"), t_dbEndTxn("dbEndTxn"), t_tileBufferCopy("tileBufferCopy");
-void printDebugTimes() {}
+
+#include "utils/memcpy_utils.hpp"
 
 static int myIntCompare(const MDB_val* a, const MDB_val* b) {
 	assert(a->mv_size == 8);

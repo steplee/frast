@@ -254,7 +254,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					//cv::imshow("child",tmpMat);
 					//cv::waitKey(1);
 					{
-						AtomicTimerMeasurement tg(t_memcpyStrided);
+						// AtomicTimerMeasurement tg(t_memcpyStrided);
 						// tmpMat.copyTo(parent(cv::Rect{tileSize*(((int32_t)j)%2), tileSize*(1-((int32_t)j)/2), tileSize, tileSize}));
 						//inline void memcpyStridedOutputFlatInput(T* dst, const T* src, size_t rowStride, size_t w, size_t h) {
 						auto rowStride = tileSize*2;
@@ -275,7 +275,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 
 					// Downsample
 					{
-						AtomicTimerMeasurement tg(t_warp);
+						// AtomicTimerMeasurement tg(t_warp);
 						// cv::resize(parent, child, cv::Size{tileSize,tileSize});
 						// constexpr float H[6] = { .5, 0, 0, 0, .5, 0, };
 						// parent.warpAffine(child, H);
@@ -288,7 +288,7 @@ int safeMakeOverviews(DatasetWritable& dset, const std::vector<int>& existingLvl
 					WritableTile& wtile = dset.blockingGetTileBufferForThread(tid);
 					// Image childImg { child.cols, child.rows, format, child.data };
 					{
-						AtomicTimerMeasurement tg(t_encodeImage);
+						// AtomicTimerMeasurement tg(t_encodeImage);
 						// encode(wtile.eimg, childImg);
 						encode(wtile.eimg, child);
 					}
@@ -397,7 +397,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	AtomicTimerMeasurement _tg_total(t_total);
+	// AtomicTimerMeasurement _tg_total(t_total);
 	DatasetWritable dset { argv[1] };
 
 	dset.configure(ADDO_THREADS, WRITER_NBUF);

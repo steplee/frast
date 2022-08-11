@@ -90,7 +90,7 @@ struct DatasetReaderIterator {
 
 		EncodedImageRef eimg{val.mv_size, (uint8_t*)val.mv_data};
 		{
-			AtomicTimerMeasurement g(t_decodeImage);
+			// AtomicTimerMeasurement g(t_decodeImage);
 			decode(buf, eimg);
 		}
 
@@ -225,7 +225,7 @@ PYBIND11_MODULE(frastpy, m) {
 		.def("fetchBlocks",
 			 [](DatasetReader& dset, py::buffer out, uint64_t lvl, py::array_t<uint64_t>& tlbr_,
 				bool safe) -> py::object {
-				 AtomicTimerMeasurement g(t_total);
+				 // AtomicTimerMeasurement g(t_total);
 				 if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				 if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
 				 if (tlbr_.strides(0) != 8)
@@ -273,7 +273,7 @@ PYBIND11_MODULE(frastpy, m) {
 		// Same comment for fetchBlocks() applies here too
 		.def("rasterIo",
 			 [](DatasetReader& dset, py::array_t<uint8_t> out, py::array_t<double> tlbrWm_) -> py::object {
-				 AtomicTimerMeasurement g(t_total);
+				 // AtomicTimerMeasurement g(t_total);
 				 if (tlbrWm_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				 if (tlbrWm_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
 				 if (tlbrWm_.strides(0) != 8)
@@ -312,7 +312,7 @@ PYBIND11_MODULE(frastpy, m) {
 
 		.def("rasterIoQuad",
 			 [](DatasetReader& dset, py::array_t<uint8_t> out, py::array_t<double> quad) -> py::object {
-				 AtomicTimerMeasurement g(t_total);
+				 // AtomicTimerMeasurement g(t_total);
 				 if (quad.size() != 8) throw std::runtime_error("quad must be length 8.");
 				 if (quad.ndim() != 1) throw std::runtime_error("quad must have one dim.");
 				 if (quad.strides(0) != 8)

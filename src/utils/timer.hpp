@@ -24,21 +24,21 @@
 #ifndef USE_TIMER
 
 
-namespace timer {
+namespace {
 template <class D>
-struct Timer {
+struct Timer_ {
 	inline Timer(const std::string& name) {}
 };
 template <class D, class T>
-struct TimerMeasurement {
+struct TimerMeasurement_ {
 	inline TimerMeasurement(Timer<D>& timer, int N=1) {}
 };
 }
 
-using Timer                  = timer::Timer<double>;
-using TimerMeasurement       = timer::TimerMeasurement<double, std::chrono::high_resolution_clock>;
-using AtomicTimer            = timer::Timer<std::atomic<double>>;
-using AtomicTimerMeasurement = timer::TimerMeasurement<std::atomic<double>, std::chrono::high_resolution_clock>;
+using Timer                  = Timer_<double>;
+using TimerMeasurement       = TimerMeasurement_<double, std::chrono::high_resolution_clock>;
+using AtomicTimer            = Timer_<std::atomic<double>>;
+using AtomicTimerMeasurement = TimerMeasurement_<std::atomic<double>, std::chrono::high_resolution_clock>;
 
 #else
 
@@ -52,7 +52,7 @@ using AtomicTimerMeasurement = timer::TimerMeasurement<std::atomic<double>, std:
 #include <fmt/color.h>
 
 
-namespace timer {
+namespace {
 
 using namespace std::chrono;
 
@@ -99,15 +99,15 @@ inline std::string prettyPrintSeconds(double d) {
 
 
 template <class D>
-struct Timer {
+struct Timer_ {
 	std::string name;
 	int n = 0;
 	D acc1 = 0;
 	D acc2 = 0;
 
-	inline Timer(const std::string& name) : name(name) {
+	inline Timer_(const std::string& name) : name(name) {
 	}
-	inline ~Timer() {
+	inline ~Timer_() {
 
 		if (n == 0) return;
 
@@ -129,7 +129,7 @@ struct Timer {
 				sd_);
 	}
 
-	void compose(const Timer& o) {
+	void compose(const Timer_& o) {
 		n += o.n;
 		acc1 += o.acc1;
 		acc2 += o.acc2;
@@ -143,12 +143,12 @@ struct Timer {
 };
 
 template <class D, class T = high_resolution_clock>
-struct TimerMeasurement {
-	Timer<D>& timer;
+struct TimerMeasurement_ {
+	Timer_<D>& timer;
 	typename T::time_point st;
 	int N;
-	TimerMeasurement(Timer<D>& timer, int N=1) : timer(timer), st(T::now()), N(N) { }
-	~TimerMeasurement() {
+	TimerMeasurement_(Timer_<D>& timer, int N=1) : timer(timer), st(T::now()), N(N) { }
+	~TimerMeasurement_() {
 		auto et { T::now() };
 		timer.pushMeasurement(getSecondDiff(st, et), N);
 	}
@@ -158,10 +158,10 @@ struct TimerMeasurement {
 
 //using timer::TimerMeasurement;
 //using timer::Timer;
-using TimerMeasurement       = timer::TimerMeasurement<double, std::chrono::high_resolution_clock>;
-using Timer                  = timer::Timer<double>;
-using AtomicTimerMeasurement = timer::TimerMeasurement<std::atomic<double>, std::chrono::high_resolution_clock>;
-using AtomicTimer            = timer::Timer<std::atomic<double>>;
+using TimerMeasurement       = TimerMeasurement_<double, std::chrono::high_resolution_clock>;
+using Timer                  = Timer_<double>;
+using AtomicTimerMeasurement = TimerMeasurement_<std::atomic<double>, std::chrono::high_resolution_clock>;
+using AtomicTimer            = Timer_<std::atomic<double>>;
 
 #endif
 

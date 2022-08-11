@@ -14,7 +14,6 @@ extern "C" {
 #include "image.h"
 #include "utils/common.h"
 #include "utils/data_structures.hpp"
-#include "utils/timer.hpp"
 
 class DatasetReaderTester;
 class DatasetReaderIterator;
@@ -44,8 +43,9 @@ constexpr float WebMercatorCellSizesf[MAX_LVLS] = {
 	38.218514142588134, 19.109257071294067, 9.554628535647034,	4.777314267823517,	2.3886571339117584,
 	1.1943285669558792};
 
-extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage, t_dbWrite, t_dbRead, t_dbBeginTxn, t_dbEndTxn,
-	t_tileBufferCopy, t_rasterIo, t_fetchBlocks, t_warp, t_memcpyStrided, t_getCached, t_solve, t_gdal, t_total;
+// class AtomicTimer;
+// extern AtomicTimer t_encodeImage, t_decodeImage, t_mergeImage, t_dbWrite, t_dbRead, t_dbBeginTxn, t_dbEndTxn,
+	// t_tileBufferCopy, t_rasterIo, t_fetchBlocks, t_warp, t_memcpyStrided, t_getCached, t_solve, t_gdal, t_total;
 void printDebugTimes();	 // Not used currenlty: descructors print automatically
 
 struct BlockCoordinate {

@@ -4,7 +4,6 @@
 
 #include <unordered_set>
 
-
 /*
  *
  * App that merges two or more datasets into one larger one.
@@ -79,7 +78,7 @@ int main(int argc, char** argv) {
 	std::vector<std::unique_ptr<DatasetReader>> inDsets;
 	inDsets.reserve(inDsetPaths.size());
 	for (auto path : inDsetPaths) inDsets.push_back(std::make_unique<DatasetReader>(path));
-	AtomicTimerMeasurement _tg_total(t_total);
+	// AtomicTimerMeasurement _tg_total(t_total);
 
 	outDset.configure(1,2);
 	
@@ -190,7 +189,7 @@ int main(int argc, char** argv) {
 
 								auto &wtile = outDset.blockingGetTileBufferForThread(tid);
 								{
-									AtomicTimerMeasurement tg(t_encodeImage);
+									// AtomicTimerMeasurement tg(t_encodeImage);
 									encode(wtile.eimg, primaImg);
 								}
 

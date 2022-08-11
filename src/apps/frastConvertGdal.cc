@@ -133,7 +133,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		// Debugged the streaks here; fount out the VRT shared issue
 		// imshow("thread" + std::to_string(0), src); usleep(1'000'000);
 
-		AtomicTimerMeasurement tg(t_warp);
+		// AtomicTimerMeasurement tg(t_warp);
 		src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
 	}
 
@@ -237,7 +237,7 @@ static int run_it(const std::string& srcTiff, const std::string& outPath, std::v
 						WritableTile &outTile = outDset.blockingGetTileBufferForThread(tid);
 
 						{
-							AtomicTimerMeasurement tg(t_encodeImage);
+							// AtomicTimerMeasurement tg(t_encodeImage);
 							encode(outTile.eimg, tileImages[tid]);
 						}
 
@@ -281,8 +281,6 @@ static int run_it(const std::string& srcTiff, const std::string& outPath, std::v
 		outDset.endTxn(&txn);
 	}
 
-	printDebugTimes();
-
 	return 0;
 }
 
@@ -310,7 +308,7 @@ int main(int argc, char** argv) {
 	outPath = std::string(argv[2]);
 	std::vector<int> lvls;
 
-	AtomicTimerMeasurement _tg_total(t_total);
+	// AtomicTimerMeasurement _tg_total(t_total);
 
 	std::string fmt = std::string{argv[3]};
 	Image::Format outFormat;
