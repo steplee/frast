@@ -8,7 +8,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O1")
+# set(CMAKE_CXX_FLAGS_DEBUG "-g -O1")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O3")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 if (EXISTS /usr/local/include/eigen3/)
@@ -21,4 +22,5 @@ include_directories(/usr/local/cuda/include/)
 
 find_package(PkgConfig REQUIRED)
 
-add_executable(rt src/main.cc)
+add_executable(rt src/main.cc src/trace_cpu.cc)
+target_link_libraries(rt fmt)
