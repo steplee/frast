@@ -108,6 +108,7 @@ endif()
 
 add_executable(frastAddo src/apps/frastAddo.cc)
 add_executable(frastConvertGdal src/apps/frastConvertGdal.cc)
+add_executable(frastConvertGdalMany src/apps/frastConvertGdalMany.cc)
 add_executable(frastDump src/apps/frastDump.cc)
 add_executable(frastInfo src/apps/frastInfo.cc)
 add_executable(frastMerge src/apps/frastMerge.cc)
@@ -115,12 +116,14 @@ add_executable(frastMerge src/apps/frastMerge.cc)
 target_link_libraries(frastAddo PUBLIC frast)
 # target_link_libraries(frastConvertGdal PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES} ${X_LIBS})
 target_link_libraries(frastConvertGdal PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES})
+target_link_libraries(frastConvertGdalMany PUBLIC frast -Wl,--as-needed ${GDAL_LIBRARIES})
 target_link_libraries(frastDump PUBLIC frast)
 target_link_libraries(frastInfo PUBLIC frast)
 target_link_libraries(frastMerge PUBLIC frast)
 
 target_compile_definitions(frastAddo PUBLIC ADDO_THREADS=${ADDO_THREADS} WRITER_NBUF=${WRITER_NBUF})
 target_compile_definitions(frastConvertGdal PUBLIC CONVERT_THREADS=${CONVERT_THREADS} WRITER_NBUF=${WRITER_NBUF})
+target_compile_definitions(frastConvertGdalMany PUBLIC CONVERT_THREADS=${CONVERT_THREADS} WRITER_NBUF=${WRITER_NBUF})
 
 ##################
 #   Python Lib
@@ -174,6 +177,7 @@ install(FILES
 	DESTINATION /usr/local/include/frast/utils)
 install(TARGETS frastAddo RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastConvertGdal RUNTIME DESTINATION /usr/local/bin)
+install(TARGETS frastConvertGdalMany RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastDump RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastInfo RUNTIME DESTINATION /usr/local/bin)
 install(TARGETS frastMerge RUNTIME DESTINATION /usr/local/bin)
