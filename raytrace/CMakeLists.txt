@@ -9,8 +9,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # set(CMAKE_CXX_FLAGS_DEBUG "-g -O1")
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O3")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG "-gdwarf-2 -O0 -fopenmp")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -gdwarf-2 -fopenmp")
 
 if (EXISTS /usr/local/include/eigen3/)
 	set(EIGEN_INC /usr/local/include/eigen3)
@@ -22,5 +22,5 @@ include_directories(/usr/local/cuda/include/)
 
 find_package(PkgConfig REQUIRED)
 
-add_executable(rt src/main.cc src/trace_cpu.cc)
-target_link_libraries(rt fmt)
+add_executable(rt src/main.cc src/trace_cpu.cc src/decode/decode.cc src/decode/protos/rocktree.pb.cc)
+target_link_libraries(rt fmt protobuf)

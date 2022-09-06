@@ -186,18 +186,33 @@ void Image::warpAffine(Image& out, const float H[6]) const {
 	}
 }
 
-void Image::warpPerspective(Image& out, float H[9]) const {
+void Image::warpPerspective(Image& out, float H[9], bool clampToBorder) const {
 	if (H[8] != 1.0f)
 		for (int i = 0; i < 7; i++) H[i] /= H[8];
 
-	if (out.format == Image::Format::GRAY) my_warpPerspective<uint8_t, 1>(out, *this, H);
-	else if (out.format == Image::Format::RGB) my_warpPerspective<uint8_t, 3>(out, *this, H);
-	else if (out.format == Image::Format::RGBA or out.format == Image::Format::RGBN)
-		my_warpPerspective<uint8_t, 4>(out, *this, H);
-	else if (out.format == Image::Format::TERRAIN_2x8) my_warpPerspective<uint16_t, 1>(out, *this, H);
-	else
-		throw std::runtime_error(std::string{"Image::warpPerspective() unsupported format/channels "} +
-								 std::to_string(out.channels()));
+	if (clampToBorder) {
+
+		if (out.format == Image::Format::GRAY) my_warpPerspective<uint8_t, 1, true>(out, *this, H);
+		else if (out.format == Image::Format::RGB) my_warpPerspective<uint8_t, 3, true>(out, *this, H);
+		else if (out.format == Image::Format::RGBA or out.format == Image::Format::RGBN)
+			my_warpPerspective<uint8_t, 4, true>(out, *this, H);
+		else if (out.format == Image::Format::TERRAIN_2x8) my_warpPerspective<uint16_t, 1, true>(out, *this, H);
+		else
+			throw std::runtime_error(std::string{"Image::warpPerspective() unsupported format/channels "} +
+									std::to_string(out.channels()));
+
+	} else {
+
+		if (out.format == Image::Format::GRAY) my_warpPerspective<uint8_t, 1, false>(out, *this, H);
+		else if (out.format == Image::Format::RGB) my_warpPerspective<uint8_t, 3, false>(out, *this, H);
+		else if (out.format == Image::Format::RGBA or out.format == Image::Format::RGBN)
+			my_warpPerspective<uint8_t, 4, false>(out, *this, H);
+		else if (out.format == Image::Format::TERRAIN_2x8) my_warpPerspective<uint16_t, 1, false>(out, *this, H);
+		else
+			throw std::runtime_error(std::string{"Image::warpPerspective() unsupported format/channels "} +
+									std::to_string(out.channels()));
+
+	}
 }
 
 void Image::halfscale(Image& out) const {

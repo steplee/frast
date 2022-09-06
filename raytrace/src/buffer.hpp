@@ -33,8 +33,28 @@ struct Buffer {
 
 	Buffer(const Buffer&) = delete;
 	Buffer& operator=(const Buffer&) = delete;
-	Buffer(Buffer&&) = default;
-	Buffer& operator=(Buffer&&) = default;
+
+	// Buffer(Buffer&&) = default;
+	// Buffer& operator=(Buffer&&) = default;
+	Buffer(Buffer&& o) {
+		ptr = o.ptr;
+		capacity = o.capacity;
+		w = o.w;
+		h = o.h;
+		isGpu = o.isGpu;
+		o.ptr = nullptr;
+		o.capacity = o.w = o.h = 0;
+	}
+	Buffer& operator=(Buffer&& o) {
+		ptr = o.ptr;
+		capacity = o.capacity;
+		w = o.w;
+		h = o.h;
+		isGpu = o.isGpu;
+		o.ptr = nullptr;
+		o.capacity = o.w = o.h = 0;
+		return *this;
+	}
 
 	inline void deallocate() {
 		if (isGpu) {

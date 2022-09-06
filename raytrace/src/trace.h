@@ -11,7 +11,11 @@
 
 using RowMatrix3f = Eigen::Matrix<float,3,3,Eigen::RowMajor>;
 using RowMatrix4f = Eigen::Matrix<float,4,4,Eigen::RowMajor>;
+using RowMatrix3d = Eigen::Matrix<double,3,3,Eigen::RowMajor>;
+using RowMatrix4d = Eigen::Matrix<double,4,4,Eigen::RowMajor>;
 using namespace Eigen;
+
+using byte3 = char[3];
 
 struct Camera {
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -26,8 +30,10 @@ struct Camera {
 };
 
 struct RaytracerConfig {
-	int samplesPerPixel = 4;
-	int depth = 4;
+	static constexpr int samplesPerPixel = 1;
+	// int depth = 4;
+	// int depth = 1;
+	static constexpr int depth = 1;
 };
 
 struct __attribute__((packed)) Vertex {
@@ -57,6 +63,26 @@ struct Tile {
 	Buffer<Vertex> verts;
 	Buffer<Pixel> pixels;
 	Buffer<uint16_t> indices;
+
+	inline Tile() {}
+
+	Tile(const Tile&) = delete;
+	Tile& operator=(const Tile&) = delete;
+	Tile(Tile&&) = default;
+	Tile& operator=(Tile&&) = default;
+	/*
+	inline Tile(Tile&& o) {
+		verts = std::move(o.verts);
+		pixels = std::move(o.pixels);
+		indices = std::move(o.indices);
+	}
+	inline Tile& operator=(Tile&& o) {
+		verts = std::move(o.verts);
+		pixels = std::move(o.pixels);
+		indices = std::move(o.indices);
+		return *this;
+	}
+	*/
 
 };
 
@@ -89,8 +115,10 @@ struct ProcessedGeometry {
 */
 
 struct RenderResult {
-	Image rgb;
-	Image depth;
+	Buffer<byte3> rgb;
+	Buffer<uint8_t> depth;
+	// Image rgb;
+	// Image depth;
 };
 
 struct __attribute__((packed)) Ray {
@@ -108,6 +136,7 @@ class Raytracer {
 		RenderResult render();
 
 		void setGeometry(Geometry&& geom);
+		void setViewMatrix(const RowMatrix4f& view);
 
 
 	private:
@@ -117,7 +146,10 @@ class Raytracer {
 
 
 	private:
+		// int w=256, h=256;
 		int w=512, h=512;
+		// int w=64, h=64;
+		// int w=128, h=128;
 
 		Buffer<Ray> rays;
 

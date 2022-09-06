@@ -1,17 +1,18 @@
 #include "frastConvertGdal.hpp"
 
 static void findWmTlbrOfDataset(uint64_t tlbr[4], GdalDset* dset, int lvl) {
-	double s = (1lu<<((int64_t)lvl));
 
-	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s) + 4lu;
-	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s) + 4lu;
-	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s) - 4lu;
-	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s) - 4lu;
+	double s = .5 * (1lu<<((int64_t)lvl));
 
-	tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s - 1) + 0lu;
-	tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s - 1) + 0lu;
-	tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s     ) - 0lu;
-	tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s     ) - 0lu;
+	// tlbr[0] = (uint64_t)(dset->tlbr_uwm[0] * s) + 4lu;
+	// tlbr[1] = (uint64_t)(dset->tlbr_uwm[1] * s) + 4lu;
+	// tlbr[2] = (uint64_t)(dset->tlbr_uwm[2] * s) - 4lu;
+	// tlbr[3] = (uint64_t)(dset->tlbr_uwm[3] * s) - 4lu;
+
+	tlbr[0] = (uint64_t)((dset->tlbr_uwm[0]+1.) * s - 1) - 1lu;
+	tlbr[1] = (uint64_t)((dset->tlbr_uwm[1]+1.) * s - 1) - 1lu;
+	tlbr[2] = (uint64_t)((dset->tlbr_uwm[2]+1.) * s     ) + 1lu;
+	tlbr[3] = (uint64_t)((dset->tlbr_uwm[3]+1.) * s     ) + 1lu;
 
 }
 

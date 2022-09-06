@@ -10,6 +10,7 @@
 
 #include <gdal_priv.h>
 #include <gdal.h>
+#include <gdalwarper.h>
 #include <ogr_core.h>
 #include <ogr_spatialref.h>
 
@@ -101,6 +102,7 @@ struct GdalDset {
 	int nbands;
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
+	bool clampToBorder = true; // For tiles on the edge, where to make missing pixels black or the clamped nearest color
 
 	// outFormat = prjFormat, except if outFormat = gray and nbands = 3, in which case prjFormat is RGB
 	Image::Format outFormat;
@@ -110,7 +112,10 @@ struct GdalDset {
 
 	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
+	bool getTileGdalWarp(Image& out, int z, int y, int x, int tileSize=256);
 	//cv::Mat remapBuf;
+
+	GDALWarpOptions *warpOptions = nullptr;
 };
 
 GdalDset::GdalDset(const std::string& path, const Image::Format& f) : outFormat(f) {
@@ -127,14 +132,14 @@ GdalDset::GdalDset(const std::string& path, const Image::Format& f) : outFormat(
     w                   = dset->GetRasterXSize();
     h                   = dset->GetRasterYSize();
 
-	std::cout << " - Dset pix2prj:\n" << pix2prj << "\n";
-	std::cout << " - Dset prj2pix:\n" << prj2pix << "\n";
+	// std::cout << " - Dset pix2prj:\n" << pix2prj << "\n";
+	// std::cout << " - Dset prj2pix:\n" << prj2pix << "\n";
 
     nbands    = dset->GetRasterCount() >= 3 ? 3 : 1;
 	assert(nbands <= 4);
     auto band = dset->GetRasterBand(0 + 1);
     for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i);
-	std::cout << " - nbands: " << nbands << "\n";
+	// std::cout << " - nbands: " << nbands << "\n";
 
     gdalType = dset->GetRasterBand(1)->GetRasterDataType();
     if (not(gdalType == GDT_Byte or gdalType == GDT_Int16 or gdalType == GDT_Float32)) {
@@ -181,17 +186,28 @@ GdalDset::GdalDset(const std::string& path, const Image::Format& f) : outFormat(
     if (ptsPrj[0] > ptsPrj[2]) std::swap(ptsPrj[0], ptsPrj[2]);
     if (ptsPrj[1] > ptsPrj[3]) std::swap(ptsPrj[1], ptsPrj[3]);
 	for (int i=0; i<4; i++) tlbr_prj(i) = ptsPrj[i];
+	/*
     double s = .5 / WebMercatorMapScale;
     tlbr_uwm(0) = (pts_[0] * s + .5);
     tlbr_uwm(1) = (pts_[2] * s + .5);
     tlbr_uwm(2) = (pts_[1] * s + .5);
     tlbr_uwm(3) = (pts_[3] * s + .5);
+	*/
+    double s = 1. / WebMercatorMapScale;
+    tlbr_uwm(0) = (pts_[0] * s);
+    tlbr_uwm(1) = (pts_[2] * s);
+    tlbr_uwm(2) = (pts_[1] * s);
+    tlbr_uwm(3) = (pts_[3] * s);
 }
 
 GdalDset::~GdalDset() {
     if (wm2prj) OCTDestroyCoordinateTransformation(wm2prj);
     if (prj2wm) OCTDestroyCoordinateTransformation(prj2wm);
 	if (dset) { delete dset; dset = 0; }
+	if (warpOptions) {
+		GDALDestroyGenImgProjTransformer( warpOption->pTransformerArg );
+		GDALDestroyWarpOptions( warpOptions );
+	}
 }
 
 
@@ -251,7 +267,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
         if (read_w <= 0 or read_h <= 0) return 1;
 
-		Image buf { read_h, read_w, imgPrj.format };
+		Image buf { read_h, read_w, imgPrj.format }; // TODO: Make class member
 		buf.alloc();
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0), inner(1), inner_w, inner_h,
@@ -277,7 +293,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
 
 		float H[9];
 		solveHomography(H, in_pts, out_pts);
-		buf.warpPerspective(out, H);
+		buf.warpPerspective(out, H, clampToBorder);
 
 
         return false;
@@ -325,7 +341,8 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	assert(tileSize % rtN == 0);
 
 	bool y_flipped = pix2prj(1,1) < 0;
-	double sampleScale = 2; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
+	// double sampleScale = 2; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
+	double sampleScale = 1.4; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
 	int sw = out.w*sampleScale+.1, sh = out.h*sampleScale+.1;
 
 	// Start off as wm, but transformed to prj
@@ -427,6 +444,46 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 
 	return false;
 }
+
+
+	bool GdalDset::getTileGdalWarp(Image& out, int z, int y, int x, int tileSize) {
+		if (warpOptions == nullptr) {
+			warpOptions = GDALCreateWarpOptions();
+			warpOptions->hSrcDS = dset;
+			warpOptions->nBandCount = nbands;
+			warpOptions->panSrcBands = (int *) CPLMalloc(sizeof(int) * warpOptions->nBandCount );
+			warpOptions->panDstBands = (int *) CPLMalloc(sizeof(int) * warpOptions->nBandCount );
+			for (int i=0; i<nbands; i++)
+				warpOptions->panSrcBands[i] = i+1,
+				warpOptions->panDstBands[i] = i+1;
+
+			OGRSpatialReference sr_3857;
+			sr_3857.importFromEPSG(3857);
+			char* wkt_3857;
+			sr_3857.exportToWkt(&wkt_3857);
+
+			warpOptions->pTransformerArg =
+				GDALCreateGenImgProjTransformer( dset,
+						GDALGetProjectionRef(dset),
+						nullptr,
+						wkt_3857,
+						FALSE, 0.0, 1 );
+			warpOptions->pfnTransformer = GDALGenImgProjTransform;
+
+
+		}
+
+			GDALWarpOperation oOperation;
+			oOperation.Initialize( warpOptions );
+			// oOperation.ChunkAndWarpImage( 0, 0, GDALGetRasterXSize( hDstDS ), GDALGetRasterYSize( hDstDS ) );
+			// CPLErr WarpRegionToBuffer(int nDstXOff, int nDstYOff, int nDstXSize, int nDstYSize, void *pDataBuf, GDALDataType eBufDataType, int nSrcXOff = 0, int nSrcYOff = 0, int nSrcXSize = 0, int nSrcYSize = 0, double dfProgressBase = 0.0, double dfProgressScale = 1.0)
+			oOperation.WarpRegionToBuffer(
+					0,0, out.w, out.h, out.buffer, GDT_Byte,
+					0,0,0,0,
+					0,0);
+
+			return false;
+	}
 
 }
 

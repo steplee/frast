@@ -9,7 +9,7 @@ namespace {
 // Generate code for each combination of scalar type and channels.
 // The correct function is dispatched in the Image member function.
 template <class T, int Cout, int Cin> void my_warpAffine(Image& out, const Image& in, const float H[6]);
-template <class T, int C> void my_warpPerspective(Image& out, const Image& in, const float H[6]);
+template <class T, int C, bool ClampToBorder> void my_warpPerspective(Image& out, const Image& in, const float H[6]);
 template <class T, int C> void my_remapRemap(Image& out, const Image& in, const float* map, int mw, int mh);
 
 // Contains a type that is the next highest integer width,
@@ -160,7 +160,7 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 }
 
 // Note: H[8] must be 1.0
-template <class T, int C>
+template <class T, int C, bool ClampToBorder>
 void my_warpPerspective(Image& out, const Image& in, const float H[9]) {
 	alignas(16) float iH[9];
 	inv_3x3(iH,H);
@@ -187,6 +187,15 @@ void my_warpPerspective(Image& out, const Image& in, const float H[9]) {
 		float ix = (iH[0*3+0] * ((float)ox) + iH[0*3+1] * ((float)oy) + iH[0*3+2]) / iz;
 		float iy = (iH[1*3+0] * ((float)ox) + iH[1*3+1] * ((float)oy) + iH[1*3+2]) / iz;
 		float mx = ix - floorf(ix), my = iy - floorf(iy);
+
+
+		// If too far outside, just be zero
+		if (not ClampToBorder) {
+			if (ix <= 0.f or iy < 0.f or ix > iw - 1.f or iy > ih - 1.f) {
+				for (int c=0; c<C; c++) obuf[oy*ostep+ox*C+c] = (T) (0);
+				continue;
+			}
+		}
 
 #if INTEGER_MIXING
 		using Scalar = typename RaiseOnce<T>::type;
@@ -244,18 +253,22 @@ template <class T, int C> void my_remapRemap(Image& out, const Image& in, const 
 	const float fow = ow, foh = oh;
 
 
-	//omp_set_num_threads(4);
+// #warning " RENABLE"
+	// omp_set_num_threads(4);
 	#pragma omp parallel for schedule(static,4) num_threads(4)
 	for (int oy=0; oy<oh; oy++) {
 	for (int ox=0; ox<ow; ox++) {
 		// 1) Compute/sample map coord/weights
 		// 2) Compute/sample pixel coord/weights
 
+		// if (oy >= 126) break;
+
 		float ax = (((float)ox) / fow) * fmw;
 		float ay = (((float)oy) / foh) * fmh;
 		float mx0 = ax - floorf(ax), my0 = ay - floorf(ay);
 
 		float ix = 0, iy = 0;
+		// printf(" - %d %d | %d %d : %f %f : %d %d\n", mh,mw,oy,ox, ay,ax, IDX_MAP(ay+1,ax+1) / mw, IDX_MAP(ay+1,ax+1) % mw);
 		ix += map[IDX_MAP(ay  , ax  )  ] * (1.f-my0) * (1.f-mx0);
 		ix += map[IDX_MAP(ay  , ax+1)  ] * (1.f-my0) * (    mx0);
 		ix += map[IDX_MAP(ay+1, ax+1)  ] * (    my0) * (    mx0);
@@ -267,11 +280,28 @@ template <class T, int C> void my_remapRemap(Image& out, const Image& in, const 
 
 		float mx = ix - floorf(ix), my = iy - floorf(iy);
 
+		/*
+		float dd =.0001f;
+		if (ax <= -dd or ay < -dd or ax >= mw + dd or ay >= mh + dd) {
+			printf(" - %d %d | %f %f\n", mh,mw, ay,ax);
+			for (int c=0; c<C; c++) obuf[oy*ostep+ox*C+c] = (T) (0);
+			continue;
+		}
+
+		// If too far outside, just be zero
+		if (ix <= -1.f or iy < -1.f or ix >= iw + 1.f or iy >= ih + 1.f) {
+			printf(" - %d %d | %f %f\n", mh,mw, iy,ix);
+			for (int c=0; c<C; c++) obuf[oy*ostep+ox*C+c] = (T) (0);
+			continue;
+		}
+		*/
+
 #if INTEGER_MIXING
 		using Scalar = typename RaiseOnce<T>::type;
 		using Vec = Scalar[C];
 		constexpr float f_res = static_cast<float>(RaiseOnce<T>::res);
 		Vec p = {0};
+		// printf(" - %d %d | %d %d : %f %f (in %d %d %d) (out %d %d %d)\n", ih,iw,oy,ox, iy,ix, in.h,in.w,in.channels(), out.h,out.w,out.channels());
 		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (1.f-my) * (1.f-mx)));
 		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+0) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (1.f-my) * (    mx)));
 		for (int c=0; c<C; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (    my) * (    mx)));
