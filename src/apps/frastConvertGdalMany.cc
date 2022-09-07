@@ -15,6 +15,11 @@
 // Expect this binary to be slower than the other -- it does a bit more,
 // including blending every pixel possibly multiple times.
 //
+//
+// NOTE: Below process has changed. When using \getTileGdalWarp(), it does most of the work.
+// NOTE: It gets better results (no black border, it is pixel 'perfect'), but takes SEVERAL times longer.
+//
+//
 // Here is the full process
 //
 // 1) Build Kd-Tree from all listed files
@@ -199,12 +204,12 @@ namespace {
 		Vector2l tl = int_from_uwm(cp.outputBox.min(), level);
 		Vector2l br = int_from_uwm(cp.outputBox.max(), level);
 		Array2l sz = br - tl;
-		assert( (sz>0).all() );
 
 		fmt::print(" - From outputBox {} => {}\n", cp.outputBox.min().transpose(), cp.outputBox.max().transpose());
 		fmt::print(" - From outputBox {} => {}\n", WebMercatorMapScale*cp.outputBox.min().transpose(), WebMercatorMapScale*cp.outputBox.max().transpose());
 		fmt::print(" - Have range     {} => {}\n", tl.transpose(), br.transpose());
 		fmt::print(" - sz hw          {}\n", sz.transpose());
+		assert( (sz>0).all() );
 
 		auto outFormat = Image::Format::RGB;
 		Image tileImage { 256, 256, outFormat };
@@ -214,6 +219,9 @@ namespace {
 		// std::vector<uint8_t> tmpBuffer3 (256*256*3, 0);
 		Image blendedImage { 256, 256, outFormat };
 		blendedImage.alloc();
+
+		Image tileImage0 { 256, 256, outFormat };
+		tileImage0.alloc();
 
 		DatabaseOptions opts;
 		DatasetWritable outDset { cp.outPath , opts };
@@ -262,7 +270,21 @@ namespace {
 				// Accumulate
 				// TODO: Only divide if there is >1 matching dataset
 				for (auto& dset : relevantDsets) {
-					if (!dset->getTile(tileImage, level, y, x)) {
+
+					int C = tileImage.channels();
+					for (int y=0; y<tileImage0.h; y++)
+						for (int x=0; x<tileImage0.w; x++)
+							for (int c=0; c<C; c++)
+								tileImage0.buffer[y*C*tileImage.w+x*C+c] = 0;
+
+					// if (!dset->getTile(tileImage, level, y, x)) {
+					if (!dset->getTileGdalWarp(tileImage0, level, y, x)) {
+
+						for (int y=0; y<tileImage0.h; y++)
+							for (int x=0; x<tileImage0.w; x++)
+								for (int c=0; c<C; c++)
+									tileImage.buffer[y*C*tileImage.w+x*C+c] = tileImage0.buffer[y*tileImage0.w+x + tileImage.w*tileImage.h*c];
+
 						Map<ImgArr3u> mapImg { tileImage.buffer };
 						acc.leftCols(3) += mapImg.cast<float>();
 
@@ -335,7 +357,7 @@ int main(int argc, char** argv) {
 
 	assert(cp.idl.nodes.size() > 0);
 
-	cp.level = 16;
+	cp.level = 14;
 
 	if (false) {
 		// TODO: If user specifies tlbr manually, should use that

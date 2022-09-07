@@ -52,7 +52,7 @@ RUN export LD_LIBRARY_PATH=/opt/MrSID_Raster_DSDK/lib/:${LD_LIBRARY_PATH} && ldc
 # First, gather needed shared objects to a directory we can copy from
 COPY ./docker/listSharedObjectDeps.py /opt
 RUN export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/MrSID_Raster_DSDK/lib && \
-	mkdir /opt/sharedLibs && python3 /opt/listSharedObjectDeps.py /opt/sharedLibs /opt/frast/build/frastAddo /opt/frast/build/frastConvertGdal /opt/frast/build/frastInfo /opt/frast/build/frastMerge /opt/frast/build/frastDump /opt/frast/frastVk/build/libfrastVk.so /opt/frast/frastVk/build/fvkRunRt /usr/local/bin/gdalwarp /usr/local/bin/gdaladdo /usr/local/bin/gdalbuildvrt
+	mkdir /opt/sharedLibs && python3 /opt/listSharedObjectDeps.py /opt/sharedLibs /opt/frast/build/frastAddo /opt/frast/build/frastConvertGdalMany /opt/frast/build/frastConvertGdal /opt/frast/build/frastInfo /opt/frast/build/frastMerge /opt/frast/build/frastDump /opt/frast/frastVk/build/libfrastVk.so /opt/frast/frastVk/build/fvkRunRt /usr/local/bin/gdalwarp /usr/local/bin/gdaladdo /usr/local/bin/gdalbuildvrt
 
 FROM ubuntu:focal AS dist
 ENV LD_LIBRARY_PATH=:/usr/local/lib

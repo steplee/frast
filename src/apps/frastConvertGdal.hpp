@@ -113,6 +113,7 @@ struct GdalDset {
 	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
 	bool getTileGdalWarp(Image& out, int z, int y, int x, int tileSize=256);
+	int last_z = -1;
 	//cv::Mat remapBuf;
 
 	GDALWarpOptions *warpOptions = nullptr;
@@ -205,7 +206,7 @@ GdalDset::~GdalDset() {
     if (prj2wm) OCTDestroyCoordinateTransformation(prj2wm);
 	if (dset) { delete dset; dset = 0; }
 	if (warpOptions) {
-		GDALDestroyGenImgProjTransformer( warpOption->pTransformerArg );
+		GDALDestroyGenImgProjTransformer( warpOptions->pTransformerArg );
 		GDALDestroyWarpOptions( warpOptions );
 	}
 }
@@ -457,32 +458,79 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 				warpOptions->panSrcBands[i] = i+1,
 				warpOptions->panDstBands[i] = i+1;
 
+
+		}
+
+		if (z != last_z) {
+			last_z = z;
+
 			OGRSpatialReference sr_3857;
 			sr_3857.importFromEPSG(3857);
 			char* wkt_3857;
 			sr_3857.exportToWkt(&wkt_3857);
 
+			// WarpRegionToBuffer calls ComputeSourceWindow, which finds corners to sample in the input dset.
+			// ComputeSourceWindow uses pfnTransformer with the dstX/Y offset/size.
+			// So pfnTransformer is important.
+			// The default 'ImgProjTransformer' expects both a GDAL src and dest Dataset.
+			// But we have just a source, and just a buffer as the output, where we want the output extent to be a WebMeractor box.
+			// Luckily GDAL allows this with the GDALSetGenImgProjTransformerDstGeoTransform func
+			/*
 			warpOptions->pTransformerArg =
 				GDALCreateGenImgProjTransformer( dset,
 						GDALGetProjectionRef(dset),
 						nullptr,
 						wkt_3857,
 						FALSE, 0.0, 1 );
+			*/
+
+			// Actually use this, GDALCreateGenImgProjTransformer just wraps this function, and we want to provide approx stuff
+			char **papszOptions = nullptr;
+			papszOptions = CSLSetNameValue( papszOptions, "DST_SRS", wkt_3857 );
+			papszOptions = CSLSetNameValue( papszOptions, "SRC_APPROX_ERROR_IN_PIXEL", "1.25" );
+			papszOptions = CSLSetNameValue( papszOptions, "DST_APPROX_ERROR_IN_PIXEL", "1.25" );
+			char buf__[32];
+			sprintf(buf__, ".1f", (float) 100000. / (1<<z));
+			papszOptions = CSLSetNameValue( papszOptions, "SRC_APPROX_ERROR_IN_SRS_UNIT", "10.25" );
+			papszOptions = CSLSetNameValue( papszOptions, "DST_APPROX_ERROR_IN_SRS_UNIT", "10.25" );
+	 		warpOptions->pTransformerArg = GDALCreateGenImgProjTransformer2( dset, nullptr, papszOptions );
+
 			warpOptions->pfnTransformer = GDALGenImgProjTransform;
-
-
+			warpOptions->eWorkingDataType = GDT_Byte;
+			warpOptions->nSrcAlphaBand = 0;
+			warpOptions->nDstAlphaBand = 0;
 		}
 
-			GDALWarpOperation oOperation;
-			oOperation.Initialize( warpOptions );
-			// oOperation.ChunkAndWarpImage( 0, 0, GDALGetRasterXSize( hDstDS ), GDALGetRasterYSize( hDstDS ) );
-			// CPLErr WarpRegionToBuffer(int nDstXOff, int nDstYOff, int nDstXSize, int nDstYSize, void *pDataBuf, GDALDataType eBufDataType, int nSrcXOff = 0, int nSrcYOff = 0, int nSrcXSize = 0, int nSrcYSize = 0, double dfProgressBase = 0.0, double dfProgressScale = 1.0)
-			oOperation.WarpRegionToBuffer(
-					0,0, out.w, out.h, out.buffer, GDT_Byte,
-					0,0,0,0,
-					0,0);
+		// Setup the geotransform to get the single asked for tile
+		// https://gdal.org/tutorials/geotransforms_tut.html
+		double tlbr[4] = {
+			((x  ) * (1. / static_cast<double>(1l << (z-1))) - 1.) * WebMercatorMapScale,
+			((y+1) * (1. / static_cast<double>(1l << (z-1))) - 1.) * WebMercatorMapScale,
+			((x+1) * (1. / static_cast<double>(1l << (z-1))) - 1.) * WebMercatorMapScale,
+			((y  ) * (1. / static_cast<double>(1l << (z-1))) - 1.) * WebMercatorMapScale,
+		};
+		double x_off = tlbr[0];
+		double y_off = tlbr[1];
+		double x_scale = (tlbr[2]-tlbr[0]) / 256.;
+		double y_scale = (tlbr[3]-tlbr[1]) / 256.;
+		double geo_xform[6] = {
+			x_off, x_scale, 0,
+			y_off, 0, y_scale
+		};
 
-			return false;
+		// void GDALSetGenImgProjTransformerDstGeoTransform( void *hTransformArg, const double *padfGeoTransform )
+		GDALSetGenImgProjTransformerDstGeoTransform(warpOptions->pTransformerArg, geo_xform);
+
+		GDALWarpOperation oOperation;
+		oOperation.Initialize( warpOptions );
+		// oOperation.ChunkAndWarpImage( 0, 0, GDALGetRasterXSize( hDstDS ), GDALGetRasterYSize( hDstDS ) );
+		// CPLErr WarpRegionToBuffer(int nDstXOff, int nDstYOff, int nDstXSize, int nDstYSize, void *pDataBuf, GDALDataType eBufDataType, int nSrcXOff = 0, int nSrcYOff = 0, int nSrcXSize = 0, int nSrcYSize = 0, double dfProgressBase = 0.0, double dfProgressScale = 1.0)
+		oOperation.WarpRegionToBuffer(
+				0,0, out.w, out.h, out.buffer, GDT_Byte,
+				0,0,0,0,
+				0,0);
+
+		return false;
 	}
 
 }
