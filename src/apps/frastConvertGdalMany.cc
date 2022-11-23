@@ -183,6 +183,8 @@ namespace {
 		};
 	}
 
+	bool g_USE_GDAL_WARP = false;
+
 	int run_it(ConvertParams& cp) {
 
 		int level = cp.level;
@@ -267,37 +269,46 @@ namespace {
 				Map<ImgArr3u> fin { blendedImage.buffer };
 				acc.setZero();
 
+
 				// Accumulate
 				// TODO: Only divide if there is >1 matching dataset
 				for (auto& dset : relevantDsets) {
 
-					int C = tileImage.channels();
-					for (int y=0; y<tileImage0.h; y++)
-						for (int x=0; x<tileImage0.w; x++)
-							for (int c=0; c<C; c++)
-								tileImage0.buffer[y*C*tileImage.w+x*C+c] = 0;
-
-					// if (!dset->getTile(tileImage, level, y, x)) {
-					if (!dset->getTileGdalWarp(tileImage0, level, y, x)) {
-
+					if (g_USE_GDAL_WARP) {
+						int C = tileImage.channels();
 						for (int y=0; y<tileImage0.h; y++)
 							for (int x=0; x<tileImage0.w; x++)
 								for (int c=0; c<C; c++)
-									tileImage.buffer[y*C*tileImage.w+x*C+c] = tileImage0.buffer[y*tileImage0.w+x + tileImage.w*tileImage.h*c];
+									tileImage0.buffer[y*C*tileImage.w+x*C+c] = 0;
 
-						Map<ImgArr3u> mapImg { tileImage.buffer };
-						acc.leftCols(3) += mapImg.cast<float>();
+						if (!dset->getTileGdalWarp(tileImage0, level, y, x)) {
 
-						// WARNING: Has bad seams
-						// acc.rightCols(1) += (mapImg > 5).rowwise().any().cast<float>();
-						// WARNING: Not even this works well
-						// WARNING: It must be coming from the alignment of the tiffs and/or the warpPerspective call for partial reads
-						// TODO: Try to either fix that, OR implement push-pull filtering to blend-away pixels close to borders.
-						auto mu = mapImg.cast<float>().rowwise().mean();
-						acc.rightCols(1) += (mu * mu).cwiseMin(30.f) / 30.f;
-						// acc.rightCols(1) += 1.f;
+							for (int y=0; y<tileImage0.h; y++)
+								for (int x=0; x<tileImage0.w; x++)
+									for (int c=0; c<C; c++)
+										tileImage.buffer[y*C*tileImage.w+x*C+c] = tileImage0.buffer[y*tileImage0.w+x + tileImage.w*tileImage.h*c];
+
+							Map<ImgArr3u> mapImg { tileImage.buffer };
+							acc.leftCols(3) += mapImg.cast<float>();
+
+							auto mu = mapImg.cast<float>().rowwise().mean();
+							acc.rightCols(1) += (mu * mu).cwiseMin(30.f) / 30.f;
+						}
+						// else assert(false);
+					} else {
+						if (!dset->getTile(tileImage, level, y, x)) {
+							Map<ImgArr3u> mapImg { tileImage.buffer };
+							acc.leftCols(3) += mapImg.cast<float>();
+
+							// WARNING: Has bad seams
+							// acc.rightCols(1) += (mapImg > 5).rowwise().any().cast<float>();
+							// WARNING: Not even this works well
+							// WARNING: It must be coming from the alignment of the tiffs and/or the warpPerspective call for partial reads
+							// TODO: Try to either fix that, OR implement push-pull filtering to blend-away pixels close to borders.
+							auto mu = mapImg.cast<float>().rowwise().mean();
+							acc.rightCols(1) += (mu * mu).cwiseMin(30.f) / 30.f;
+						} else assert(false);
 					}
-					// else assert(false);
 				}
 
 				// Blend
@@ -342,6 +353,15 @@ namespace {
 		return 0;
 	}
 
+
+	bool get_env_enabled(const char* str) {
+		auto res = getenv(str);
+		if (!res) return false;
+		if (strncmp(res,"ON",2) == 0) return true;
+		if (strncmp(res,"1",1) == 0) return true;
+		return false;
+	}
+
 }
 
 
@@ -357,6 +377,19 @@ int main(int argc, char** argv) {
 
 	assert(cp.idl.nodes.size() > 0);
 
+	// Timings for level 14, 40 file dataset:
+	//            158.44s        with USE_GDAL_WARP
+	//              6.28      without USE_GDAL_WARP
+	//
+	// This driver program is about as slow as the usual (gdalwarp . gdalbuildvrt)
+	// That means that it is the warping process that is slow, and not because of disk IO,
+	// but probably because GDAL is warping every pixel (my warp approximates with the
+	// non-linear geoegraphic warp at the four corners, then does a perspective warp
+	// for all pixels).
+	//
+
+	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
+	fmt::print(" - g_USE_GDAL_WARP: {}\n", g_USE_GDAL_WARP);
 	cp.level = 14;
 
 	if (false) {

@@ -81,7 +81,7 @@ struct FlatEarthMovingCamera : public Camera {
 	virtual void setRotMatrix(double* R) override;
 	
 
-	virtual void step(double dt);
+	virtual void step(double dt) override;
 	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
 	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
 	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
@@ -111,7 +111,7 @@ struct SphericalEarthMovingCamera : public Camera {
 	virtual void setRotMatrix(double* R) override;
 	
 
-	virtual void step(double dt);
+	virtual void step(double dt) override;
 	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
 	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
 	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;

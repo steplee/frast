@@ -14,9 +14,9 @@ class ImguiApp : public BaseApp {
 
 		virtual void initVk() override;
 
-		virtual void render();
+		virtual void render() override;
 		virtual void doRender(RenderState& rs) =0;
-		inline virtual void postRender() {}
+		inline virtual void postRender() override {}
 
 		// inline virtual void handleCompletedHeadlessRender(RenderState& rs) {};
 

@@ -259,4 +259,7 @@ install(DIRECTORY frastVk/shaders/compiled DESTINATION /usr/local/include/frastV
 # Also get the GLFW headers
 install(FILES ${LOCAL_GLFW_INCLUDE_DIR}/GLFW/glfw3.h ${LOCAL_GLFW_INCLUDE_DIR}/GLFW/glfw3native.h DESTINATION /usr/local/include/frastVk/GLFW)
 
+# Also copy shader compilation python script
+install(FILES pysrc/compile_shaders_2.py DESTINATION /usr/local/include/frastVk/)
+
 

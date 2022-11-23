@@ -30,6 +30,7 @@ std::vector<RtCoordinate> RtCoordinate::enumerateChildren() const {
 		cs.emplace_back(*this, i+'0');
 		return cs;
 	}
+	return cs;
 }
 
 RtRenderer::~RtRenderer() {

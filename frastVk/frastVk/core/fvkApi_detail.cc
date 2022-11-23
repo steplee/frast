@@ -550,7 +550,7 @@ void BaseApp::makeFrameDatas() {
 
 	std::vector<Command> cmds = mainCommandPool.allocate(frameOverlap);
 
-	fmt::print(" - Creating {} frameDatas\n", frameOverlap);
+	// fmt::print(" - Creating {} frameDatas\n", frameOverlap);
 	for (int i=0; i<frameDatas.size(); i++) {
 		auto& fd = frameDatas[i];
 
@@ -560,7 +560,7 @@ void BaseApp::makeFrameDatas() {
 		// if (window->headless()) fci2.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 		assertCallVk(vkCreateFence(mainDevice, &fci1, nullptr, &fd.frameDoneFence));
 		assertCallVk(vkCreateFence(mainDevice, &fci2, nullptr, &fd.frameAvailableFence));
-		fmt::print(" - frameDatas[{}] fence {}\n", i, (void*)fd.frameAvailableFence);
+		// fmt::print(" - frameDatas[{}] fence {}\n", i, (void*)fd.frameAvailableFence);
 
 		VkSemaphoreCreateInfo sci { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, {} };
 		// assertCallVk(vkCreateSemaphore(mainDevice, &sci, nullptr, &fd.swapchainAcquireSema));
@@ -826,8 +826,8 @@ void Sampler::destroy(Device& d) {
 
 void* ExBuffer::map(VkDeviceSize offset, VkDeviceSize size) {
 	assert(not mappedAddr);
-	fmt::print(" - map with (d {}) (mem {}) (off {}) (size {} / {})\n",
-			(void*)device, (void*)mem, offset, size, capacity_);
+	// fmt::print(" - map with (d {}) (mem {}) (off {}) (size {} / {})\n",
+			// (void*)device, (void*)mem, offset, size, capacity_);
 	assertCallVk(vkMapMemory(device, mem, offset, size, {}, &mappedAddr));
 	return mappedAddr;
 }
@@ -1192,7 +1192,8 @@ void GraphicsPipeline::create(Device& device_, float viewportXYWH[4], PipelineBu
     uint32_t                              scissorCount;
     const VkRect2D*                       pScissors;*/
 	VkViewport viewport { viewportXYWH[0], viewportXYWH[1], viewportXYWH[2], viewportXYWH[3], 0, 1 };
-	VkRect2D rect { {0, 0}, { (uint32_t) viewportXYWH[2], (uint32_t) viewportXYWH[3] } };
+	// VkRect2D rect { {0, 0}, { (uint32_t) viewportXYWH[2], (uint32_t) viewportXYWH[3] } };
+	VkRect2D rect { {(int32_t)viewportXYWH[0], (int32_t)viewportXYWH[1]}, { (uint32_t) viewportXYWH[2], (uint32_t) viewportXYWH[3] } };
 	viewportInfo.flags = {};
 	viewportInfo.viewportCount = 1;
 	viewportInfo.pViewports = &viewport;

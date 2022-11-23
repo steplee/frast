@@ -250,7 +250,8 @@ template <class T, int C> void my_remapRemap(Image& out, const Image& in, const 
 	// grid should be sampled in range [0, 6.9999]
 	//const float fmw = mw - 1.f, fmh = mh - 1.f;
 	const float fmw = mw - 1.f, fmh = mh - 1.f;
-	const float fow = ow, foh = oh;
+	// const float fow = ow, foh = oh;
+	const float fow = ow-1, foh = oh-1;
 
 
 // #warning " RENABLE"

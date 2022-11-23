@@ -3,6 +3,9 @@
 #include "../utils/solve.hpp"
 #include "../utils/displayImage.h"
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 #include <iostream>
 #include <iomanip>
 #include <cassert>
@@ -110,7 +113,7 @@ struct GdalDset {
 	Image imgPrj;
 	Image imgPrjGray;
 
-	bool bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
+	Vector4d bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
 	bool getTileGdalWarp(Image& out, int z, int y, int x, int tileSize=256);
 	int last_z = -1;
@@ -213,7 +216,7 @@ GdalDset::~GdalDset() {
 
 
 
-bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const {
+Vector4d GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const {
 	// AtomicTimerMeasurement tg(t_gdal);
     //out.create(outh, outw, cv_type);
 
@@ -250,7 +253,9 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
 		if (out.format == Image::Format::TERRAIN_2x8)
 			transform_gmted((uint16_t*) out.buffer, outh, outw);
 
-        return err != CE_None;
+        if (err != CE_None)
+			return Vector4d::Zero();
+
     } else if (xoff + xsize >= 1 and xoff < w and yoff + ysize >= 1 and yoff < h) {
         // case where there is partial overlap
 
@@ -266,7 +271,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
         int             inner_w = inner(2) - inner(0), inner_h = inner(3) - inner(1);
         int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
         //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
-        if (read_w <= 0 or read_h <= 0) return 1;
+        if (read_w <= 0 or read_h <= 0) return Vector4d::Zero();
 
 		Image buf { read_h, read_w, imgPrj.format }; // TODO: Make class member
 		buf.alloc();
@@ -276,7 +281,7 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
                                   read_w, read_h, gdalType,
                                   nbands, nullptr,
                                   eleSize * nbands, eleSize * nbands * read_w, eleSize * 1, nullptr);
-        if (err != CE_None) return true;
+        if (err != CE_None) return Vector4d::Zero();
 
 		// TODO If converting from other terrain then GMTED, must modify here
 		if (out.format == Image::Format::TERRAIN_2x8)
@@ -296,12 +301,17 @@ bool GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out
 		solveHomography(H, in_pts, out_pts);
 		buf.warpPerspective(out, H, clampToBorder);
 
-
-        return false;
     } else {
 		memset(out.buffer, 0, out.w*out.h*out.channels());
-        return true;
+        return Vector4d::Zero();
     }
+
+	Vector2d tl_sampled = pix2prj * Vector3d { xoff, yoff, 1 };
+	Vector2d br_sampled = pix2prj * Vector3d { xoff+xsize, yoff+ysize, 1 };
+	// Vector2d br_sampled = pix2prj * Vector3d { xoff+xsize-1, yoff+ysize-1, 1 };
+	if (tl_sampled(0) > br_sampled(0)) std::swap(tl_sampled(0), br_sampled(0));
+	if (tl_sampled(1) > br_sampled(1)) std::swap(tl_sampled(1), br_sampled(1));
+	return Vector4d { tl_sampled(0), tl_sampled(1), br_sampled(0), br_sampled(1) };
 }
 
 
@@ -337,14 +347,17 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	constexpr bool debug = false;
 
 	//constexpr int rtN = 128;
-	constexpr int rtN = 8;
+	// constexpr int rtN = 8;
+	constexpr int rtN = 2; // WARNING: Lowered
 	constexpr int N = rtN * rtN;
 	assert(tileSize % rtN == 0);
 
 	bool y_flipped = pix2prj(1,1) < 0;
 	// double sampleScale = 2; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
-	double sampleScale = 1.4; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
-	int sw = out.w*sampleScale+.1, sh = out.h*sampleScale+.1;
+	// double sampleScale = 1.4; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
+	double sampleScale = 1.; // I'd say 2 looks best. It helps reduce interp effects. 1 is a little blurry.
+	int sw = out.w*sampleScale+.6, sh = out.h*sampleScale+.6;
+	int swf = out.w*sampleScale, shf = out.h*sampleScale;
 
 	// Start off as wm, but transformed to prj
 	RowMatrix2Xd pts { 2 , N };
@@ -367,6 +380,8 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 		auto Y = y_flipped ? ArrayT::LinSpaced(rtN, end, start) * scale + off_y
 		                   : ArrayT::LinSpaced(rtN, start, end) * scale + off_y;
 		//std::cout << " - XY " << ArrayXd::LinSpaced(rtN, start, end).transpose() << "\n";
+		// std::cout << " - X " << ((X-off_x)/scale).transpose() << "\n";
+		// std::cout << " - Y " << Y.transpose() << "\n";
 		for (int y=0; y<rtN; y++)
 		for (int x=0; x<rtN; x++)
 			pts.col(y*rtN+x) << X(x), Y(y);
@@ -395,7 +410,12 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	}
 
 	Image* srcImg = &imgPrj;
-	bool res = bboxProj(prjBbox, sw, sh, imgPrj);
+	Vector4d prjTlbrSampled = bboxProj(prjBbox, sw, sh, imgPrj);
+	bool res = prjTlbrSampled.isZero();
+	// Vector4d off { 1.17328e+07, 7.10267e+06, 1.17328e+07, 7.10267e+06 };
+	// fmt::print(" - prjTlbr0 -> {}\n",(prjTlbr - off).transpose());
+	// fmt::print(" - prjTlbr1 -> {}\n",(prjTlbrSampled - off).transpose());
+
 	if (outFormat == Image::Format::GRAY and imgPrj.channels() != 1) {
 		if (imgPrjGray.w < sw or imgPrjGray.h < sh) {
 			imgPrjGray = std::move(Image{ sh, sw, outFormat });
@@ -415,33 +435,82 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 
 	// TODO: If imgPrj is less channels than the output type, do it here. Otherwise do it after warping.
 
-	//RowMatrix<float,N,2> meshPtsf { N , 2 };
-	RowMatrix<float,-1,2> meshPtsf { N , 2 };
-	{
-		Vector2d off   { prjTlbr(0), prjTlbr(1) };
-		Array2f scale { sw/(prjTlbr(2)-prjTlbr(0)), sh/(prjTlbr(3)-prjTlbr(1)) };
-		if (y_flipped) {
-			//for (int i=0; i<N; i++) meshPtsf.row(i) = (Vector2d{pts(0,i),pts(1,N-1-i)} - off).cast<float>().array() * scale;
-			meshPtsf.col(0) = pts.row(0).transpose().cast<float>();
-			meshPtsf.col(1) = pts.row(1).reverse().transpose().cast<float>();
-			meshPtsf = (meshPtsf.rowwise() - off.transpose().cast<float>()).array().rowwise() * scale.transpose();
-		} else
-			//for (int i=0; i<N; i++) meshPtsf.row(i) = (pts.col(i) - off).cast<float>().array() * scale;
-			meshPtsf = (pts.transpose().rowwise() - off.transpose()).cast<float>().array().rowwise() * scale.transpose();
-		//std::cout << " - Mesh Pts:\n" << meshPtsf <<"\n";
-	}
-	//if (y_flipped) for (int i=0; i<N/2; i++) std::swap(meshPtsf(i,1), meshPtsf(N-i-1,1));
-
-	//Image dst { out.rows, out.cols, channels, out.data };
 	Image& src = *srcImg;
 	Image& dst = out;
-	{
-		// Debugged the streaks here; fount out the VRT shared issue
-		// imshow("thread" + std::to_string(0), src); usleep(1'000'000);
 
-		// AtomicTimerMeasurement tg(t_warp);
-		src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
+#if 1
+	{
+				Vector4d the_tlbr = prjTlbr;
+				// Vector4d the_tlbr = prjTlbrSampled;
+
+				RowMatrix<float,-1,2> meshPtsf { N , 2 };
+				Vector2d off   { the_tlbr(0), the_tlbr(1) };
+				Array2f scale { sw/(the_tlbr(2)-the_tlbr(0)), sh/(the_tlbr(3)-the_tlbr(1)) };
+				if (y_flipped) {
+					meshPtsf.col(0) = pts.row(0).transpose().cast<float>();
+					meshPtsf.col(1) = pts.row(1).reverse().transpose().cast<float>();
+					meshPtsf = (meshPtsf.rowwise() - off.transpose().cast<float>()).array().rowwise() * scale.transpose();
+				} else
+					meshPtsf = (pts.transpose().rowwise() - off.transpose()).cast<float>().array().rowwise() * scale.transpose();
+
+				// Debugged the streaks here; fount out the VRT shared issue
+				// imshow("thread" + std::to_string(0), src); usleep(1'000'000);
+				// AtomicTimerMeasurement tg(t_warp);
+				src.remapRemap(dst, meshPtsf.data(), rtN, rtN);
 	}
+
+#else
+
+	// Does NOT work properly.
+	{
+		assert(rtN == 2);
+		using Vector8f = Matrix<float,8,1>;
+		// Vector4d tlbr_t = prjTlbr;
+		// Vector4d tlbr_s = prjTlbrSampled;
+		// Vector8f pts_s; pts_s << 0,0, sw,0, sw,sh, 0,sh;
+		// Vector8f pts_s; pts_s << 0,sh, sw,sh, sw,0, 0,0;
+		// Vector8f pts_s; pts_s << 0,sh, sw,sh, 0,0, sw,0;
+		Vector8f pts_s; pts_s << 0,sh-1, sw-1,sh-1, 0,0, sw-1,0;
+		Vector8f pts_t;
+		// auto ow = sw, oh = sh;
+		// auto ow = 255, oh = 255;
+		auto ow = 256, oh = 256;
+		// pts_t(0) = (pts(0,0) - prjTlbrSampled(0)) * ow / (prjTlbrSampled(2) - prjTlbrSampled(0));
+		// pts_t(1) = (pts(1,0) - prjTlbrSampled(1)) * oh / (prjTlbrSampled(3) - prjTlbrSampled(1));
+		// pts_t(2) = (pts(0,1) - prjTlbrSampled(0)) * ow / (prjTlbrSampled(2) - prjTlbrSampled(0));
+		// pts_t(3) = (pts(1,1) - prjTlbrSampled(1)) * oh / (prjTlbrSampled(3) - prjTlbrSampled(1));
+		// pts_t(4) = (pts(0,2) - prjTlbrSampled(0)) * ow / (prjTlbrSampled(2) - prjTlbrSampled(0));
+		// pts_t(5) = (pts(1,2) - prjTlbrSampled(1)) * oh / (prjTlbrSampled(3) - prjTlbrSampled(1));
+		// pts_t(6) = (pts(0,3) - prjTlbrSampled(0)) * ow / (prjTlbrSampled(2) - prjTlbrSampled(0));
+		// pts_t(7) = (pts(1,3) - prjTlbrSampled(1)) * oh / (prjTlbrSampled(3) - prjTlbrSampled(1));
+		for (int i=0; i<4; i++) {
+			// pts_t(i*2+0) = (pts(0,i) - prjTlbrSampled(0))) * ow / (prjTlbrSampled(2) - prjTlbrSampled(0));
+			// pts_t(i*2+1) = (pts(1,i) - prjTlbrSampled(1))) * oh / (prjTlbrSampled(3) - prjTlbrSampled(1));
+			pts_t(i*2+0) = (pts(0,i) - prjTlbr(0)) * ow / (prjTlbr(2) - prjTlbr(0));
+			pts_t(i*2+1) = (pts(1,i) - prjTlbr(1)) * oh / (prjTlbr(3) - prjTlbr(1));
+
+		}
+		// Vector8f pts_s; pts_s << 0,sh-1, sw-1,sh-1, 0,0, sw-1,0;
+		std::swap(prjTlbr, prjTlbrSampled);
+		pts_s(0) = (prjTlbrSampled(0) - prjTlbr(0)) * (sw-0) / (prjTlbr(2) - prjTlbr(0));
+		pts_s(1) = (prjTlbrSampled(3) - prjTlbr(1)) * (sh-0) / (prjTlbr(3) - prjTlbr(1));
+		pts_s(2) = (prjTlbrSampled(2) - prjTlbr(0)) * (sw-0) / (prjTlbr(2) - prjTlbr(0));
+		pts_s(3) = (prjTlbrSampled(3) - prjTlbr(1)) * (sh-0) / (prjTlbr(3) - prjTlbr(1));
+		pts_s(4) = (prjTlbrSampled(0) - prjTlbr(0)) * (sw-0) / (prjTlbr(2) - prjTlbr(0));
+		pts_s(5) = (prjTlbrSampled(1) - prjTlbr(1)) * (sh-0) / (prjTlbr(3) - prjTlbr(1));
+		pts_s(6) = (prjTlbrSampled(2) - prjTlbr(0)) * (sw-0) / (prjTlbr(2) - prjTlbr(0));
+		pts_s(7) = (prjTlbrSampled(1) - prjTlbr(1)) * (sh-0) / (prjTlbr(3) - prjTlbr(1));
+
+		Matrix<float,3,3,RowMajor> H;
+		solveHomography(H.data(), pts_s.data(), pts_t.data());
+		// solveHomography(H.data(), pts_t.data(), pts_s.data());
+		fmt::print(" - pts_s: {}\n", pts_s.transpose());
+		fmt::print(" - pts_t: {}\n", pts_t.transpose());
+		fmt::print(" - H:\n{}\n", H);
+		src.warpPerspective(dst, H.data());
+	}
+
+#endif
 
 	return false;
 }

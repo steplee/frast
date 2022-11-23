@@ -47,6 +47,19 @@ sudo docker build -t frast:0.9 -f docker/Dockerfile.dev .
 #### FVK RT Sample Images
 ![fvk rt example](/docs/fvk_rt.jpg)
 
+#### Exporting Bounding Boxes
+As mentioned above, the `GtRenderer` requires a precomputed bounding box for every tile. This is accomplished by the python script `exportObbs.py`. The initial bounding box implementation is just a tile id followed by a tuple of `<ctr, extent, quaternion>`.
+For frast datasets, the command would be something like:
+```
+python3 -m pysrc.exportObbs --frastColor /data/naip/vegas2020/vegas2020.ft --frastElev /data/elevation/srtm/usa.11.ft
+```
+For rt, something like:
+```
+python3 -m pysrc.exportObbs --gearthDir /data/gearth/naipAoisWgs/ --gearthBulkDirOverride /data/gearth/naipAoisWgs/bulk
+```
+Now, there will be an `index.v1.bin` alongside the input file
+
+
 ### TODO
   - ~~Fix the bilinear interpolation in convertGdal.cc. It works when the number of sample points is large (128), but it should work for a very small grid too (like 4x4).~~
      - This was fixed by writing my own interpolation, see `my_remapRemap`

@@ -322,8 +322,8 @@ static Device createStandardDevice(const AppConfig& cfg, VkInstance instance) {
 	//return Device{};
 }
 
-BaseApp::BaseApp(const AppConfig& cfg)
-	:   cfg(cfg)
+BaseApp::BaseApp(const AppConfig& cfg_)
+	:   cfg(cfg_)
 {
 
 }

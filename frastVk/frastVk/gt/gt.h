@@ -52,7 +52,7 @@ class GtObbMap {
 	public:
 		inline GtObbMap(const std::vector<std::string>& paths) : paths(paths) {
 
-			fmt::print(" - [GtObbMap] loading obbs.\n");
+			// fmt::print(" - [GtObbMap] loading obbs.\n");
 
 			auto row_size = (GtTypes::Coord::SerializedSize) + 4*(3+3+4);
 

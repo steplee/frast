@@ -276,7 +276,7 @@ GtRenderer<GtTypes,Derived>::GtRenderer(const typename GtTypes::Config &cfg_) :
 	for (auto &rootCoord : obbMap->getRootCoords()) {
 		auto root = new typename GtTypes::Tile(rootCoord);
 		root->bb = obbMap->get(rootCoord);
-		fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
+		// fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
 		root->state = GtTypes::Tile::INVALID;
 		root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
 		roots.push_back(root);

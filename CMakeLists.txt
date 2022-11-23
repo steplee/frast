@@ -28,34 +28,6 @@ set(WRITER_NBUF 32 CACHE INT "buffers allocated per thread")
 set(TURBOJPEG_QUALITY 92 CACHE INT "jpeg quality, must be [0-100]")
 set(COMPRESS_TERRAIN 1 CACHE INT "use zlib to compress terrain")
 
-
-##################
-#   Setup Deps
-##################
-
-#find_package(OpenCV REQUIRED)
-set(includes "")
-
-find_package(Fmt REQUIRED)
-find_package(GDAL REQUIRED)
-if (EXISTS /usr/local/include/eigen3/)
-	include_directories(/usr/local/include/eigen3)
-else()
-	include_directories(/usr/include/eigen3)
-endif()
-include_directories(/usr/include/gdal)
-set(COMMON_LIBS pthread lmdb fmt::fmt)
-
-if (USE_TURBOJPEG)
-	list(APPEND COMMON_LIBS turbojpeg)
-endif()
-if (COMPRESS_TERRAIN)
-	add_definitions(-DCOMPRESS_TERRAIN=1)
-	list(APPEND COMMON_LIBS z)
-endif()
-
-find_package(pybind11 REQUIRED)
-
 ##################
 #   Setup Global Flags
 ##################
@@ -82,6 +54,47 @@ endif()
 set(CMAKE_CXX_FLAGS ${cxx_opts})
 
 
+##################
+#   Setup Deps
+##################
+
+#find_package(OpenCV REQUIRED)
+set(includes "")
+
+include(FetchContent)
+set(FMT_TEST OFF)
+set(CMAKE_CXX_FLAGS_OLD CMAKE_CXX_FLAGS)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+FetchContent_Declare(
+	dep_fmt
+	GIT_REPOSITORY "https://github.com/fmtlib/fmt"
+	GIT_TAG 8.1.0
+	GIT_SHALLOW 1
+)
+FetchContent_MakeAvailable(dep_fmt)
+# find_package(Fmt REQUIRED)
+# set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_OLD})
+
+find_package(GDAL REQUIRED)
+if (EXISTS /usr/local/include/eigen3/)
+	include_directories(/usr/local/include/eigen3)
+else()
+	include_directories(/usr/include/eigen3)
+endif()
+include_directories(/usr/include/gdal)
+set(COMMON_LIBS pthread lmdb fmt::fmt)
+
+if (USE_TURBOJPEG)
+	list(APPEND COMMON_LIBS turbojpeg)
+endif()
+if (COMPRESS_TERRAIN)
+	add_definitions(-DCOMPRESS_TERRAIN=1)
+	list(APPEND COMMON_LIBS z)
+endif()
+
+find_package(pybind11 REQUIRED)
+
+
 set(X_LIBS xcb xcb-image xcb-keysyms xcb-util X11)
 
 ##################
@@ -96,6 +109,7 @@ add_library(frast
 	)
 
 set_target_properties(frast PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(frast PRIVATE ${COMMON_LIBS})
 target_link_libraries(frast INTERFACE ${COMMON_LIBS})
 target_include_directories(frast PUBLIC ${includes})
 if (USE_TURBOJPEG)
@@ -136,9 +150,9 @@ target_link_libraries(frastpy PUBLIC frast)
 ##################
 #   Tests
 ##################
+include(FetchContent)
 
 if (TESTS)
-	include(FetchContent)
 	FetchContent_Declare(
 		googletest
 		GIT_REPOSITORY https://github.com/google/googletest.git
