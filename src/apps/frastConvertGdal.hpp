@@ -105,7 +105,8 @@ struct GdalDset {
 	int nbands;
 	GDALRasterBand* bands[4];
 	bool bilinearSampling = true;
-	bool clampToBorder = true; // For tiles on the edge, where to make missing pixels black or the clamped nearest color
+	// bool clampToBorder = true; // For tiles on the edge, where to make missing pixels black or the clamped nearest color
+	bool clampToBorder = false;
 
 	// outFormat = prjFormat, except if outFormat = gray and nbands = 3, in which case prjFormat is RGB
 	Image::Format outFormat;
