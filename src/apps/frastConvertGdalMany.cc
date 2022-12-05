@@ -185,6 +185,7 @@ namespace {
 
 	bool g_USE_GDAL_WARP = false;
 	bool g_GRAY = false;
+	int g_LEVEL = 14;
 
 	int run_it(ConvertParams& cp) {
 
@@ -362,6 +363,12 @@ namespace {
 		if (strncmp(res,"1",1) == 0) return true;
 		return false;
 	}
+	bool get_env_int(const char* str, int default_) {
+		auto res = getenv(str);
+		if (!res) return default_;
+		sscanf("%d", res, default_);
+		return default_;
+	}
 
 }
 
@@ -377,6 +384,7 @@ int main(int argc, char** argv) {
 	setenv("VRT_SHARED_SOURCE", "0", false);
 
 	g_GRAY = get_env_enabled("GRAY");
+	g_LEVEL = get_env_int("LEVEL", 14);
 	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
 
 	std::string inIndexList = argv[1];
@@ -397,7 +405,7 @@ int main(int argc, char** argv) {
 	//
 
 	fmt::print(" - g_USE_GDAL_WARP: {}\n", g_USE_GDAL_WARP);
-	cp.level = 14;
+	cp.level = g_LEVEL;
 
 	if (false) {
 		// TODO: If user specifies tlbr manually, should use that
