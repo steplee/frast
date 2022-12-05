@@ -260,8 +260,7 @@ Vector4d GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image&
     } else if (xoff + xsize >= 1 and xoff < w and yoff + ysize >= 1 and yoff < h) {
         // case where there is partial overlap
 
-        // NOTE: TODO I haven't really verified this is correct!
-        // TODO: Haven't tasted non-unit aspect ratios
+        // WARNING: This is not correct. Border tiles have artifacts at corners.
 
         Eigen::Vector4i inner{std::max(0, xoff),
                               std::max(0, yoff),
@@ -273,6 +272,7 @@ Vector4d GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image&
         int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
         //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
         if (read_w <= 0 or read_h <= 0) return Vector4d::Zero();
+
 
 		Image buf { read_h, read_w, imgPrj.format }; // TODO: Make class member
 		buf.alloc();
@@ -298,9 +298,13 @@ Vector4d GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image&
                             sx * (inner(2) - xoff),
                             sy * (inner(3) - yoff)};
 
+		// xoff = inner(0); yoff = inner(1);
+		// xsize = inner_w; ysize = inner_h;
+
 		float H[9];
 		solveHomography(H, in_pts, out_pts);
 		buf.warpPerspective(out, H, clampToBorder);
+		// memset(out.buffer, 0, out.w*out.h*out.channels());
 
     } else {
 		memset(out.buffer, 0, out.w*out.h*out.channels());
@@ -348,8 +352,8 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	constexpr bool debug = false;
 
 	//constexpr int rtN = 128;
-	// constexpr int rtN = 8;
-	constexpr int rtN = 2; // WARNING: Lowered
+	constexpr int rtN = 8;
+	// constexpr int rtN = 2; // WARNING: Lowered
 	constexpr int N = rtN * rtN;
 	assert(tileSize % rtN == 0);
 
@@ -414,6 +418,7 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 	Vector4d prjTlbrSampled = bboxProj(prjBbox, sw, sh, imgPrj);
 	bool res = prjTlbrSampled.isZero();
 	// Vector4d off { 1.17328e+07, 7.10267e+06, 1.17328e+07, 7.10267e+06 };
+	// Vector4d off { prjBbox(0), prjBbox(1), prjBbox(0), prjBbox(1) };
 	// fmt::print(" - prjTlbr0 -> {}\n",(prjTlbr - off).transpose());
 	// fmt::print(" - prjTlbr1 -> {}\n",(prjTlbrSampled - off).transpose());
 
@@ -441,8 +446,8 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 
 #if 1
 	{
-				Vector4d the_tlbr = prjTlbr;
-				// Vector4d the_tlbr = prjTlbrSampled;
+				// Vector4d the_tlbr = prjTlbr;
+				Vector4d the_tlbr = prjTlbrSampled;
 
 				RowMatrix<float,-1,2> meshPtsf { N , 2 };
 				Vector2d off   { the_tlbr(0), the_tlbr(1) };
