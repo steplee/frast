@@ -373,6 +373,9 @@ int main(int argc, char** argv) {
 
 	ConvertParams cp;
 
+	// See note in frastConvertGdal.cc
+	setenv("VRT_SHARED_SOURCE", "0", false);
+
 	g_GRAY = get_env_enabled("GRAY");
 	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
 
