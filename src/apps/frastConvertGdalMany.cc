@@ -184,6 +184,7 @@ namespace {
 	}
 
 	bool g_USE_GDAL_WARP = false;
+	bool g_GRAY = false;
 
 	int run_it(ConvertParams& cp) {
 
@@ -372,8 +373,12 @@ int main(int argc, char** argv) {
 
 	ConvertParams cp;
 
+	g_GRAY = get_env_enabled("GRAY");
+	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
+
 	std::string inIndexList = argv[1];
-	cp.idl = loadFilesBuildIndex(inIndexList, Image::Format::RGB);
+	auto fmt = g_GRAY ? Image::Format::GRAY : Image::Format::RGB;
+	cp.idl = loadFilesBuildIndex(inIndexList, fmt);
 
 	assert(cp.idl.nodes.size() > 0);
 
@@ -388,7 +393,6 @@ int main(int argc, char** argv) {
 	// for all pixels).
 	//
 
-	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
 	fmt::print(" - g_USE_GDAL_WARP: {}\n", g_USE_GDAL_WARP);
 	cp.level = 14;
 
