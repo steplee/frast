@@ -109,8 +109,8 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			bool err = encode_jpeg(ecolor, color) or encode_jpeg(edepth, depthScaled);
 			assert(not err);
 
-			std::ofstream ofs_color{fmt::format("{}images/{:06d}_{:06d}_c.jpg", rsCfg.outDir, setIdx, viewIdx), std::ios::out|std::ios::binary},
-			              ofs_depth{fmt::format("{}images/{:06d}_{:06d}_e.jpg", rsCfg.outDir, setIdx, viewIdx), std::ios::out|std::ios::binary};
+			std::ofstream ofs_color{fmt::format("{}images/{:06d}_{:02d}_c.jpg", rsCfg.outDir, setIdx, viewIdx), std::ios::out|std::ios::binary},
+			              ofs_depth{fmt::format("{}images/{:06d}_{:02d}_e.jpg", rsCfg.outDir, setIdx, viewIdx), std::ios::out|std::ios::binary};
 			ofs_color.write((char*)ecolor.data(), ecolor.size());
 			ofs_depth.write((char*)edepth.data(), edepth.size());
 			// fmt::print(" - Wrote set {} view {} -> {} (depths {} {})\n", setIdx,viewIdx, fmt::format("{}images/{:06d}_{:06d}_c.jpg", rsCfg.outDir, setIdx, viewIdx), min_depth,max_depth);
@@ -165,6 +165,7 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			// You should multiply 2 since fy/h will give half of image length,
 			// then you should multiply outputHeight/256 (which in this case is 2)
 			double z = (windowWidth/256.) * 2. * (spec.fy() / spec.h) * obb.extents.maxCoeff();
+			//double z = (windowWidth/256.) * 2. * (spec.h / spec.fy()) * obb.extents.maxCoeff();
 			// double z = obb.extents.maxCoeff() * 5.;
 
 			Vector3d target = ctr;
@@ -266,6 +267,7 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 		}
 
 		std::vector<Set> sets;
+    std::vector<std::pair<FtTypes::Coord,RtTypes::Coord>> matches;
 		inline void buildSets() {
 
 			struct RtCoordAndBbox {
@@ -326,12 +328,13 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			};
 			auto computeCellFromCtr = [](const Vector3f& ctr, int lvl) {
 				Vector3f a = (ctr * .499f).array() + .5f;
-				// Group into blocks of max size 100^3
+				// Group into blocks of max size c^3
 				constexpr float CELL_SIZE = 500.f;
 				// TODO XXX NOTE: I did not really think if overflow on a deep level is possible here (it probably is?)
 				uint64_t c = (static_cast<uint64_t>(a(0) * static_cast<float>(1 << lvl) / CELL_SIZE) << 42)
 				           | (static_cast<uint64_t>(a(1) * static_cast<float>(1 << lvl) / CELL_SIZE) << 21)
 				           | (static_cast<uint64_t>(a(2) * static_cast<float>(1 << lvl) / CELL_SIZE) <<  0);
+        c = 0;
 				return c;
 			};
 
@@ -339,7 +342,9 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			std::vector<std::unordered_map<uint64_t,std::vector<RtCoordAndBbox>>> rtObbMapPerLvl(30);
 			std::vector<float> rtErrorLevels;
 			for (auto& cb : allRtObbs) {
-				int lvl = computeLevelFromGeoError(cb.coord.geoError());
+        // NOTE TODO XXX : I need this .7 factor to align level 18 to level 18... why?
+				//int lvl = computeLevelFromGeoError(.7 * cb.coord.geoError());
+				int lvl = computeLevelFromGeoError(1 * cb.coord.geoError());
 				uint64_t cell = computeCellFromCtr(cb.bbox.ctr, lvl);
 				rtObbMapPerLvl[lvl][cell].push_back(cb);
 			}
@@ -348,6 +353,7 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			std::vector<FtCoordAndBbox> ftObbs;
 			std::shuffle(allFtObbs.begin(), allFtObbs.end(), std::default_random_engine(0));
 			int i;
+      std::unordered_map<FtTypes::Coord, RtTypes::Coord, FtTypes::Coord::Hash> ft_to_rt_matches;
 			for (i=0; ftObbs.size() < rsCfg.N and i < allFtObbs.size(); i++) {
 				if (DO_STOP) break;
 				auto &cb = allFtObbs[i];
@@ -359,14 +365,16 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 				int nNearby = 0;
 
 
+
 				// Two methods:
 				//		1) Check for any 1 neighbor
 				//		2) Check four >4 neighbors
 				if (1) {
 					for (const auto& rtCb : rtObbMapPerLvl[lvl][cell]) {
 						float dist = (cb.bbox.ctr - rtCb.bbox.ctr).norm();
-						if (dist < maxExtent * 1.1f) {
-							fmt::print(" - found {}th good match {} <-> {} (dist {})\n", ftObbs.size(), cb.coord.toString(), rtCb.coord.toString(), dist);
+						if (dist < maxExtent * 1.1f and i % 25 == 0) {
+							fmt::print(" - found {}th good match {} <-> {}/{} (dist {})\n", ftObbs.size(), cb.coord.toString(), rtCb.coord.toString(), rtCb.coord.level(), dist);
+              ft_to_rt_matches[cb.coord] = rtCb.coord;
 							good = true;
 							break;
 						}
@@ -399,6 +407,13 @@ class RenderSetsMultiApp : public BaseApp, public HeadlessCopyMixin<RenderSetsMu
 			std::sort(ftObbs.begin(), ftObbs.end(), [](const auto& a, const auto& b) {
 					return a.coord < b.coord;
 			});
+
+      // Store the matching pairs; just helpful in case debug
+      int _i = 0;
+      for (auto f : ftObbs) {
+        matches.push_back({f.coord, ft_to_rt_matches[f.coord]});
+        fmt::print(" - entry {} : {} ~ {}/{}\n", _i++, f.coord.toString(), matches.back().second.toString(), matches.back().second.level());
+      }
 
 			sets.resize(rsCfg.N);
 			for (int i=0; i<rsCfg.N; i++) {

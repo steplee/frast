@@ -334,6 +334,7 @@ class DatasetWritable : public Dataset {
 	// LMDB has bad performance for very large write transactions.
 	// So break up large ones.
 	int curTransactionWriteCount = 0;
+  public:
 	int maxTransactionWriteCount = 150'000;
 };
 

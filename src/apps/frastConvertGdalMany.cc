@@ -113,7 +113,7 @@ namespace {
 		inline std::vector<GdalDset*> search(const Box2f& query) {
 			DsetIntersector xsect(query);
 			BVIntersect(tree, xsect);
-			return std::move(xsect.hitDatasets);
+			return (xsect.hitDatasets);
 		}
 		
 	};
@@ -229,10 +229,11 @@ namespace {
 
 		DatabaseOptions opts;
 		DatasetWritable outDset { cp.outPath , opts };
+    outDset.maxTransactionWriteCount = 10'000;
 		outDset.setFormat((uint32_t)outFormat);
 		outDset.setTileSize(256);
-		// outDset.configure(CONVERT_THREADS, WRITER_NBUF);
-		outDset.configure(1,32);
+		outDset.configure(CONVERT_THREADS, WRITER_NBUF);
+		//outDset.configure(1,32);
 		outDset.sendCommand(DbCommand{DbCommand::BeginLvl,level});
 
 		/*
@@ -422,6 +423,7 @@ int main(int argc, char** argv) {
 
 	fmt::print(" - g_USE_GDAL_WARP: {}\n", g_USE_GDAL_WARP);
 	cp.level = g_LEVEL;
+	fmt::print(" - level: {} {}\n", cp.level, g_LEVEL);
 
 	if (false) {
 		// TODO: If user specifies tlbr manually, should use that
