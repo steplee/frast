@@ -261,7 +261,7 @@ namespace {
 
 				auto relevantDsets = idl.search(currentBox);
 				if (relevantDsets.size() == 0) continue;
-				fmt::print(" - tile {} {} {} needs {} datasets\n", level, y, x, relevantDsets.size());
+				// fmt::print(" - tile {} {} {} needs {} datasets\n", level, y, x, relevantDsets.size());
 
 				// NOTE: Assume RGB for now, but should also work with GRAY...
 				using ImgArr4 = Array<float, 256*256, 4, RowMajor>;
@@ -309,7 +309,10 @@ namespace {
 							// TODO: Try to either fix that, OR implement push-pull filtering to blend-away pixels close to borders.
 							auto mu = mapImg.cast<float>().rowwise().mean();
 							acc.rightCols(1) += (mu * mu).cwiseMin(30.f) / 30.f;
-						} else assert(false);
+						} else {
+							printf(" - This is bad. No tiles found, but atleast one expected.\n");
+							// assert(false);
+						}
 					}
 				}
 
@@ -363,11 +366,18 @@ namespace {
 		if (strncmp(res,"1",1) == 0) return true;
 		return false;
 	}
-	bool get_env_int(const char* str, int default_) {
+	int get_env_int(const char* str, int default_) {
 		auto res = getenv(str);
 		if (!res) return default_;
-		sscanf("%d", res, default_);
+		sscanf(res, "%d", &default_);
 		return default_;
+	}
+	std::string get_env_str(const char* str) {
+		auto res = getenv(str);
+		if (!res) return "";
+		char st[256] = {0};
+		strcpy(st, res);
+		return std::string(st);
 	}
 
 }
@@ -377,6 +387,7 @@ namespace {
 int main(int argc, char** argv) {
 
 	assert(argc == 2);
+	std::string inIndexList = argv[1];
 
 	ConvertParams cp;
 
@@ -386,10 +397,15 @@ int main(int argc, char** argv) {
 	g_GRAY = get_env_enabled("GRAY");
 	g_LEVEL = get_env_int("LEVEL", 14);
 	g_USE_GDAL_WARP = get_env_enabled("USE_GDAL_WARP");
+	std::string op = get_env_str("OUTPUT_PATH");
+	if (op.length() > 1)
+		cp.outPath = op;
+	printf(" - gray %d, level %d, gdal warp %d, in path %s, out path %s\n", g_GRAY, g_LEVEL, g_USE_GDAL_WARP, inIndexList.c_str(), cp.outPath.c_str());
+	fflush(stdout);
 
-	std::string inIndexList = argv[1];
 	auto fmt = g_GRAY ? Image::Format::GRAY : Image::Format::RGB;
 	cp.idl = loadFilesBuildIndex(inIndexList, fmt);
+
 
 	assert(cp.idl.nodes.size() > 0);
 

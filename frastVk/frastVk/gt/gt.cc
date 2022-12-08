@@ -85,6 +85,8 @@ float GtOrientedBoundingBox::computeSse(const GtUpdateCameraData& gtcd, float ge
 		cnt = 0; for (int j=0; j<8; j++) cnt += (cornersWorld.block<1,3>(j,0).transpose()).dot(R_world_from_tile.col(2)) < -extents(2); if (cnt==8) return 0.f;
 		*/
 
+		// WARNING: Why did I link the iq article if I don't actually use it?
+
 		// Vectorized version of above:
 		if (
 				   (cornersCamera.col(0).array() >  1.f).all()
@@ -95,6 +97,7 @@ float GtOrientedBoundingBox::computeSse(const GtUpdateCameraData& gtcd, float ge
 				or (cornersCamera.col(2).array() >  3.f).all()
 				) return 0.f;
 
+		// WARNING: What is this doing?
 		cornersWorld = (cornersWorld.rowwise() - ctr.transpose()) * R_world_from_tile;
 		if (
 				   (cornersWorld.col(0).array() >  extents(0)).all()

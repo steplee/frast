@@ -122,6 +122,21 @@ if (VULKAN_DEBUG)
 	list(APPEND VULKAN_LIBS VkLayer_khronos_validation VkLayer_utils)
 endif()
 
+include(FetchContent)
+#####################
+#       fmt        #
+#####################
+set(DEP_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/Dependency)
+include(FetchContent)
+set(FMT_TEST OFF)
+FetchContent_Declare(
+	dep_fmt
+	GIT_REPOSITORY "https://github.com/fmtlib/fmt"
+	GIT_TAG 8.1.0
+	GIT_SHALLOW 1
+)
+FetchContent_MakeAvailable(dep_fmt)
+
 add_custom_command(
 	OUTPUT ${PROJECT_SOURCE_DIR}/frastVk/gt/rt/protos/rocktree.pb.cc
   #COMMAND protoc --proto_path ../../../protos rocktree.proto --cpp_out=.
@@ -188,7 +203,7 @@ target_link_libraries(frastVk
 	PUBLIC
 	frast
 	# Why do I need these? They are statically linked to frast...
-	lmdb turbojpeg z fmt
+	lmdb turbojpeg z fmt::fmt
 
 
 	${VULKAN_LIBS}

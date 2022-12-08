@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <fmt/core.h>
 
 #include "utils/timer.hpp"
 extern AtomicTimer t_encodeImage;
@@ -179,7 +180,10 @@ void Image::warpAffine(Image& out, const float H[6]) const {
 		else if (out.format == Image::Format::RGB) my_warpAffine<uint8_t, 3, 3>(out, *this, H);
 		else if (out.format == Image::Format::RGBA or out.format == Image::Format::RGBN)
 			my_warpAffine<uint8_t, 4, 4>(out, *this, H);
-		else if (out.format == Image::Format::TERRAIN_2x8) my_warpAffine<uint16_t, 1, 1>(out, *this, H);
+		else if (out.format == Image::Format::TERRAIN_2x8) {
+			// fmt::print(" - my warp affine terrain.\n");
+			my_warpAffine<uint16_t, 1, 1>(out, *this, H);
+		}
 		else
 			throw std::runtime_error(std::string{"Image::warpAffine() unsupported format/channels"} +
 									 std::to_string(out.channels()));

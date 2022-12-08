@@ -176,6 +176,7 @@ PYBIND11_MODULE(frastpy, m) {
 
 	py::class_<BlockCoordinate>(m, "BlockCoordinate")
 		.def(py::init<uint64_t>())
+		.def(py::init<uint64_t, uint64_t, uint64_t>())
 		.def("c", [](BlockCoordinate& bc) { return bc.c; })
 		.def("z", [](BlockCoordinate& bc) { return bc.z(); })
 		.def("y", [](BlockCoordinate& bc) { return bc.y(); })
@@ -188,6 +189,7 @@ PYBIND11_MODULE(frastpy, m) {
 		.def_readwrite("maxSampleTiles", &DatasetReaderOptions::maxSampleTiles)
 		.def_readwrite("forceGray", &DatasetReaderOptions::forceGray)
 		.def_readwrite("forceRgb", &DatasetReaderOptions::forceRgb)
+		.def_readwrite("allowInflate", &DatasetReaderOptions::allowInflate)
 		.def_readwrite("nthreads", &DatasetReaderOptions::nthreads);
 
 	// All of the reader functions release the GIL
@@ -242,10 +244,15 @@ PYBIND11_MODULE(frastpy, m) {
 				 if (bufIn.ndim == 2) outShape = {outh, outw};
 				 else outShape = {outh, outw, (ssize_t)dset.channels()};
 
+				 // std::vector<ssize_t> outStrides;
+				 // outStrides.push_back(dset.channels() * outw);
+				 // outStrides.push_back(dset.channels());
+				 // if (bufIn.ndim == 3) outStrides.push_back(1);
+				 auto scalarSize = dset.format() == Image::Format::TERRAIN_2x8 ? 2 : 1;
 				 std::vector<ssize_t> outStrides;
-				 outStrides.push_back(dset.channels() * outw);
-				 outStrides.push_back(dset.channels());
-				 if (bufIn.ndim == 3) outStrides.push_back(1);
+				 outStrides.push_back(scalarSize * dset.channels() * outw);
+				 outStrides.push_back(scalarSize * dset.channels());
+				 if (bufIn.ndim == 3) outStrides.push_back(scalarSize);
 
 				 auto dtype = get_dtype(dset.format());
 
@@ -289,13 +296,18 @@ PYBIND11_MODULE(frastpy, m) {
 				 if (bufIn.ndim == 2) outShape = {outh, outw};
 				 else outShape = {outh, outw, (ssize_t)dset.channels()};
 
+				 auto scalarSize = dset.format() == Image::Format::TERRAIN_2x8 ? 2 : 1;
+
 				 std::vector<ssize_t> outStrides;
-				 outStrides.push_back(dset.channels() * outw);
-				 outStrides.push_back(dset.channels());
-				 if (bufIn.ndim == 3) outStrides.push_back(1);
+				 outStrides.push_back(scalarSize * dset.channels() * outw);
+				 outStrides.push_back(scalarSize * dset.channels());
+				 if (bufIn.ndim == 3) outStrides.push_back(scalarSize);
+
+				 // outStrides = {out.strides()[0],out.strides()[1],out.strides()[2]};
+
 				 auto dtype = get_dtype(dset.format());
 				 // WHich one is correct? Do I need to inc_ref() manually()
-				 auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
+				 // auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
 				 // auto result = py::array_t<uint8_t>(outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 				 {
@@ -307,7 +319,8 @@ PYBIND11_MODULE(frastpy, m) {
 					 dset.rasterIo(imgView, tlbr);
 				 }
 
-				 return result;
+				 // return result;
+				 return out;
 			 })
 
 		.def("rasterIoQuad",

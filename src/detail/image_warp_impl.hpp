@@ -118,17 +118,20 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 	const T* ibuf = (const T*) in.buffer;
 	T* obuf = (T*) out.buffer;
 
+	// return;
+	// printf("SHAPES %d %d / %d %d ostep %d\n", ih,iw, oh,ow, ostep);
+
 	auto IDX = [ih,iw,istep](int y_, int x_, int c) {
 		int y=y_, x=x_;
 		y = y < 0 ? 0 : y >= ih ? ih-1 : y;
 		x = x < 0 ? 0 : x >= iw ? iw-1 : x;
 		auto out = y * istep + x * Cin + c;
-		//printf("IDX %d %d -> %d %d\n", y_,x_,y,x);
+		// printf("IDX %d %d -> %d %d\n", y_,x_,y,x);
 		return out;
 	};
 
-	//omp_set_num_threads(4);
-	#pragma omp parallel for schedule(static,4) num_threads(4)
+	omp_set_num_threads(4);
+	// #pragma omp parallel for schedule(static,4) num_threads(4)
 	for (int oy=0; oy<oh; oy++) {
 	for (int ox=0; ox<ow; ox++) {
 		float ix = iH[0*3+0] * ((float)ox) + iH[0*3+1] * ((float)oy) + iH[0*3+2];
@@ -145,6 +148,7 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)] * ((Scalar)(f_res * (    my) * (    mx)));
 		for (int c=0; c<Cin; c++) p[c] += ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)] * ((Scalar)(f_res * (    my) * (1.f-mx)));
 		for (int c=0; c<Cin; c++) obuf[oy*ostep+ox*Cout+c] = (T) (p[c] / RaiseOnce<T>::res);
+		// printf("iwrite %d %d : %d\n", oy,ox, oy*ostep+ox*Cout);
 #else
 		using Scalar = float;
 		using Vec = Scalar[Cin];
@@ -154,6 +158,7 @@ void my_warpAffine(Image& out, const Image& in, const float H[6]) {
 		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+1) , c)]) * ((Scalar)((    my) * (    mx)));
 		for (int c=0; c<Cin; c++) p[c] += ((Scalar)ibuf[IDX((((int)iy)+1) , (((int)ix)+0) , c)]) * ((Scalar)((    my) * (1.f-mx)));
 		for (int c=0; c<Cin; c++) obuf[oy*ostep+ox*Cout+c] = (T) (p[c]);
+		// printf("fwrite %d %d : %d\n", oy,ox, oy*ostep+ox*Cout);
 #endif
 	}
 	}

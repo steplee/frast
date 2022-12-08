@@ -4,6 +4,7 @@ from .proto import rocktree_pb2 as RT
 from .utils import unit_wm_to_ecef
 
 from argparse import ArgumentParser
+from tqdm import tqdm
 
 # Version 1 Format:
 #     - Just a bunch of rows with binary data
@@ -105,11 +106,13 @@ def export_rt_version1(outFp, root, transformToWGS84=True, bulkOverride=''):
     print(' - Have {} bulks'.format(len(bulks)))
     nodesSeen = 0
 
-    for i,fi in enumerate(bulks):
-        if i % 1000 == 0: print(' - bulk {} ({} / {} nodes)'.format(i, nodesSeen, len(nodeSet)))
+    # for i,fi in enumerate(bulks):
+    for i,fi in enumerate(tqdm(bulks)):
+        # if i % 1000 == 0: print(' - bulk {} ({} / {} nodes)'.format(i, nodesSeen, len(nodeSet)))
         filename = os.path.join(bulkDir, fi)
 
         bulkPath = fi.split('_')[0]
+        bulkPath = bulkPath.replace('root','')
 
         with open(filename,'rb') as fp:
             bulk = RT.BulkMetadata.FromString(fp.read())
@@ -122,42 +125,45 @@ def export_rt_version1(outFp, root, transformToWGS84=True, bulkOverride=''):
 
                 path = bulkPath + rpath
                 if path in nodeSet:
-                    ctr, ext, R = rt_decode_obb(bulk.node_metadata[i].oriented_bounding_box, head_center, mtt_per_level[rlevel-1])
+                    if len(bulk.node_metadata[i].oriented_bounding_box) < 15:
+                        print(' - item', path+'/'+str(len(path)), 'from', filename, 'had OBB len', len(bulk.node_metadata[i].oriented_bounding_box))
+                    else:
+                        ctr, ext, R = rt_decode_obb(bulk.node_metadata[i].oriented_bounding_box, head_center, mtt_per_level[rlevel-1])
 
-                    if transformToWGS84:
-                        corners0 = np.array((
-                            0,0,0,
-                            0,0,1,
-                            1,0,0,
-                            0,1,0)).reshape(4,3)
+                        if transformToWGS84:
+                            corners0 = np.array((
+                                0,0,0,
+                                0,0,1,
+                                1,0,0,
+                                0,1,0)).reshape(4,3)
 
-                        corners = ((corners0 - .5) * 2 * ext[np.newaxis] + ctr) @ R.T
-                        T = authalic_to_geodetic_corners(corners)
+                            corners = ((corners0 - .5) * 2 * ext[np.newaxis] + ctr) @ R.T
+                            T = authalic_to_geodetic_corners(corners)
 
-                        #print('R0\n', R)
-                        #print('ctr0', ctr)
+                            #print('R0\n', R)
+                            #print('ctr0', ctr)
 
-                        ext = ext @ T[:3,:3].T / EarthGeodetic.R1
-                        ctr = authalic_to_wgs84_pt(ctr) / EarthGeodetic.R1
-                        R = T[:3,:3] @ R
+                            ext = ext @ T[:3,:3].T / EarthGeodetic.R1
+                            ctr = authalic_to_wgs84_pt(ctr) / EarthGeodetic.R1
+                            R = T[:3,:3] @ R
 
-                    q = R_to_quat(R)
-                    #print('R1\n', R)
-                    #print('ctr1', ctr)
+                        q = R_to_quat(R)
+                        #print('R1\n', R)
+                        #print('ctr1', ctr)
 
-                    keybuf = np.zeros(26, dtype=np.uint8) + 255
-                    for i in range(len(path)):
-                        keybuf[i] = ord(path[i]) if path[i] != 255 else 0
-                    # print(keybuf)
+                        keybuf = np.zeros(26, dtype=np.uint8) + 255
+                        for i in range(len(path)):
+                            keybuf[i] = ord(path[i]) if path[i] != 255 else 0
+                        # print(keybuf)
 
 
-                    buf = np.zeros(3+3+4, dtype=np.float32)
-                    buf[0:3]  = ctr
-                    buf[3:6]  = ext
-                    buf[6:10] = q
-                    outFp.write(keybuf.tobytes())
-                    outFp.write(buf.tobytes())
-                    nodesSeen += 1
+                        buf = np.zeros(3+3+4, dtype=np.float32)
+                        buf[0:3]  = ctr
+                        buf[3:6]  = ext
+                        buf[6:10] = q
+                        outFp.write(keybuf.tobytes())
+                        outFp.write(buf.tobytes())
+                        nodesSeen += 1
 
 
 def export_frast_version1(outFp, colorPath, elevPath):
@@ -186,8 +192,8 @@ def export_frast_version1(outFp, colorPath, elevPath):
                 # tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64)
                 e_dset.rasterIo(elevBuf, tlbr_wm)
                 elevBuf_ = elevBuf.view(np.uint16) # Actually stored as uint16
-                minElev = elevBuf_.min() / 8
-                maxElev = elevBuf_.max() / 8
+                minElev = (elevBuf_.min() / 8) / np.pi
+                maxElev = (elevBuf_.max() / 8) / np.pi
             else:
                 minElev, maxElev = minElev0, maxElev0
 

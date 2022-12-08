@@ -134,6 +134,7 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 
 	uint16_t res_ratio = cfg.texSize / cfg.vertsAlongEdge; // 32 for now
 	uint32_t lvlOffset = log2_(res_ratio);
+	// fmt::print(" - res_ratio {}, o {}\n", res_ratio, lvlOffset);
 	uint64_t z = tz - lvlOffset;
 	uint64_t y = ty >> lvlOffset;
 	uint64_t x = tx >> lvlOffset;
