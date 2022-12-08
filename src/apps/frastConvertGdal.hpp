@@ -113,6 +113,7 @@ struct GdalDset {
 	Image::Format prjFormat;
 	Image imgPrj;
 	Image imgPrjGray;
+  Image buf;
 
 	Vector4d bboxProj(const Vector4d& bboxProj, int outw, int outh, Image& out) const;
 	bool getTile(Image& out, int z, int y, int x, int tileSize=256);
@@ -126,6 +127,13 @@ struct GdalDset {
 GdalDset::GdalDset(const std::string& path, const Image::Format& f) : outFormat(f) {
 	std::call_once(flag__, &GDALAllRegister);
 	dset = (GDALDataset*) GDALOpen(path.c_str(), GA_ReadOnly);
+
+		//imgPrj = std::move(Image{ 256, 256, Image::Format::RGB });
+		//imgPrjGray = std::move(Image{ 256, 256, Image::Format::GRAY });
+		//imgPrj.alloc();
+		//imgPrjGray.alloc();
+		buf = Image { 1024, 1024, Image::Format::RGB };
+		buf.alloc();
 
     double g[6];
     dset->GetGeoTransform(g);
@@ -274,8 +282,6 @@ Vector4d GdalDset::bboxProj(const Vector4d& bboxProj, int outw, int outh, Image&
         if (read_w <= 0 or read_h <= 0) return Vector4d::Zero();
 
 
-		Image buf { read_h, read_w, imgPrj.format }; // TODO: Make class member
-		buf.alloc();
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0), inner(1), inner_w, inner_h,
                                   buf.buffer,
@@ -410,7 +416,8 @@ bool GdalDset::getTile(Image& out, int z, int y, int x, int tileSize) {
 			tlbr_prj(2)-tlbr_prj(0), tlbr_prj(3)-tlbr_prj(1));
 
 	if (imgPrj.w < sw or imgPrj.h < sh) {
-		imgPrj = std::move(Image{ sh, sw, prjFormat });
+		//imgPrj = std::move(Image{ sh, sw, prjFormat });
+		imgPrj = Image{ sh, sw, prjFormat };
 		imgPrj.alloc();
 	}
 

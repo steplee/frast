@@ -55,17 +55,22 @@ struct Image {
 		return *this;
 	}
 
-	inline ~Image() {
+  inline void free() {
 		if (buffer and ownBuffer) {
-			free(buffer);
-			// printf(" - Free image %zu\n", size());
+			::free(buffer);
+			//printf(" - Free image %zu\n", size());
 		}
 		buffer = 0;
 		w = h = 0;
+  }
+
+	inline ~Image() {
+    free();
 	}
 
 	void moveFrom(Image& other) {
 		if (this == &other) return;
+    if (buffer and ownBuffer) free();
 		w		  = other.w;
 		h		  = other.h;
 		format	  = other.format;
@@ -94,7 +99,7 @@ struct Image {
 			dprintf(" - (Image::copyFrom) free'ing and reallocating buffer (cap %d, other %d).\n", capacity,
 					other.capacity);
 			if (buffer and ownBuffer) {
-				free(buffer);
+        free();
 				buffer = 0;
 			}
 			if (other.w > 0 and other.h > 0) {
@@ -140,9 +145,9 @@ struct Image {
 	inline int32_t channels() const { return format2c(format); }
 
 	inline bool alloc() {
+		//printf(" - Alloc image %zu\n", size());
 		if (not ownBuffer) throw std::runtime_error("alloc() called on a viewed image!");
 		if (buffer != nullptr) throw std::runtime_error("only alloc once!");
-		// printf(" - Alloc image %zu\n", size());
 		// buffer = (uint8_t*) malloc(size());
 		capacity  = size();
 		buffer	  = (uint8_t*)aligned_alloc(16, capacity);

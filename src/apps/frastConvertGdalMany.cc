@@ -113,7 +113,7 @@ namespace {
 		inline std::vector<GdalDset*> search(const Box2f& query) {
 			DsetIntersector xsect(query);
 			BVIntersect(tree, xsect);
-			return std::move(xsect.hitDatasets);
+			return (xsect.hitDatasets);
 		}
 		
 	};
@@ -229,10 +229,11 @@ namespace {
 
 		DatabaseOptions opts;
 		DatasetWritable outDset { cp.outPath , opts };
+    outDset.maxTransactionWriteCount = 10'000;
 		outDset.setFormat((uint32_t)outFormat);
 		outDset.setTileSize(256);
-		// outDset.configure(CONVERT_THREADS, WRITER_NBUF);
-		outDset.configure(1,32);
+		outDset.configure(CONVERT_THREADS, WRITER_NBUF);
+		//outDset.configure(1,32);
 		outDset.sendCommand(DbCommand{DbCommand::BeginLvl,level});
 
 		/*
@@ -261,7 +262,7 @@ namespace {
 
 				auto relevantDsets = idl.search(currentBox);
 				if (relevantDsets.size() == 0) continue;
-				fmt::print(" - tile {} {} {} needs {} datasets\n", level, y, x, relevantDsets.size());
+				//fmt::print(" - tile {} {} {} needs {} datasets\n", level, y, x, relevantDsets.size());
 
 				// NOTE: Assume RGB for now, but should also work with GRAY...
 				using ImgArr4 = Array<float, 256*256, 4, RowMajor>;
@@ -309,7 +310,10 @@ namespace {
 							// TODO: Try to either fix that, OR implement push-pull filtering to blend-away pixels close to borders.
 							auto mu = mapImg.cast<float>().rowwise().mean();
 							acc.rightCols(1) += (mu * mu).cwiseMin(30.f) / 30.f;
-						} else assert(false);
+						} else {
+              fmt::print(" - FAILED: failed to read tile that we should have been able to.\n");
+              //assert(false);
+            }
 					}
 				}
 
@@ -363,10 +367,11 @@ namespace {
 		if (strncmp(res,"1",1) == 0) return true;
 		return false;
 	}
-	bool get_env_int(const char* str, int default_) {
+	int get_env_int(const char* str, int default_) {
 		auto res = getenv(str);
 		if (!res) return default_;
-		sscanf("%d", res, default_);
+		sscanf(res, "%d", &default_);
+    printf(" - read %d\n", default_);
 		return default_;
 	}
 
@@ -406,6 +411,7 @@ int main(int argc, char** argv) {
 
 	fmt::print(" - g_USE_GDAL_WARP: {}\n", g_USE_GDAL_WARP);
 	cp.level = g_LEVEL;
+	fmt::print(" - level: {} {}\n", cp.level, g_LEVEL);
 
 	if (false) {
 		// TODO: If user specifies tlbr manually, should use that
