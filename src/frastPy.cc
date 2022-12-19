@@ -257,8 +257,8 @@ PYBIND11_MODULE(frastpy, m) {
 				 auto dtype = get_dtype(dset.format());
 
 				 // WHich one is correct? Do I need to inc_ref() manually()
-				 auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
-				 // auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				 // auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
+				 auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 				 int nMissing = 0;
 				 {
@@ -347,8 +347,8 @@ PYBIND11_MODULE(frastpy, m) {
 				 if (bufIn.ndim == 3) outStrides.push_back(1);
 				 auto dtype = get_dtype(dset.format());
 				 // WHich one is correct? Do I need to inc_ref() manually()
-				 auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
-				 // auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
+				 // auto result = py::array(dtype, outShape, outStrides, (uint8_t*)bufIn.ptr, out.inc_ref());
+				 auto result = py::array(dtype, outShape, outStrides, (uint8_t*) bufIn.ptr, out);
 
 				 {
 					 py::gil_scoped_release release;

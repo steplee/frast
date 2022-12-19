@@ -85,7 +85,7 @@ Dataset::Dataset(const std::string& path, const DatabaseOptions& dopts, OpenMode
 	mdb_env_set_maxdbs(env, MAX_LVLS + 1);
 
 	int flags = MDB_NOSUBDIR;
-	if (readOnly) flags |= MDB_RDONLY;
+	if (readOnly) flags |= MDB_RDONLY | MDB_NOLOCK;
 	if (not dopts.threadLocalStorage) flags |= MDB_NOTLS;
 	// See if this speeds up writes.
 	// if (not readOnly) flags |= MDB_NORDAHEAD;
