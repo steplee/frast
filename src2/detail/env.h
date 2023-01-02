@@ -8,6 +8,13 @@
 #include <cstdint>
 #include <cassert>
 
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <cerrno>
+#include <sys/types.h>
+#include <fcntl.h>
+
 namespace frast {
 
 	//
@@ -55,16 +62,102 @@ namespace frast {
 			void  freeBytes(void* firstByte, size_t n);
 			*/
 
+			inline bool fileIsNew() const { return fileIsNew_; }
+
 
 		protected:
 
 			size_t mapSize_;
 			bool fileIsNew_;
+			bool isAnonymous_;
+			int fd_=-1;
 
 			// This is the mmap() base pointer
 			void* basePointer = 0;
 
+
 	};
+	
+	template <class Derived>
+	BaseEnvironment<Derived>::~BaseEnvironment() {
+
+		fmt::print(" - [~BaseEnv] closing fd\n");
+		if (fd_ >= 0) {
+			int stat = close(fd_);
+			if (stat == -1) {
+				fmt::print(" - close failed with: {}, {}\n", errno, strerror(errno));
+				throw std::runtime_error("close failed.");
+			}
+			fd_ = -1;
+		}
+
+		assert(basePointer != 0);
+		assert(mapSize_ > 0);
+		// This will flush all pages. Could use msync to do that at other times.
+		munmap(basePointer, mapSize_);
+	}
+
+	template <class Derived>
+	BaseEnvironment<Derived>::BaseEnvironment(const std::string& path, const EnvOptions& opts) {
+		// auto flags = MAP_PRIVATE;
+		auto flags = MAP_SHARED;
+		if (opts.anon) flags |= MAP_ANONYMOUS;
+		auto prot = PROT_READ;
+		if (not opts.readonly) prot |= PROT_WRITE;
+
+		size_t offset = opts.mapOffset;
+
+		fileIsNew_ = opts.anon;
+		isAnonymous_ = opts.anon;
+
+		if (not opts.anon) {
+			struct stat statbuf;
+			int res = ::stat(path.c_str(), &statbuf);
+			if (res == -1 and errno == ENOENT) {
+				fileIsNew_ = true;
+			} else if (res == -1) {
+				fmt::print(" - stat failed with: {}, {}\n", errno, strerror(errno));
+				throw std::runtime_error("stat failed.");
+			}
+
+			auto flags = opts.readonly ? O_RDONLY : O_RDWR;
+			flags |= O_CREAT;
+			auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+			fd_ = open(path.c_str(), flags, mode);
+			if (fd_ == -1) {
+				fmt::print(" - open failed with: {}, {}\n", errno, strerror(errno));
+				throw std::runtime_error("open failed.");
+			}
+		}
+
+		basePointer = mmap(nullptr, opts.mapSize, prot, flags, fd_, offset);
+		if (basePointer == (void*)-1) {
+			fmt::print(" - mmap failed with: {}, {}\n", errno, strerror(errno));
+			throw std::runtime_error("mmap failed.");
+		}
+		fmt::print(" - basePointer: {}\n", basePointer);
+
+
+		mapSize_ = opts.mapSize;
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 	//
@@ -79,7 +172,8 @@ namespace frast {
 			PagedEnvironment(const std::string& path, const EnvOptions& opts);
 			~PagedEnvironment();
 
-			void* allocateBytes(size_t n);
+			// NOTE: Alignment is IGNORED because we always allocate along page boundaries...
+			void* allocateBytes(size_t n, size_t alignment=1);
 			void  freeBytes(void* firstByte, size_t n);
 
 
@@ -130,7 +224,7 @@ namespace frast {
 			ArenaEnvironment(const std::string& path, const EnvOptions& opts);
 			~ArenaEnvironment();
 
-			void* allocateBytes(size_t n);
+			void* allocateBytes(size_t n, size_t alignment=1);
 			void  freeBytes(void* firstByte, size_t n);
 
 			void reset();

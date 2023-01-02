@@ -1,72 +1,9 @@
 #include <cassert>
-#include <unistd.h>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <cerrno>
 
 #include "env.h"
 
 namespace frast {
 
-	template <class Derived>
-	BaseEnvironment<Derived>::~BaseEnvironment() {
-		assert(basePointer != 0);
-		assert(mapSize_ > 0);
-		// This will flush all pages. Could use msync to do that at other times.
-		munmap(basePointer, mapSize_);
-	}
-
-	template <class Derived>
-	BaseEnvironment<Derived>::BaseEnvironment(const std::string& path, const EnvOptions& opts) {
-		auto flags = MAP_PRIVATE;
-		if (opts.anon) flags |= MAP_ANONYMOUS;
-		auto prot = PROT_READ;
-		if (not opts.readonly) prot |= PROT_WRITE;
-
-		int fd = -1;
-		size_t offset = opts.mapOffset;
-
-		fileIsNew_ = false;
-
-		if (not opts.anon) {
-			struct stat statbuf;
-			int res = ::stat(path.c_str(), &statbuf);
-			if (res == -1 and errno == ENOENT) {
-				fileIsNew_ = true;
-			} else if (res == -1) {
-				fmt::print(" - stat failed with: {}, {}\n", errno, strerror(errno));
-				throw std::runtime_error("stat failed.");
-			}
-
-			auto flags = opts.readonly ? O_RDONLY : O_RDWR;
-			flags |= O_CREAT;
-			auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
-			fd = open(path.c_str(), flags, mode);
-			if (fd == -1) {
-				fmt::print(" - open failed with: {}, {}\n", errno, strerror(errno));
-				throw std::runtime_error("open failed.");
-			}
-		}
-
-		basePointer = mmap(nullptr, opts.mapSize, prot, flags, fd, offset);
-		if (basePointer == (void*)-1) {
-			fmt::print(" - mmap failed with: {}, {}\n", errno, strerror(errno));
-			throw std::runtime_error("mmap failed.");
-		}
-		fmt::print(" - basePointer: {}\n", basePointer);
-
-		if (fd >= 0) {
-			int stat = close(fd);
-			if (stat == -1) {
-				fmt::print(" - close failed with: {}, {}\n", errno, strerror(errno));
-				throw std::runtime_error("close failed.");
-			}
-		}
-
-		mapSize_ = opts.mapSize;
-	}
 
 
 
@@ -149,6 +86,10 @@ namespace frast {
 		occHead = start + n;
 		void* out = static_cast<void*>(static_cast<char*>(dataPointer) + pageSize()*start);
 		fmt::print(" - Allocating {} pages at {}-{} ret {}\n", n,start, start+n, out);
+
+		if (not isAnonymous_)
+			fallocate(fd_, 0, 0, start+n);
+
 		return out;
 	}
 
@@ -175,7 +116,7 @@ namespace frast {
 		}
 	}
 
-	void* PagedEnvironment::allocateBytes(size_t n) {
+	void* PagedEnvironment::allocateBytes(size_t n, size_t alignment) {
 		size_t npages = (n + pageSize() - 1) / pageSize();
 		return allocatePages(npages);
 	}
@@ -192,12 +133,24 @@ namespace frast {
 
 
 
-	void* ArenaEnvironment::allocateBytes(size_t n) {
+	void* ArenaEnvironment::allocateBytes(size_t n, size_t alignment) {
+		while (head % alignment != 0) head++;
+
 		if (head+n >= mapSize_ - 4096)
 			throw std::runtime_error("ArenaEnv out of mem.");
 
 		void* out = static_cast<char*>(dataPointer) + head;
 		head += n;
+
+		// TODO: Maybe keep a cache version and do 1.5x sized allocations to reudce syscalls
+		if (not isAnonymous_) {
+			int r = fallocate(fd_, 0, 0, (char*)out + n - (char*)basePointer);
+			// int r = ftruncate(fd_, (char*)out + n - (char*)basePointer);
+			// int r = ftruncate(fd_, 1<<20);
+			// fmt::print("(fallocate fd={} len={} -> {})\n", fd_, head, r);
+		}
+
+		fmt::print(" - (arena alloc {} len {}, head {})\n", out, n, head);
 		return out;
 	}
 	void ArenaEnvironment::freeBytes(void* firstByte, size_t n) {
@@ -205,7 +158,9 @@ namespace frast {
 	}
 
 	ArenaEnvironment::~ArenaEnvironment() {
+		fmt::print(" - [~ArenaEnv] writing head {}\n", head);
 		static_cast<uint64_t*>(basePointer)[0] = head;
+		fmt::print(" - [~ArenaEnv] wrote   head {}\n", static_cast<uint64_t*>(basePointer)[0]);
 	}
 
 	ArenaEnvironment::ArenaEnvironment(const std::string& path, const EnvOptions& opts)
