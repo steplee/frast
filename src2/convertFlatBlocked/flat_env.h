@@ -7,12 +7,14 @@
 #include <cassert>
 #include <vector>
 
+// #include <fmt/core.h>
+
 
 namespace frast {
 
 struct Value {
-	void* value;
-	uint32_t len;
+	void* value=0;
+	uint64_t len=0;
 };
 
 // The structure of the file is:
@@ -59,14 +61,18 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	//
 	// Not to be confused with the userMeta, which is a segment with json data.
 	//
+	// `k2vs` gives the offset into the vals blob for each key.
+	// NOTE: value lengths are not stored, instead the length is taken to be the distance
+	//       to the next value (or until the end, for the last key)
+	//
 	struct LevelSpec {
 		uint64_t keysCapacity=0, valsCapacity=0;
 		uint64_t keysOffset=0, keysLength=0;
 		uint64_t k2vsOffset=0;
 		uint64_t valsOffset=0, valsLength=0;
 
-		uint64_t nitemsUsed() { return keysLength   / sizeof(uint64_t); }
-		uint64_t nitemsCap () { return keysCapacity / sizeof(uint64_t); }
+		uint64_t nitemsUsed() const { return keysLength   / sizeof(uint64_t); }
+		uint64_t nitemsCap () const { return keysCapacity / sizeof(uint64_t); }
 	};
 	struct FileMeta {
 		uint64_t metaOffset=0, metaLength=0;
@@ -79,6 +85,9 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	inline FileMeta* meta() {
 		return reinterpret_cast<FileMeta*>(basePointer);
 	}
+	inline LevelSpec& getLevelSpec(int lvl) {
+		return meta()->levelSpecs[lvl];
+	}
 	inline uint64_t* getKeys(int lvl) {
 		return reinterpret_cast<uint64_t*>(static_cast<char*>(basePointer) + meta()->levelSpecs[lvl].keysOffset);
 	}
@@ -88,19 +97,34 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	inline void* getValues(int lvl) {
 		return reinterpret_cast<void*>(static_cast<char*>(basePointer) + meta()->levelSpecs[lvl].valsOffset);
 	}
-	inline void* getValueFromIdx(int lvl, uint64_t idx) {
+	inline Value getValueFromIdx(int lvl, uint64_t idx) {
 		const auto& spec = meta()->levelSpecs[lvl];
 		uint64_t local_v_offset = reinterpret_cast<uint64_t*>(static_cast<char*>(basePointer) + spec.k2vsOffset)[idx];
-		return static_cast<char*>(basePointer) + spec.valsOffset + local_v_offset;
+		void* ptr = static_cast<char*>(basePointer) + spec.valsOffset + local_v_offset;
+		// return static_cast<char*>(basePointer) + spec.valsOffset + local_v_offset;
+		return Value { ptr, getValueLen(lvl, idx) };
 	}
+	inline uint64_t getValueLen(uint64_t lvl, uint64_t idx) {
+		const auto& spec = meta()->levelSpecs[lvl];
+		uint64_t local_v_offset = reinterpret_cast<uint64_t*>(static_cast<char*>(basePointer) + spec.k2vsOffset)[idx];
+		if (idx == spec.nitemsUsed() - 1) {
+			// fmt::print(" - len from {} - {} = {}\n", spec.valsLength , local_v_offset,spec.valsLength - local_v_offset);
+			return spec.valsLength - local_v_offset;
+		} else {
+			uint64_t local_v_offset_next = reinterpret_cast<uint64_t*>(static_cast<char*>(basePointer) + spec.k2vsOffset)[idx+1];
+			return local_v_offset_next - local_v_offset;
+		}
+	}
+	Value lookup(uint64_t lvl, uint64_t idx);
 
+	static uint64_t constexpr INVALID_LVL = 99999;
+	uint64_t currentLvl = INVALID_LVL;
 	uint64_t currentEnd = 0;
-	uint64_t currentLvl = 0;
 
-	bool writeKeys(uint64_t* keys, uint64_t len);
-	bool writeValue(void* value, uint64_t len);
+	bool writeKeyValue(uint64_t key, void* val, uint64_t valLen);
 
 	bool beginLevel(int lvl);
+	bool endLevel(bool finalLevel); // trims the value buffer to set capacity closer to length (but still block aligned). If finalLevel is true, trim file as well
 	uint64_t growLevelKeys();
 	uint64_t growLevelValues();
 
@@ -110,4 +134,10 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 };
 
 
+
+
+
 }
+
+
+

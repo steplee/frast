@@ -37,6 +37,13 @@ FetchContent_MakeAvailable(dep_fmt)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src2)
+include_directories(/usr/local/include/eigen3)
+
+set(libsGdal gdal)
+
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+set(libsCv ${OpenCV_LIBRARIES})
 
 #####################
 # Frast
@@ -50,12 +57,21 @@ add_library(frast2
 	src2/tpool/tpool.cc
 
 	src2/flat_writer.cc
-	src2/convertFlatBlocked/run.cc
+	src2/convertFlatBlocked/flat_env.cc
+	src2/convertFlatBlocked/writer.cc
+	src2/convertFlatBlocked/writer_gdal.cc
+	src2/convertFlatBlocked/writer_addo.cc
+	src2/convertFlatBlocked/reader.cc
 	)
-target_link_libraries(frast2 fmt::fmt pthread)
+target_link_libraries(frast2 fmt::fmt pthread ${libsCv})
 
 # add_executable(runFlatWriter src2/convertFlatBlocked/run.cc)
 # target_link_libraries(runFlatWriter frast2 fmt::fmt)
+add_executable(runFlatWriter src2/convertFlatBlocked/main.cc)
+target_link_libraries(runFlatWriter frast2 fmt::fmt ${libsGdal})
+
+add_executable(frastTool src2/tool/main.cc)
+target_link_libraries(frastTool frast2 fmt::fmt)
 
 
 #####################
@@ -66,13 +82,17 @@ add_executable(testFlatWriter1 src2/convertFlatBlocked/test.cc)
 target_link_libraries(testFlatWriter1 Catch2::Catch2WithMain frast2 fmt::fmt)
 catch_discover_tests(testFlatWriter1)
 
+add_executable(testGdalStuff src2/convertFlatBlocked/testGdalStuff.cc)
+target_link_libraries(testGdalStuff Catch2::Catch2WithMain frast2 fmt::fmt ${libsGdal})
+catch_discover_tests(testGdalStuff)
+
 add_executable(testDataStructures src2/detail/testDataStructures.cc)
 target_link_libraries(testDataStructures Catch2::Catch2WithMain frast2 fmt::fmt)
 catch_discover_tests(testDataStructures)
 
-add_executable(testFlatWriter src2/test_fw.cc)
-target_link_libraries(testFlatWriter Catch2::Catch2WithMain frast2 fmt::fmt)
-catch_discover_tests(testFlatWriter)
+# add_executable(testFlatWriter src2/test_fw.cc)
+# target_link_libraries(testFlatWriter Catch2::Catch2WithMain frast2 fmt::fmt)
+# catch_discover_tests(testFlatWriter)
 
 add_executable(ebpfStuff src2/experiment/ebpf_stuff.cc)
 target_link_libraries(ebpfStuff Catch2::Catch2WithMain fmt::fmt)

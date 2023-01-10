@@ -49,12 +49,12 @@ class Test_ThreadPool : public ThreadPool {
 			seen.insert(key);
 			mtx.unlock();
 		}
-		inline virtual void* createUserData(int workerId) override {
-			fmt::print(" - create user data {}\n", workerId);
+		inline virtual void* createWorkerData(int workerId) override {
+			fmt::print(" - create Worker data {}\n", workerId);
 			return nullptr;
 		}
-		inline virtual void destroyUserData(int workerId) override {
-			fmt::print(" - destroy user data {}\n", workerId);
+		inline virtual void destroyWorkerData(int workerId, void *ptr) override {
+			fmt::print(" - destroy Worker data {}\n", workerId);
 		}
 
 };
@@ -76,7 +76,7 @@ TEST_CASE( "tpool", "[tpool]" ) {
 	}
 	fmt::print(" - done  enqueuing\n");
 
-	tpool->blockUntilFinished();
+	tpool->blockUntilFinishedPoll();
 
 	REQUIRE(tpool->n_duplicate == 0);
 

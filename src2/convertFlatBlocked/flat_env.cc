@@ -1,16 +1,18 @@
-#include "run.h"
+#include "flat_env.h"
 
 namespace frast {
+
+static constexpr uint64_t BLOCK_SIZE = 4096;
 
 FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts)
 		: BaseEnvironment<FlatEnvironment>(path, opts), path_(path)
 {
 
-		// basePointer = static_cast<void*>(static_cast<char*>(basePointer) + 4096);
-		fmt::print(" - sizeof(FileMeta) = {}\n", sizeof(FileMeta));
+		// basePointer = static_cast<void*>(static_cast<char*>(basePointer) + BLOCK_SIZE);
+		// fmt::print(" - sizeof(FileMeta) = {}\n", sizeof(FileMeta));
 
 		if (fileIsNew_ or opts.anon) {
-			int r = fallocate(fd_, 0,0,4096);
+			int r = fallocate(fd_, 0,0,BLOCK_SIZE);
 			if (r != 0) throw std::runtime_error("fallocate failed: " + std::string{strerror(errno)});
 
 			new (meta()) FileMeta;
@@ -34,7 +36,7 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 			uint64_t off = fileMetaCapacity;
 			for (int i=0; i<26; i++) {
 				uint64_t off_ = meta()->levelSpecs[i].valsOffset + meta()->levelSpecs[i].valsLength;
-				while (off_ % 4096 != 0) off_++;
+				while (off_ % BLOCK_SIZE != 0) off_++;
 				off = std::max(off,off_);
 			}
 			currentEnd = off;
@@ -44,6 +46,7 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 
 }
 FlatEnvironment::~FlatEnvironment() {
+	assert(currentLvl == INVALID_LVL && "you called startLevel without endLevel later");
 		// fmt::print(" - [~FlatEnv] writing  {}\n", head);
 		// static_cast<uint64_t*>(basePointer)[0] = head;
 		// fmt::print(" - [~ArenaEnv] wrote   head {}\n", static_cast<uint64_t*>(basePointer)[0]);
@@ -52,17 +55,17 @@ FlatEnvironment::~FlatEnvironment() {
 bool FlatEnvironment::beginLevel(int lvl) {
 	assert(meta()->levelSpecs[lvl].keysCapacity == 0 && "this level should be empty");
 
-	if (currentEnd % 4096 != 0) {
+	if (currentEnd % BLOCK_SIZE != 0) {
 		fmt::print(" - Warning: currentEnd was not at a multiple of block size, adding needed padding.\n");
-		while (currentEnd % 4096 != 0) currentEnd++;
+		while (currentEnd % BLOCK_SIZE != 0) currentEnd++;
 	}
 
 	auto& spec = meta()->levelSpecs[lvl];
 
-	// static constexpr uint64_t iniNumKeys = 4096;
+	// static constexpr uint64_t iniNumKeys = BLOCK_SIZE;
 	// static constexpr uint64_t iniValBlobSize = 1024*4096;
 	static constexpr uint64_t iniNumKeys = 512;
-	static constexpr uint64_t iniValBlobSize = 4096;
+	static constexpr uint64_t iniValBlobSize = BLOCK_SIZE;
 
 	// Allocate space for keys & k2vs
 	// NOTE: Each should be divisible by the fallocate block size (which i think is typicall 4096)
@@ -87,6 +90,31 @@ bool FlatEnvironment::beginLevel(int lvl) {
 
 	return false;
 }
+
+bool FlatEnvironment::endLevel(bool finalLevel) {
+
+	assert(currentLvl >= 0 and currentLvl < 30);
+	auto& spec = meta()->levelSpecs[currentLvl];
+
+	spec.valsCapacity = spec.valsLength;
+	while (spec.valsCapacity % BLOCK_SIZE != 0) spec.valsCapacity++;
+	currentEnd = spec.valsOffset + spec.valsCapacity;
+
+	if (finalLevel) {
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity then truncating to {}\n", currentLvl, currentEnd);
+		int r = ftruncate(fd_, currentEnd);
+		if (r != 0) {
+			throw std::runtime_error("ftruncate() failed: " + std::string{strerror(errno)});
+		}
+	} else {
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} and rewinding currentEnd to {}\n", currentLvl, spec.valsCapacity, currentEnd);
+	}
+
+
+	currentLvl = INVALID_LVL;
+	return false;
+}
+
 
 static std::string byteSizeToString(uint64_t x) {
 	if (x < 1<<10)
@@ -159,11 +187,11 @@ void FlatEnvironment::printFirstLastEightCurLvl() {
 
 
 uint64_t FlatEnvironment::growLevelKeys() {
-	assert(currentLvl != 0);
+	assert(currentLvl != INVALID_LVL);
 	auto& spec = meta()->levelSpecs[currentLvl];
 
 	fmt::print(" - [growLevelKeys] lvl={}, from ko={}, k2vo={}, vo={}, kcap={}, vcap={}\n",
-				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.keysOffset);
+				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.valsCapacity);
 	// printFirstLastEightCurLvl();
 
 
@@ -197,14 +225,14 @@ uint64_t FlatEnvironment::growLevelKeys() {
 	bzero(((char*)basePointer)+oldK2vsOffset, oldCap);
 
 	fmt::print(" - [growLevelKeys] lvl={}, to   ko={}, k2vo={}, vo={}, kcap={}, vcap={}\n",
-				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.keysOffset);
+				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.valsCapacity);
 	// fmt::print(" - (post) distance b/t end of k2vs and start of values: {}\n", spec.valsOffset-(spec.k2vsOffset+spec.keysCapacity));
 	// printFirstLastEightCurLvl();
 
 	return g;
 }
 uint64_t FlatEnvironment::growLevelValues() {
-	assert(currentLvl != 0);
+	assert(currentLvl != INVALID_LVL);
 	auto& spec = meta()->levelSpecs[currentLvl];
 
 	// Here, we need not do any updating of any offsets
@@ -231,36 +259,62 @@ uint64_t FlatEnvironment::growLevelValues() {
 	return g;
 }
 
+	bool FlatEnvironment::writeKeyValue(uint64_t key, void* value, uint64_t valLen) {
+		assert(currentLvl != INVALID_LVL);
+		auto& spec = meta()->levelSpecs[currentLvl];
 
+		assert(spec.nitemsUsed() <= spec.nitemsCap());
+		if (spec.nitemsUsed() == spec.nitemsCap()) {
+			growLevelKeys();
+		}
+		// Note: this is a uint64_t* so the pointer arithmetic needs nitemsUsed (not keyLength)
+		// memcpy(getKeys(currentLvl) + spec.nitemsUsed(), &key, sizeof(key));
+		getKeys(currentLvl)[spec.nitemsUsed()] = key;
+		getK2vs(currentLvl)[spec.nitemsUsed()] = spec.valsLength;
+
+		assert(spec.valsLength <= spec.valsCapacity);
+		while (spec.valsLength + valLen >= spec.valsCapacity) {
+			growLevelValues();
+		}
+		memcpy(static_cast<char*>(getValues(currentLvl)) + spec.valsLength, value, valLen);
+
+		spec.keysLength += sizeof(key);
+		spec.valsLength += valLen;
+
+
+		return false;
+	}
+
+	Value FlatEnvironment::lookup(uint64_t lvl, uint64_t key) {
+		auto& spec = meta()->levelSpecs[lvl];
+
+		if (spec.keysLength == 0) return {};
+
+		// Binary search for the key
+		int64_t n = spec.nitemsUsed();
+		uint64_t* keys = getKeys(lvl);
+		int64_t lo = 0;
+		int64_t hi = n-1;
+		while (lo < hi) {
+			int64_t mid = (lo+hi+1)/2;
+			if (key < keys[mid]) {
+				hi = mid-1;
+			} else if (key > keys[mid]) {
+				lo = mid + 1;
+			} else {
+				lo = mid;
+				break;
+			}
+		}
+		
+		// fmt::print(" - bin searched for key {}, final lo was at idx {}, key {}\n", key, lo, keys[lo]);
+		if (keys[lo] != key) return {};
+
+		// fmt::print(" - bin searched for key {}, found at idx {}, k2v {}\n", key, lo, getK2vs(lvl)[lo]);
+		Value val;
+		val.value = static_cast<char*>(getValues(currentLvl)) + getK2vs(lvl)[lo];
+		val.len = getValueLen(lvl, lo);
+		return val;
+	}
 }
 
-
-/*
-int main() {
-
-	using namespace frast;
-	EnvOptions opts;
-	FlatEnvironment e("test.it", opts);
-
-	e.beginLevel(5);
-	// e.beginLevel(6);
-
-	e.meta()->levelSpecs[5].keysLength = e.meta()->levelSpecs[5].keysCapacity;
-	e.meta()->levelSpecs[5].valsLength = e.meta()->levelSpecs[5].valsCapacity;
-	for (int i=0; i<e.meta()->levelSpecs[5].valsLength; i++) reinterpret_cast<uint8_t*>(e.getValues(5))[i] = i % 256;
-	for (int i=0; i<e.meta()->levelSpecs[5].keysLength/8; i++) e.getKeys(5)[i] = i;
-	for (int i=0; i<e.meta()->levelSpecs[5].keysLength/8; i++) e.getK2vs(5)[i] = i;
-
-	e.growLevelKeys();
-	e.growLevelKeys();
-
-	for (int i=0; i<e.meta()->levelSpecs[5].valsLength; i++) reinterpret_cast<uint8_t*>(e.getValues(5))[i] = i % 256;
-	for (int i=0; i<e.meta()->levelSpecs[5].keysLength/8; i++) e.getKeys(5)[i] = i;
-	for (int i=0; i<e.meta()->levelSpecs[5].keysLength/8; i++) e.getK2vs(5)[i] = i;
-
-	e.growLevelKeys();
-	e.printSomeInfo();
-
-	return 0;
-}
-*/

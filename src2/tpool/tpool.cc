@@ -6,7 +6,7 @@
 namespace frast {
 
 ThreadPool::ThreadPool(int n) {
-	userDatas.resize(n);
+	workerDatas.resize(n);
 	workerMetas.resize(n);
 
 	// You should not construct a thread that calls a virtual method
@@ -62,7 +62,8 @@ int ThreadPool::enqueue(const Key& k) {
 	// Also helps to reduce context switching and use one thread for more work.
 	// The 40>n>32 case should encourage at least 8 hw threads to be active
 	// if (n == 1 or n == 8 or (n >= 32 and n < 40))
-	if (n == 1 or (n >= 32 and n < 40))
+	// if (n == 1 or (n >= 32 and n < 40))
+	if (n < 8 or (n >= 32 and n < 40))
 	// if (n == 1)
 		cv.notify_one();
 	return n;
@@ -71,7 +72,7 @@ int ThreadPool::enqueue(const Key& k) {
 void ThreadPool::workerLoop(int I) {
 	// auto &meta = workerMetas[I];
 
-	userDatas[I] = createUserData(I);
+	workerDatas[I] = createWorkerData(I);
 	bool haveStop = false;
 
 	int nprocessed = 0;
@@ -124,6 +125,7 @@ void ThreadPool::workerLoop(int I) {
 
 			if (haveKey) {
 				process(I, key);
+
 				nproc++;
 				nprocessed++;
 			}
@@ -137,11 +139,10 @@ void ThreadPool::workerLoop(int I) {
 		wakeups++;
 	}
 
-
-	destroyUserData(I);
+	destroyWorkerData(I, workerDatas[I]);
 }
 
-void ThreadPool::blockUntilFinished() {
+void ThreadPool::blockUntilFinishedPoll() {
 	while (true) {
 		mtx.lock();
 		auto size = queuedWork.size();

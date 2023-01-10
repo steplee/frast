@@ -86,7 +86,8 @@ namespace frast {
 			int stat = close(fd_);
 			if (stat == -1) {
 				fmt::print(" - close failed with: {}, {}\n", errno, strerror(errno));
-				throw std::runtime_error("close failed.");
+				// throw std::runtime_error("close failed.");
+				assert(false);
 			}
 			fd_ = -1;
 		}
@@ -95,7 +96,10 @@ namespace frast {
 		assert(mapSize_ > 0);
 		// This will flush all pages. Could use msync to do that at other times.
 		munmap(basePointer, mapSize_);
+		basePointer = nullptr;
+		mapSize_ = 0;
 	}
+
 
 	template <class Derived>
 	BaseEnvironment<Derived>::BaseEnvironment(const std::string& path, const EnvOptions& opts) {
