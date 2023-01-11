@@ -187,7 +187,8 @@ int main(int argc, char** argv) {
 		auto keys = reader.env.getKeys(lvl);
 		for (int i=0; i<spec.nitemsUsed(); i++) {
 			auto key = keys[i];
-			Value val = reader.env.getValueFromIdx(lvl, i);
+			// Value val = reader.env.getValueFromIdx(lvl, i);
+			Value val = reader.env.lookup(lvl, key);
 			fmt::print(" - item ({:>6d}/{:>6d}) key {} len {}\n", i,n, key, val.len);
 
 

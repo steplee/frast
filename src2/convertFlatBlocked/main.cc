@@ -10,7 +10,7 @@ int main() {
 
 	ConvertConfig cfg;
 	cfg.srcPaths = {"/data/naip/mocoNaip/whole.wm.tif"};
-	cfg.baseLevel = 15;
+	cfg.baseLevel = 18;
 	cfg.addo = true;
 
 	{
@@ -36,6 +36,7 @@ int main() {
 	}
 
 
+	fmt::print(" - you may want to run 'e4defrag' on the output file.\n");
 
 	return 0;
 }

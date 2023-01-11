@@ -213,6 +213,8 @@ void WriterMasterAddo::handleProcessedData(std::vector<ProcessedData>& processed
 	// TODO: do this on another thread than the one that queues data?
 	std::sort(processedData.begin(), processedData.end());
 
+	fmt::print(" - addo handle proc {}\n", processedData.size());
+
 	for (auto& pd : processedData) {
 		if (pd.value == nullptr) assert(pd.valueLength == ProcessedData::INVALID_VALUE_LENGTH);
 		if (pd.valueLength == ProcessedData::INVALID_VALUE_LENGTH) assert(pd.value == nullptr);
@@ -222,7 +224,7 @@ void WriterMasterAddo::handleProcessedData(std::vector<ProcessedData>& processed
 		if (pd.value != nullptr) {
 			// fmt::print(" - write k {}, vl {}\n", pd.key, pd.valueLength);
 			env.writeKeyValue(pd.key, pd.value, pd.valueLength);
-		}
+		} //else fmt::print(" - no write k {}, vl {}\n", pd.key, pd.valueLength);
 	}
 
 	for (auto& pd : processedData) {
@@ -306,10 +308,10 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 	auto reader = static_cast<FlatReader*>(getWorkerData(workerId));
 
 	BlockCoordinate above(key);
-	BlockCoordinate ca(above.z()-1, (above.y()>>1)+0, (above.x()>>1)+0);
-	BlockCoordinate cb(above.z()-1, (above.y()>>1)+1, (above.x()>>1)+0);
-	BlockCoordinate cc(above.z()-1, (above.y()>>1)+0, (above.x()>>1)+1);
-	BlockCoordinate cd(above.z()-1, (above.y()>>1)+1, (above.x()>>1)+1);
+	BlockCoordinate ca(above.z()+1, (above.y()<<1)+0, (above.x()<<1)+0);
+	BlockCoordinate cb(above.z()+1, (above.y()<<1)+1, (above.x()<<1)+0);
+	BlockCoordinate cc(above.z()+1, (above.y()<<1)+0, (above.x()<<1)+1);
+	BlockCoordinate cd(above.z()+1, (above.y()<<1)+1, (above.x()<<1)+1);
 
 	cv::Mat imga = reader->getTile(ca.c);
 	cv::Mat imgb = reader->getTile(cb.c);
@@ -323,6 +325,7 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		// All empty...
 		value = nullptr;
 		valueLength = ProcessedData::INVALID_VALUE_LENGTH;
+		fmt::print(" - Empty tile for {} {} {}\n", above.z(), above.y(), above.x());
 	} else {
 		if (imga.empty() or imgb.empty() or imgc.empty() or imgd.empty()) {
 			// Find the non empty image to use as a template -- the empty ones are like it, but filled zero
@@ -343,9 +346,12 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		int tw = imga.cols;
 		cv::Mat img(th*2, tw*2, imga.type());
 		imga.copyTo(img(cv::Rect{0,0,tw,th}));
-		imgb.copyTo(img(cv::Rect{tw,0,tw,th}));
-		imgc.copyTo(img(cv::Rect{0,th,tw,th}));
+		imgb.copyTo(img(cv::Rect{0,th,tw,th}));
+		imgc.copyTo(img(cv::Rect{tw,0,tw,th}));
 		imgd.copyTo(img(cv::Rect{tw,th,tw,th}));
+
+		// Half-scale it
+		cv::resize(img,img, imga.size());
 
 
 		// Encode.

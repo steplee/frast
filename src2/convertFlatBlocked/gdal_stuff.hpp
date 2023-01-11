@@ -101,7 +101,7 @@ namespace {
 		GDALWarpOptions *warpOptions = nullptr;
 
 		cv::Mat getWmTile(const double wmTlbr[4], int w, int h, int c);
-		Vector4d bboxProj(const Vector4d& bboxProj, cv::Mat& out);
+		// Vector4d bboxProj(const Vector4d& bboxProj, cv::Mat& out);
 		Vector4d bboxPix(const Vector4d& bboxPix, cv::Mat& out);
 
 		void getTlbrForLevel(uint64_t tlbr[4], int lvl);
@@ -168,9 +168,9 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	float H[9];
 	float in_pts[] = {
 		0,0,
-		(float)w,0,
-		(float)w,(float)h,
-		0,(float)h
+		(float)(w-1),0,
+		(float)(w-1),(float)(h-1),
+		0,(float)(h-1)
 	};
 	float out_pts[] = {
 		(float)(w * (corners_nat(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
@@ -199,7 +199,6 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 
 	return out;
 }
-
 
 
 
@@ -315,6 +314,7 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 }
 
 
+/*
 Vector4d MyGdalDataset::bboxProj(const Vector4d& bboxProj, cv::Mat& out) {
 	// AtomicTimerMeasurement tg(t_gdal);
     //out.create(outh, outw, cv_type);
@@ -426,6 +426,7 @@ Vector4d MyGdalDataset::bboxProj(const Vector4d& bboxProj, cv::Mat& out) {
 	if (tl_sampled(1) > br_sampled(1)) std::swap(tl_sampled(1), br_sampled(1));
 	return Vector4d { tl_sampled(0), tl_sampled(1), br_sampled(0), br_sampled(1) };
 }
+*/
 
 MyGdalDataset::MyGdalDataset(const std::string& path) {
 	std::call_once(flag__, &GDALAllRegister);

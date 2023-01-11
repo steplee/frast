@@ -54,12 +54,15 @@ namespace frast {
 
 		if (val.value == nullptr) return cv::Mat{};
 
+		// fmt::print(" - found tile {} :: {} {}\n", tile, val.value, val.len);
+
 		bool grayscale = false;
 		auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
 
 		// cv::Mat buf { 
 		// std::vector<uint8_t> buf;
 		cv::_InputArray buf((uint8_t*)val.value, val.len);
+		// cv::Mat buf(val.len, 1, CV_8UC1, val.value);
 		cv::Mat img = cv::imdecode(buf, flags);
 		return img;
 	}

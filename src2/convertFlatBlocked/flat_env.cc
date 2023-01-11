@@ -64,8 +64,10 @@ bool FlatEnvironment::beginLevel(int lvl) {
 
 	// static constexpr uint64_t iniNumKeys = BLOCK_SIZE;
 	// static constexpr uint64_t iniValBlobSize = 1024*4096;
-	static constexpr uint64_t iniNumKeys = 512;
-	static constexpr uint64_t iniValBlobSize = BLOCK_SIZE;
+	// static constexpr uint64_t iniNumKeys = 512;
+	// static constexpr uint64_t iniValBlobSize = BLOCK_SIZE;
+	static constexpr uint64_t iniNumKeys = 2048;
+	static constexpr uint64_t iniValBlobSize = 2048*BLOCK_SIZE;
 
 	// Allocate space for keys & k2vs
 	// NOTE: Each should be divisible by the fallocate block size (which i think is typicall 4096)
@@ -101,7 +103,7 @@ bool FlatEnvironment::endLevel(bool finalLevel) {
 	currentEnd = spec.valsOffset + spec.valsCapacity;
 
 	if (finalLevel) {
-		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity then truncating to {}\n", currentLvl, currentEnd);
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} then truncating to {}\n", currentLvl, spec.valsCapacity, currentEnd);
 		int r = ftruncate(fd_, currentEnd);
 		if (r != 0) {
 			throw std::runtime_error("ftruncate() failed: " + std::string{strerror(errno)});
@@ -311,8 +313,9 @@ uint64_t FlatEnvironment::growLevelValues() {
 		if (keys[lo] != key) return {};
 
 		// fmt::print(" - bin searched for key {}, found at idx {}, k2v {}\n", key, lo, getK2vs(lvl)[lo]);
+		// return getValueFromIdx(lvl,lo);
 		Value val;
-		val.value = static_cast<char*>(getValues(currentLvl)) + getK2vs(lvl)[lo];
+		val.value = static_cast<char*>(getValues(lvl)) + getK2vs(lvl)[lo];
 		val.len = getValueLen(lvl, lo);
 		return val;
 	}
