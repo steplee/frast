@@ -88,6 +88,9 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	inline LevelSpec& getLevelSpec(int lvl) {
 		return meta()->levelSpecs[lvl];
 	}
+	inline bool haveLevel(int lvl) {
+		return meta()->levelSpecs[lvl].keysLength > 0;
+	}
 	inline uint64_t* getKeys(int lvl) {
 		return reinterpret_cast<uint64_t*>(static_cast<char*>(basePointer) + meta()->levelSpecs[lvl].keysOffset);
 	}

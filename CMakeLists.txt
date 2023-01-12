@@ -90,6 +90,10 @@ add_executable(testDataStructures src2/detail/testDataStructures.cc)
 target_link_libraries(testDataStructures Catch2::Catch2WithMain frast2 fmt::fmt)
 catch_discover_tests(testDataStructures)
 
+add_executable(testLruCacheAndRingBuffer src2/detail/testLruCacheAndRingBuffer.cc)
+target_link_libraries(testLruCacheAndRingBuffer Catch2::Catch2WithMain frast2 fmt::fmt)
+catch_discover_tests(testLruCacheAndRingBuffer)
+
 # add_executable(testFlatWriter src2/test_fw.cc)
 # target_link_libraries(testFlatWriter Catch2::Catch2WithMain frast2 fmt::fmt)
 # catch_discover_tests(testFlatWriter)

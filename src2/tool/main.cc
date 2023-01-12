@@ -15,6 +15,11 @@ using Str = std::string;
 
 using namespace frast;
 
+struct Tlbr {
+	double tl[2];
+	double br[2];
+};
+
 class ArgParser {
 	public:
 
@@ -117,7 +122,14 @@ class ArgParser {
 
 		template <class T>
 		inline T scanAs(const Str& s) {
-			// if constexpr(std::is_same_v<T, int>) {
+			if constexpr(std::is_same_v<Tlbr,T>) {
+				Tlbr tlbr;
+				auto result = sscanf(s.c_str(), "%lf %lf %lf %lf", tlbr.tl, tlbr.tl+1, tlbr.br, tlbr.br+1);
+				assert(result==4);
+				if (tlbr.tl[0] > tlbr.br[0]) std::swap(tlbr.tl[0], tlbr.br[0]);
+				if (tlbr.tl[1] > tlbr.br[1]) std::swap(tlbr.tl[1], tlbr.br[1]);
+				return tlbr;
+			}
 			if constexpr(std::is_same_v<bool,T>) {
 				return not (s == "0" or s == "off" or s == "no" or s == "n" or s == "N" or s == "" or s == "false" or s == "False");
 			}
@@ -147,7 +159,7 @@ int main(int argc, char** argv) {
 
 	int i = parser.get<int>("--hi").value();
 	bool o = parser.get<bool>("--opt").value();
-	auto action = parser.getChoice2("-a", "--action", "info", "showTiles", "showSample").value();
+	auto action = parser.getChoice2("-a", "--action", "info", "showTiles", "showSample", "rasterIo").value();
 	fmt::print(" - hi={}\n", i);
 	fmt::print(" - opt={}\n", o);
 
@@ -157,7 +169,7 @@ int main(int argc, char** argv) {
 		std::string path = parser.get2<std::string>("-i", "--input").value();
 		EnvOptions opts;
 		FlatReader reader(path, opts);
-		uint64_t tlbr[4];
+		uint32_t tlbr[4];
 		auto lvl = reader.determineTlbr(tlbr);
 		fmt::print(" - Tlbr (lvl {}) [{} {} -> {} {}]\n", lvl, tlbr[0], tlbr[1], tlbr[2], tlbr[3]);
 	}
@@ -169,7 +181,7 @@ int main(int argc, char** argv) {
 		EnvOptions opts;
 		FlatReader reader(path, opts);
 
-		uint64_t tlbr[4];
+		uint32_t tlbr[4];
 		auto deepestLvl = reader.determineTlbr(tlbr);
 
 		int lvl = deepestLvl;
@@ -201,6 +213,56 @@ int main(int argc, char** argv) {
 
 
 		}
+	}
+
+	if (action == "showSample") {
+		int edge = parser.get<int>("--edge", 1440).value();
+
+		std::string path = parser.get2<std::string>("-i", "--input").value();
+
+		EnvOptions opts;
+		FlatReaderCached reader(path, opts);
+
+		double dwmTlbr[4];
+		uint32_t iwmTlbr[4];
+		auto deepestLvl = reader.determineTlbr(iwmTlbr);
+		iwm_to_dwm(dwmTlbr, iwmTlbr, deepestLvl);
+		int nw = iwmTlbr[2]-iwmTlbr[0];
+		int nh = iwmTlbr[3]-iwmTlbr[1];
+
+		cv::Mat img;
+		if (nw > nh) {
+			img = reader.rasterIo(dwmTlbr, edge, nh*edge/nw, 3);
+		} else {
+			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, 3);
+		}
+
+		cv::imshow("sample", img);
+		cv::waitKey(0);
+	}
+
+	if (action == "rasterIo") {
+		int edge = parser.get<int>("--edge", 1440).value();
+		Tlbr tlbr = parser.get<Tlbr>("--tlbr").value();
+
+		std::string path = parser.get2<std::string>("-i", "--input").value();
+
+		EnvOptions opts;
+		FlatReaderCached reader(path, opts);
+
+		double dwmTlbr[4] = {tlbr.tl[0], tlbr.tl[1], tlbr.br[0], tlbr.br[1]};
+		int nw = dwmTlbr[2]-dwmTlbr[0];
+		int nh = dwmTlbr[3]-dwmTlbr[1];
+
+		cv::Mat img;
+		if (nw > nh) {
+			img = reader.rasterIo(dwmTlbr, edge, nh*edge/nw, 3);
+		} else {
+			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, 3);
+		}
+
+		cv::imshow("sample", img);
+		cv::waitKey(0);
 	}
 
 	return 0;

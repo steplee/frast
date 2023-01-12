@@ -238,8 +238,8 @@ void WriterMasterAddo::handleProcessedData(std::vector<ProcessedData>& processed
 
 void WriterMasterAddo::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	auto reader = static_cast<FlatReader*>(masterData);
-	uint64_t lvlTlbr[4];
-	uint64_t mainTlbr[4];
+	uint32_t lvlTlbr[4];
+	uint32_t mainTlbr[4];
 	auto mainLvl = reader->determineTlbr(mainTlbr);
 
 	int64_t zoom = mainLvl - curLevel;
@@ -259,8 +259,8 @@ std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	std::vector<uint64_t> out;
 
 	auto reader = static_cast<FlatReader*>(masterData);
-	uint64_t lvlTlbr[4];
-	uint64_t mainTlbr[4];
+	uint32_t lvlTlbr[4];
+	uint32_t mainTlbr[4];
 	auto mainLvl = reader->determineTlbr(mainTlbr); // FIXME: remove this call
 
 	int64_t zoom = mainLvl - curLevel;
@@ -313,10 +313,10 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 	BlockCoordinate cc(above.z()+1, (above.y()<<1)+0, (above.x()<<1)+1);
 	BlockCoordinate cd(above.z()+1, (above.y()<<1)+1, (above.x()<<1)+1);
 
-	cv::Mat imga = reader->getTile(ca.c);
-	cv::Mat imgb = reader->getTile(cb.c);
-	cv::Mat imgc = reader->getTile(cc.c);
-	cv::Mat imgd = reader->getTile(cd.c);
+	cv::Mat imga = reader->getTile(ca.c, cfg.channels);
+	cv::Mat imgb = reader->getTile(cb.c, cfg.channels);
+	cv::Mat imgc = reader->getTile(cc.c, cfg.channels);
+	cv::Mat imgd = reader->getTile(cd.c, cfg.channels);
 
 	void* value = nullptr;
 	uint64_t valueLength = 0;

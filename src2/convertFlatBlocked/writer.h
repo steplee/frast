@@ -17,6 +17,7 @@ struct ConvertConfig {
 	std::vector<std::string> srcPaths;
 	int baseLevel;
 	bool addo = false;
+	int channels=3;
 };
 
 struct ProcessedData {

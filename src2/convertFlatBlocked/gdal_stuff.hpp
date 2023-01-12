@@ -209,6 +209,7 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 	int outh = out.rows, outw = out.cols;
 
 	auto internalCvType = nbands == 1 ? CV_8UC1 : nbands == 3 ? CV_8UC3 : nbands == 4 ? CV_8UC4 : -1;
+	assert(internalCvType != -1);
 
 	int out_c = out.channels();
 	if (nbands >= 3 and out_c == 1)
