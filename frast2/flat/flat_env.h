@@ -74,21 +74,29 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 		uint64_t nitemsUsed() const { return keysLength   / sizeof(uint64_t); }
 		uint64_t nitemsCap () const { return keysCapacity / sizeof(uint64_t); }
 	};
-	struct FileMeta {
+
+	struct __attribute__((packed)) FileMeta {
 		uint64_t metaOffset=0, metaLength=0;
 		LevelSpec levelSpecs[26];
+
+		// NOTE: color/grayscale doesn't really matter (but terrain does)
+		enum class RasterType : uint8_t {
+			eColor = 0,
+			eGrayscale = 1,
+			eTerrain = 2,
+		} rasterType = RasterType::eColor;
 	};
 
 	static constexpr uint64_t fileMetaLength   = sizeof(uint64_t) * 2 + sizeof(LevelSpec) * 26;
 	static constexpr uint64_t fileMetaCapacity = 4096;
 
-	inline FileMeta* meta() {
-		return reinterpret_cast<FileMeta*>(basePointer);
-	}
+	inline FileMeta* meta() { return reinterpret_cast<FileMeta*>(basePointer); }
+	inline const FileMeta* meta() const { return reinterpret_cast<FileMeta*>(basePointer); }
+
 	inline LevelSpec& getLevelSpec(int lvl) {
 		return meta()->levelSpecs[lvl];
 	}
-	inline bool haveLevel(int lvl) {
+	inline bool haveLevel(int lvl) const {
 		return meta()->levelSpecs[lvl].keysLength > 0;
 	}
 	inline uint64_t* getKeys(int lvl) {
@@ -118,6 +126,9 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 			return local_v_offset_next - local_v_offset;
 		}
 	}
+	inline bool isTerrain() const { return meta()->rasterType == FileMeta::RasterType::eTerrain; }
+
+	bool keyExists(uint64_t lvl, uint64_t key);
 	Value lookup(uint64_t lvl, uint64_t idx);
 
 	static uint64_t constexpr INVALID_LVL = 99999;

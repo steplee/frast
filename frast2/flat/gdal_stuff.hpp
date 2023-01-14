@@ -75,8 +75,8 @@ namespace {
 
 	struct MyGdalDataset {
 
-		inline MyGdalDataset() {}
-		MyGdalDataset(const std::string& path);
+		inline MyGdalDataset(bool isTerrain) : isTerrain(isTerrain) {}
+		MyGdalDataset(const std::string& path, bool isTerrain);
 		~MyGdalDataset();
 		GDALDataset* dset = nullptr;
 		OGRCoordinateTransformation* wm2prj  = nullptr;
@@ -117,10 +117,14 @@ void MyGdalDataset::getTlbrForLevel(uint64_t tlbr[4], int lvl) {
 cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	auto cvType = c == 1 ? CV_8UC1 : c == 3 ? CV_8UC3 : c == 4 ? CV_8UC4 : -1;
 	auto internalCvType = nbands == 1 ? CV_8UC1 : nbands == 3 ? CV_8UC3 : nbands == 4 ? CV_8UC4 : -1;
+	if (isTerrain) {
+		assert(gdalType == GDT_Int16);
+		internalCvType = CV_16UC1;
+	}
 
 	assert(cvType != -1);
 	assert(internalCvType != -1);
-	cv::Mat out(w,h,internalCvType);
+	cv::Mat out(h,w,internalCvType);
 
 	double cornersWm[8] = {
 		wmTlbr[0], wmTlbr[1],
@@ -167,22 +171,32 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 
 	float H[9];
 	float in_pts[] = {
-		0,0,
-		(float)(w-1),0,
+		// 0,0,
+		// (float)(w-1),0,
+		// (float)(w-1),(float)(h-1),
+		// 0,(float)(h-1)
+		0,(float)(h-1),
 		(float)(w-1),(float)(h-1),
-		0,(float)(h-1)
+		(float)(w-1),0.f,
+		0,0.f
 	};
 	float out_pts[] = {
 		(float)(w * (corners_nat(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(w * (corners_nat(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(w * (corners_nat(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(w * (corners_nat(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
+		// (float)(w * (corners_nat(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (corners_nat(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (corners_nat(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (corners_nat(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
 	};
 	solveHomography(H, in_pts, out_pts);
 
 	cv::Mat HH(3,3,CV_32F,H);
 	cv::warpPerspective(sampledImg, out, HH, cv::Size{out.cols, out.rows});
 	// fmt::print(" - final H:\n{}\n", HH);
+
+	// cv::flip(out,out, 0);
 
 	// cv::imshow("finalTile", out);
 	// cv::waitKey(1);
@@ -210,6 +224,10 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 
 	auto internalCvType = nbands == 1 ? CV_8UC1 : nbands == 3 ? CV_8UC3 : nbands == 4 ? CV_8UC4 : -1;
 	assert(internalCvType != -1);
+	if (isTerrain) {
+		assert(gdalType == GDT_Int16);
+		internalCvType = CV_16UC1;
+	}
 
 	int out_c = out.channels();
 	if (nbands >= 3 and out_c == 1)
@@ -246,8 +264,7 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
                                   &arg);
 
 		// TODO If converting from other terrain then GMTED, must modify here
-		if (isTerrain)
-			transform_gmted((uint16_t*) out.data, outh, outw);
+		if (isTerrain) transform_gmted((uint16_t*) out.data, outh, outw);
 
         if (err != CE_None)
 			return Vector4d::Zero();
@@ -278,8 +295,7 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
         if (err != CE_None) return Vector4d::Zero();
 
 		// TODO If converting from other terrain then GMTED, must modify here
-		if (isTerrain)
-			transform_gmted((uint16_t*) tmp.data, outh, outw);
+		if (isTerrain) transform_gmted((uint16_t*) tmp.data, tmp.rows, tmp.cols);
 
         float in_pts[8]  = {0, 0, sx * inner_w, 0, 0, sy * inner_h, sx*inner_w, sy*inner_h};
         float out_pts[8] = {sx * (inner(0) - xoff),
@@ -299,6 +315,8 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 
 		// buf.warpPerspective(out, H, clampToBorder);
 		cv::Mat HH(3,3,CV_32F,H);
+		// fmt::print(" tmp: {} {} {} |{}\n", tmp.rows, tmp.cols, tmp.channels(), tmp.type());
+		// fmt::print(" out: {} {} {} |{}\n", out.rows, out.cols, out.channels(), out.type());
 		cv::warpPerspective(tmp, out, HH, cv::Size{out.cols, out.rows});
 
     } else {
@@ -429,7 +447,7 @@ Vector4d MyGdalDataset::bboxProj(const Vector4d& bboxProj, cv::Mat& out) {
 }
 */
 
-MyGdalDataset::MyGdalDataset(const std::string& path) {
+MyGdalDataset::MyGdalDataset(const std::string& path, bool isTerrain) : isTerrain(isTerrain) {
 	std::call_once(flag__, &GDALAllRegister);
 	dset = (GDALDataset*) GDALOpen(path.c_str(), GA_ReadOnly);
 
@@ -454,6 +472,7 @@ MyGdalDataset::MyGdalDataset(const std::string& path) {
 	// std::cout << " - nbands: " << nbands << "\n";
 
     gdalType = dset->GetRasterBand(1)->GetRasterDataType();
+	// fmt::print(" - file {} gdalType {} '{}'\n", path, gdalType, GDALGetDataTypeName(gdalType));
     if (not(gdalType == GDT_Byte or gdalType == GDT_Int16 or gdalType == GDT_Float32)) {
         std::cerr << " == ONLY uint8_t/int16_t/float32 dsets supported right now." << std::endl;
         exit(1);

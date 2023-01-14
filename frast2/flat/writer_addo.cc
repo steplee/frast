@@ -5,22 +5,23 @@
 #include <fmt/core.h>
 #include <fmt/color.h>
 
+#include "codec.h"
+
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
 
 namespace frast {
 
 WriterMasterAddo::WriterMasterAddo(const std::string& outPath, const EnvOptions& opts)
 	: ThreadPool(4),
 	  path_(outPath),
-	  env(outPath, opts) {
+	  env(outPath, opts), envOpts(opts) {
 
 
 }
 
 void* WriterMasterAddo::create_reader_stuff(int workerId) {
-	return new FlatReader{path_, {}};
+	return new FlatReader{path_, envOpts};
 }
 
 void* WriterMasterAddo::createWorkerData(int workerId) {
@@ -40,8 +41,9 @@ void WriterMasterAddo::destroy_master_data() {
 void WriterMasterAddo::start(const ConvertConfig& cfg_) {
 	cfg = cfg_;
 
+	if (envOpts.isTerrain) assert(cfg.channels == 1);
+
 	assert(cfg.baseLevel >= 0 and cfg.baseLevel < 30);
-	assert(cfg.srcPaths.size() > 0);
 
 
 	curLevel = cfg.baseLevel;
@@ -269,14 +271,19 @@ std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 
 	lvlTlbr[0] = mainTlbr[0] / (1 << zoom);
 	lvlTlbr[1] = mainTlbr[1] / (1 << zoom);
-	// lvlTlbr[2] = (mainTlbr[2] + ((1l<<zoom)-1l)) / (1 << zoom);
-	// lvlTlbr[3] = (mainTlbr[3] + ((1l<<zoom)-1l)) / (1 << zoom);
-	lvlTlbr[2] = (mainTlbr[2]) / (1 << zoom);
-	lvlTlbr[3] = (mainTlbr[3]) / (1 << zoom);
+	lvlTlbr[2] = (mainTlbr[2] + ((1l<<zoom)-1l)) / (1 << zoom);
+	lvlTlbr[3] = (mainTlbr[3] + ((1l<<zoom)-1l)) / (1 << zoom);
+	// lvlTlbr[2] = (mainTlbr[2]) / (1 << zoom);
+	// lvlTlbr[3] = (mainTlbr[3]) / (1 << zoom);
 	fmt::print(" - level {}, tlbr {} {} -> {} {}\n", curLevel, lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3]);
 
 	uint64_t w = lvlTlbr[2] - lvlTlbr[0];
 	uint64_t h = lvlTlbr[3] - lvlTlbr[1];
+
+	if (w > 0 or h > 0) {
+		if (w == 0) lvlTlbr[2]++, w++;
+		if (h == 0) lvlTlbr[3]++, h++;
+	}
 
 	if (w == 0) {
 		fmt::print(fmt::fg(fmt::color::magenta), " - [yieldNextKeys()] Reached beyond top row of lvl {}, yielding last {}.\n", curLevel, out.size());
@@ -345,22 +352,23 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		int th = imga.rows;
 		int tw = imga.cols;
 		cv::Mat img(th*2, tw*2, imga.type());
-		imga.copyTo(img(cv::Rect{0,0,tw,th}));
-		imgb.copyTo(img(cv::Rect{0,th,tw,th}));
-		imgc.copyTo(img(cv::Rect{tw,0,tw,th}));
-		imgd.copyTo(img(cv::Rect{tw,th,tw,th}));
+
+		// imga.copyTo(img(cv::Rect{0,0,tw,th}));
+		// imgb.copyTo(img(cv::Rect{0,th,tw,th}));
+		// imgc.copyTo(img(cv::Rect{tw,0,tw,th}));
+		// imgd.copyTo(img(cv::Rect{tw,th,tw,th}));
+		imga.copyTo(img(cv::Rect{0,th,tw,th}));
+		imgb.copyTo(img(cv::Rect{0,0,tw,th}));
+		imgc.copyTo(img(cv::Rect{tw,th,tw,th}));
+		imgd.copyTo(img(cv::Rect{tw,0,tw,th}));
 
 		// Half-scale it
 		cv::resize(img,img, imga.size());
 
-
 		// Encode.
-		std::vector<uint8_t> buf;
-		bool stat = cv::imencode(".jpg", img, buf);
-		assert(stat);
-		value = malloc(buf.size());
-		memcpy(value, buf.data(), buf.size());
-		valueLength = buf.size();
+		Value v = encodeValue(img, isTerrain());
+		value = v.value;
+		valueLength = v.len;
 	}
 
 

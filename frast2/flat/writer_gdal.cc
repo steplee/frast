@@ -1,7 +1,8 @@
 #include "writer.h"
 #include "gdal_stuff.hpp"
 
-#include <opencv2/imgcodecs.hpp>
+#include "codec.h"
+
 
 namespace frast {
 
@@ -20,7 +21,8 @@ void WriterMaster::destroy_master_data() {
 }
 
 void* WriterMaster::create_gdal_stuff(int worker_id) {
-	return new MyGdalDataset("/data/naip/mocoNaip/whole.wm.tif");
+	// return new MyGdalDataset("/data/naip/mocoNaip/whole.wm.tif", envOpts.isTerrain);
+	return new MyGdalDataset(cfg.srcPaths[0], envOpts.isTerrain);
 }
 
 
@@ -46,12 +48,10 @@ void WriterMaster::process(int workerId, const Key& key) {
 	auto valueLength = ProcessedData::INVALID_VALUE_LENGTH;
 
 	if (not img.empty()) {
-		std::vector<uint8_t> buf;
-		bool stat = cv::imencode(".jpg", img, buf);
-		assert(stat);
-		val = malloc(buf.size());
-		memcpy(val, buf.data(), buf.size());
-		valueLength = buf.size();
+		// Encode.
+		Value v = encodeValue(img, isTerrain());
+		val = v.value;
+		valueLength = v.len;
 	}
 
 	{

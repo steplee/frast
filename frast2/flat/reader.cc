@@ -9,8 +9,8 @@ namespace {
 
 	int get_cv_type_from_channels(int c, bool isTerrain) {
 		if (isTerrain) {
-			assert(c == 2 and "if isTerrain, only 2-channel images supported");
-			return CV_8UC2;
+			assert(c == 1 and "if isTerrain, only 1-channel 16-bit images supported");
+			return CV_16UC1;
 		}
 		if (c == 1) return CV_8UC1;
 		if (c == 3) return CV_8UC3;
@@ -51,9 +51,18 @@ namespace frast {
 
 	}
 
+	int FlatReader::levelSize(int lvl) {
+		return env.getLevelSpec(lvl).nitemsUsed();
+	}
+
 	void FlatReader::refreshMemMap() {
 		// env = std::move(FlatEnvironment{openPath,openOpts});
 		env = (FlatEnvironment(openPath,openOpts));
+	}
+
+	bool FlatReader::tileExists(uint64_t tile) {
+		BlockCoordinate bc{tile};
+		return env.keyExists(bc.z(), tile);
 	}
 
 
@@ -90,25 +99,17 @@ namespace frast {
 		return lvl;
 	}
 
+	std::vector<double[4]> FlatReader::computeRegionsOnDeepestLevel() {
+		throw std::runtime_error("not implemented yet.");
+	}
+
 	cv::Mat FlatReader::getTile(uint64_t tile, int channels) {
 		BlockCoordinate bc(tile);
 		auto val = env.lookup(bc.z(), tile);
-
-		if (val.value == nullptr) return cv::Mat{};
-
 		// fmt::print(" - found tile {} :: {} {}\n", tile, val.value, val.len);
 
-		if (isTerrain) {
-			assert(false and "not supported yet");
-		} else {
-			assert(channels == 1 or channels == 3);
-			bool grayscale = channels == 1;
-			auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
+		return decodeValue(val, channels, isTerrain());
 
-			cv::_InputArray buf((uint8_t*)val.value, val.len);
-			cv::Mat img = cv::imdecode(buf, flags);
-			return img;
-		}
 	}
 
 	int FlatReader::find_level_for_mpp(float res) {
@@ -172,7 +173,7 @@ namespace frast {
 	cv::Mat FlatReaderCached::getTlbr(uint64_t lvl, uint32_t tlbr[4], int channels) {
 		uint64_t h = tlbr[3] - tlbr[1];
 		uint64_t w = tlbr[2] - tlbr[0];
-		auto cvType = get_cv_type_from_channels(channels, isTerrain);
+		auto cvType = get_cv_type_from_channels(channels, isTerrain());
 
 		cv::Mat out(tileSize*h,tileSize*w,cvType);
 
@@ -182,22 +183,25 @@ namespace frast {
 
 			// cv::Mat tile = this->getTile(bc.c, channels);
 			cv::Mat tile = FlatReader::getTile(bc.c, channels);
-			fmt::print(" - getTile :: {} {} {} | {} ===> {}x{}c{}\n", bc.z(), bc.y(), bc.x(), bc.c, tile.rows,tile.cols,tile.channels());
+			// fmt::print(" - getTile :: {} {} {} | {} ===> {}x{}c{}\n", bc.z(), bc.y(), bc.x(), bc.c, tile.rows,tile.cols,tile.channels());
+
+			int yy = h-1-y;
 
 			if (tile.empty()) {
-				out(cv::Rect{x*tileSize,y*tileSize,tileSize,tileSize}) = cv::Scalar{0};
+				out(cv::Rect{x*tileSize,yy*tileSize,tileSize,tileSize}) = cv::Scalar{0};
 			} else {
-				fmt::print(" - copy to {} {}, {} {} c{}\n", x*tileSize, y*tileSize, tileSize,tileSize,out.channels());
+				// fmt::print(" - copy to {} {}, {} {} c{}\n", x*tileSize, yy*tileSize, tileSize,tileSize,out.channels());
 				// out(cv::Rect{x*tileSize,y*tileSize,tileSize,tileSize}) = tile;
-				tile.copyTo(out(cv::Rect{x*tileSize,y*tileSize,tileSize,tileSize}));
+				tile.copyTo(out(cv::Rect{x*tileSize,yy*tileSize,tileSize,tileSize}));
 			}
 		}
 
 		return out;
 	}
 
-#error the entire writer_gdal.cc is wrong: it is flipped upside down!
 
+		//WARNING: Lightly test
+		//FIXME: Test me
 	cv::Mat FlatReaderCached::rasterIo(double wmTlbr[4], int w, int h, int c) {
 		// Determine optimal level to sample from.
 		// Determine integer tlbr on that level.
@@ -208,8 +212,8 @@ namespace frast {
 		auto meter_w = (wmTlbr[2] - wmTlbr[0]);
 		// float meters_per_pixel = meter_w / w;
 		// float res = meters_per_pixel * tileSize;
-		// FIXME: This is wrong, but it is also making othertings wrong that should go wrong
-		float res = .25*.125 * meter_w * (static_cast<float>(w) / tileSize);
+		// NOTE: Test this
+		float res = meter_w * (tileSize / static_cast<float>(w));
 
 		uint32_t lvl = find_level_for_mpp(res);
 
@@ -225,13 +229,16 @@ namespace frast {
 		int iwm_h = iwmTlbr[3] - iwmTlbr[1];
 		int n_tiles = iwm_w * iwm_h;
 
+		fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
+
 		if (n_tiles > 256) {
 			std::string msg = fmt::format("[rasterIo] refusing to sample {} tiles ({} x {}) try a smaller patch.", n_tiles,iwm_w,iwm_h);
 			throw std::runtime_error(msg);
 		}
 
 		cv::Mat sampledImg = getTlbr(lvl, iwmTlbr, c);
-		return sampledImg;
+		// return sampledImg;
+
 
 		double sampledWmW = sampledWmTlbr[2] - sampledWmTlbr[0];
 		double sampledWmH = sampledWmTlbr[3] - sampledWmTlbr[1];
@@ -242,23 +249,26 @@ namespace frast {
 		// double queryH = wmTlbr[3] - wmTlbr[1];
 
 		double pts1[] = {
-			0, 0,
-			sampledW, 0,
-			sampledW, sampledH,
+			// 0, 0,
+			// sampledW, 0,
+			// sampledW, sampledH,
 			// 0, sampledH,
 			// sampledW, sampledH,
 			// sampledW, 0,
+			0, dh,
+			dw, dh,
+			dw, 0,
 		};
 		double pts2[] = {
 			// (wmTlbr[0]-sampledWmTlbr[0]) * (dw/sampledWmW), (wmTlbr[1]-sampledWmTlbr[1]) * (dh/sampledWmH),
 			// (wmTlbr[2]-sampledWmTlbr[0]) * (dw/sampledWmW), (wmTlbr[1]-sampledWmTlbr[1]) * (dh/sampledWmH),
 			// (wmTlbr[2]-sampledWmTlbr[0]) * (dw/sampledWmW), (wmTlbr[3]-sampledWmTlbr[1]) * (dh/sampledWmH),
-			// (wmTlbr[0]-sampledWmTlbr[0]) * (sampledW/sampledWmW), (wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
-			// (wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), (wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
-			// (wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), (wmTlbr[3]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
 			(wmTlbr[0]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
 			(wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
 			(wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[3]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+			// (wmTlbr[0]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+			// (wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+			// (wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[3]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
 		};
 
 		float pts1f[6];
@@ -272,12 +282,14 @@ namespace frast {
 		cv::Mat A = cv::getAffineTransform(pts2_, pts1_);
 		cv::Mat out;
 
+		/*
 		fmt::print(" - chosenlvl:: {}\n", lvl);
 		fmt::print(" - ask tlbr :: {} {} {} {}\n", wmTlbr[0], wmTlbr[1], wmTlbr[2], wmTlbr[3]);
 		fmt::print(" - iwm tlbr :: {} {} {} {}\n", iwmTlbr[0], iwmTlbr[1], iwmTlbr[2], iwmTlbr[3]);
-		fmt::print(" - sam tlbr :: {} {} {} {}\n", sampledWmTlbr[0], sampledWmTlbr[1], sampledWmTlbr[2], sampledWmTlbr[3]);
+		fmt::print(" - sam tlbr :: {} {} {} {} => {} {}\n", sampledWmTlbr[0], sampledWmTlbr[1], sampledWmTlbr[2], sampledWmTlbr[3], w,h);
 		std::cout << " - warping with A:\n" << A <<"\n";
 		std::cout << " - From pts:\n" << pts1_ << "\n" << pts2_ <<"\n";
+		*/
 
 		cv::warpAffine(sampledImg, out, A, cv::Size{w,h});
 		// cv::resize(sampledImg, out, cv::Size{w,h});

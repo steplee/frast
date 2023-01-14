@@ -43,6 +43,7 @@ class WriterMaster : public ThreadPool {
 		void start(const ConvertConfig& cfg);
 
 		inline bool didWriterLoopExit() { return writerLoopExited.load(); }
+		inline bool isTerrain() const { return env.isTerrain(); }
 
 	public:
 		virtual void process(int workerId, const Key& key) override;
@@ -53,6 +54,7 @@ class WriterMaster : public ThreadPool {
 		FlatEnvironment env;
 		// WriteCfg cfg;
 		ConvertConfig cfg;
+		EnvOptions envOpts;
 
 		std::vector<ProcessedData> processedData;
 		std::mutex writerMtx;
@@ -60,6 +62,7 @@ class WriterMaster : public ThreadPool {
 		std::thread writerThread;
 		void writerLoop();
 		std::atomic_bool writerLoopExited = false;
+
 
 		int lastNumEnqueued = 0;
 
@@ -74,6 +77,9 @@ class WriterMaster : public ThreadPool {
 		void* create_gdal_stuff(int workerId);
 		void destroy_master_data();
 		int curLevel=-1, curIndex=0;
+
+
+	protected:
 };
 
 
@@ -85,6 +91,7 @@ class WriterMasterAddo : public ThreadPool {
 		void start(const ConvertConfig& cfg);
 
 		inline bool didWriterLoopExit() { return writerLoopExited.load(); }
+		inline bool isTerrain() const { return env.isTerrain(); }
 
 	public:
 		virtual void process(int workerId, const Key& key) override;
@@ -94,6 +101,7 @@ class WriterMasterAddo : public ThreadPool {
 	private:
 		FlatEnvironment env;
 		ConvertConfig cfg;
+		EnvOptions envOpts;
 
 		std::vector<ProcessedData> processedData;
 		std::mutex writerMtx;
@@ -116,6 +124,8 @@ class WriterMasterAddo : public ThreadPool {
 		void destroy_master_data();
 		int curLevel=-1, curIndex=0;
 		std::string path_;
+
+	protected:
 };
 
 }

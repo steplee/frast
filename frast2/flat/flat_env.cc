@@ -22,6 +22,7 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 			// metaOffset = metaLength =
 			// keysOffset = keysLength =
 			// valsOffset = valsLength = 0;
+			meta()->rasterType = opts.isTerrain ? FileMeta::RasterType::eTerrain : FileMeta::RasterType::eColor;
 			fmt::print(" - [FlatEnv] using new file, currentEnd {}\n", currentEnd);
 		} else {
 
@@ -42,9 +43,12 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 			currentEnd = off;
 			fmt::print(" - [FlatEnv] using old file, found currentEnd {}\n", currentEnd);
 
+			if (opts.isTerrain) assert(meta()->rasterType == FileMeta::RasterType::eTerrain);
+			else assert(meta()->rasterType != FileMeta::RasterType::eTerrain);
 		}
 
 }
+
 FlatEnvironment::~FlatEnvironment() {
 	assert(currentLvl == INVALID_LVL && "you called startLevel without endLevel later");
 		// fmt::print(" - [~FlatEnv] writing  {}\n", head);
@@ -319,5 +323,33 @@ uint64_t FlatEnvironment::growLevelValues() {
 		val.len = getValueLen(lvl, lo);
 		return val;
 	}
+
+	bool FlatEnvironment::keyExists(uint64_t lvl, uint64_t key) {
+		auto& spec = meta()->levelSpecs[lvl];
+
+		if (spec.keysLength == 0) false;
+
+		// Binary search for the key
+		int64_t n = spec.nitemsUsed();
+		uint64_t* keys = getKeys(lvl);
+		int64_t lo = 0;
+		int64_t hi = n-1;
+		while (lo < hi) {
+			int64_t mid = (lo+hi+1)/2;
+			if (key < keys[mid]) {
+				hi = mid-1;
+			} else if (key > keys[mid]) {
+				lo = mid + 1;
+			} else {
+				lo = mid;
+				break;
+			}
+		}
+		
+		// fmt::print(" - bin searched for key {}, final lo was at idx {}, key {}\n", key, lo, keys[lo]);
+		if (keys[lo] != key) return false;
+		return true;
+	}
+
 }
 

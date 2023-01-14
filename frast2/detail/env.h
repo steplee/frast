@@ -41,6 +41,7 @@ namespace frast {
 		// Used for easier testing: ignores @path and does not back memory to disk.
 		bool anon = false;
 		bool readonly = false;
+		bool isTerrain = false;
 	};
 
 	template <class Derived>

@@ -6,7 +6,7 @@
 
 #include <fmt/core.h>
 
-#include <convertFlatBlocked/reader.h>
+#include <flat/reader.h>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
@@ -165,21 +165,20 @@ int main(int argc, char** argv) {
 
 	fmt::print(" - action={}\n", action);
 
+	std::string path = parser.get2<std::string>("-i", "--input").value();
+	bool isTerrain = parser.get2<bool>("-t", "--terrain", 0).value();
+	EnvOptions opts;
+	opts.isTerrain = isTerrain;
+	FlatReaderCached reader(path, opts);
+
 	if (action == "info") {
-		std::string path = parser.get2<std::string>("-i", "--input").value();
-		EnvOptions opts;
-		FlatReader reader(path, opts);
 		uint32_t tlbr[4];
 		auto lvl = reader.determineTlbr(tlbr);
 		fmt::print(" - Tlbr (lvl {}) [{} {} -> {} {}]\n", lvl, tlbr[0], tlbr[1], tlbr[2], tlbr[3]);
 	}
 
 	if (action == "showTiles") {
-		std::string path = parser.get2<std::string>("-i", "--input").value();
 		int chosenLvl = parser.get2<int>("-l", "--level", -1).value();
-
-		EnvOptions opts;
-		FlatReader reader(path, opts);
 
 		uint32_t tlbr[4];
 		auto deepestLvl = reader.determineTlbr(tlbr);
@@ -205,8 +204,8 @@ int main(int argc, char** argv) {
 
 
 			if (val.value != nullptr) {
-				cv::_InputArray buf((uint8_t*)val.value, val.len);
-				cv::Mat img = cv::imdecode(buf, cv::IMREAD_COLOR);
+				cv::Mat img = decodeValue(val, opts.isTerrain?1:3, opts.isTerrain);
+
 				cv::imshow("tile", img);
 				cv::waitKey(0);
 			}
@@ -218,11 +217,6 @@ int main(int argc, char** argv) {
 	if (action == "showSample") {
 		int edge = parser.get<int>("--edge", 1440).value();
 
-		std::string path = parser.get2<std::string>("-i", "--input").value();
-
-		EnvOptions opts;
-		FlatReaderCached reader(path, opts);
-
 		double dwmTlbr[4];
 		uint32_t iwmTlbr[4];
 		auto deepestLvl = reader.determineTlbr(iwmTlbr);
@@ -232,9 +226,9 @@ int main(int argc, char** argv) {
 
 		cv::Mat img;
 		if (nw > nh) {
-			img = reader.rasterIo(dwmTlbr, edge, nh*edge/nw, 3);
+			img = reader.rasterIo(dwmTlbr, edge, nh*edge/nw, opts.isTerrain?1:3);
 		} else {
-			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, 3);
+			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, opts.isTerrain?1:3);
 		}
 
 		cv::imshow("sample", img);
@@ -245,10 +239,6 @@ int main(int argc, char** argv) {
 		int edge = parser.get<int>("--edge", 1440).value();
 		Tlbr tlbr = parser.get<Tlbr>("--tlbr").value();
 
-		std::string path = parser.get2<std::string>("-i", "--input").value();
-
-		EnvOptions opts;
-		FlatReaderCached reader(path, opts);
 
 		double dwmTlbr[4] = {tlbr.tl[0], tlbr.tl[1], tlbr.br[0], tlbr.br[1]};
 		int nw = dwmTlbr[2]-dwmTlbr[0];
@@ -256,9 +246,9 @@ int main(int argc, char** argv) {
 
 		cv::Mat img;
 		if (nw > nh) {
-			img = reader.rasterIo(dwmTlbr, edge, nh*edge/nw, 3);
+			img = reader.rasterIo(dwmTlbr, edge, (nh*edge)/nw, opts.isTerrain?1:3);
 		} else {
-			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, 3);
+			img = reader.rasterIo(dwmTlbr, (nw*edge)/nh, edge, opts.isTerrain?1:3);
 		}
 
 		cv::imshow("sample", img);

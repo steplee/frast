@@ -8,7 +8,7 @@ namespace frast {
 
 WriterMaster::WriterMaster(const std::string& outPath, const EnvOptions& opts)
 	: ThreadPool(4),
-	  env(outPath, opts) {
+	  env(outPath, opts), envOpts(opts) {
 
 
 }
@@ -16,8 +16,11 @@ WriterMaster::WriterMaster(const std::string& outPath, const EnvOptions& opts)
 void WriterMaster::start(const ConvertConfig& cfg_) {
 	cfg = cfg_;
 
+	if (envOpts.isTerrain) assert(cfg.channels == 1);
+
 	assert(cfg.baseLevel >= 0 and cfg.baseLevel < 30);
 	assert(cfg.srcPaths.size() > 0);
+	assert(cfg.srcPaths.size() == 1); // for now...
 
 	env.beginLevel(cfg.baseLevel);
 
