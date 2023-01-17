@@ -1,6 +1,6 @@
 #pragma once
 
-#include "flat/flat_env.h"
+#include "frast2/flat/flat_env.h"
 
 namespace cv { class Mat; };
 

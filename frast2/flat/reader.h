@@ -3,7 +3,7 @@
 #include <opencv2/core.hpp>
 
 #include "flat_env.h"
-#include "detail/data_structures.hpp"
+#include "frast2/detail/data_structures.hpp"
 
 #include "codec.h"
 

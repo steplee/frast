@@ -1,7 +1,7 @@
 #pragma once
 
-#include "frastgl/utils/eigen.h"
-#include "frastgl/core/render_state.h"
+#include "frast2/frastgl/utils/eigen.h"
+#include "frast2/frastgl/core/render_state.h"
 
 #include <thread>
 #include <mutex>
@@ -15,12 +15,12 @@
 // #include "frastVk/core/app.h"
 // #include "frastVk/core/fvkApi.h"
 // #include "frastVk/extra/caster/castable.h"
-#include "frastgl/extra/caster/castable.h"
+#include "frast2/frastgl/extra/caster/castable.h"
 
 #include <fmt/color.h>
 #include <fmt/ostream.h>
 
-#include "frastgl/core/shader.h"
+#include "frast2/frastgl/core/shader.h"
 
 namespace frast {
 

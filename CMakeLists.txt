@@ -11,7 +11,17 @@ set(libsZ "z")
 # Options
 #####################
 
-option(STATIC_OPENCV "Force opencv static libs" ON)
+# I thought I could have a completely independent (and private) usage of OpenCV.
+# But once again, the Unix linking experience has been awful and this was not
+# easy. I do not recommend turning this on, because if a user of the libfrast2.a
+# includes a different opencv version, problems occur.
+#
+# What I wanted was to just copy all needed symbols from the static opencv libs and make them private.
+# Kind of like inlining functions. But instead you get undefined references and this forces you to pass
+# the same opencv libs to link with, destroying the encapsulation.
+option(STATIC_OPENCV "Force opencv static libs" OFF)
+
+option(ENABLE_IMGUI "Enable imgui" ON)
 
 #####################
 # Catch2
@@ -30,6 +40,9 @@ include(CTest)
 include(Catch)
 
 
+#####################
+# Fmt
+#####################
 
 set(FMT_TEST OFF)
 set(CMAKE_CXX_FLAGS_OLD CMAKE_CXX_FLAGS)
@@ -43,8 +56,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(dep_fmt)
 
 
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frast2)
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frast2) # Actually: don't do this, makes installing easier
 include_directories(/usr/local/include/eigen3)
 
 set(libsGdal gdal)
@@ -66,12 +80,11 @@ set(libsCv ${OpenCV_LIBRARIES})
 
 
 add_library(frast2
-	frast2/db.cc
+	STATIC
 	frast2/detail/bptree.cc
 	frast2/detail/env.cc
 	frast2/tpool/tpool.cc
 
-	frast2/flat_writer.cc
 	frast2/flat/flat_env.cc
 	frast2/flat/writer.cc
 	frast2/flat/writer_gdal.cc
@@ -79,21 +92,20 @@ add_library(frast2
 	frast2/flat/reader.cc
 	frast2/flat/codec.cc
 	)
+# target_link_libraries(frast2 fmt::fmt pthread)
 target_link_libraries(frast2 fmt::fmt pthread ${libsCv} ${libsZ})
+# target_link_libraries(frast2 PUBLIC fmt::fmt pthread -Wl,--no-as-needed opencv_core -Wl,--as-needed)
+# message(STATUS "opencv libs ${libsCv}")
+# target_link_options(frast2 PUBLIC "-Wl,--whole-archive ${libsCv} ${libsZ} -Wl,--no-whole-archive")
+# target_link_options(frast2 PRIVATE -Wl,--no-as-needed ${libsCv} ${libsZ} -Wl,--as-needed)
 
 # add_executable(runFlatWriter frast2/convertFlatBlocked/run.cc)
 # target_link_libraries(runFlatWriter frast2 fmt::fmt)
-add_executable(runFlatWriter frast2/flat/main.cc)
+add_executable(runFlatWriter frast2/flat/convertMain.cc)
 target_link_libraries(runFlatWriter frast2 fmt::fmt ${libsGdal})
 
 add_executable(frastTool frast2/tool/main.cc)
 target_link_libraries(frastTool frast2 fmt::fmt)
-
-#####################
-# FrastGL
-#####################
-
-add_subdirectory(frast2/frastgl)
 
 #####################
 # FrastPy
@@ -103,6 +115,43 @@ find_package(pybind11 REQUIRED)
 pybind11_add_module(frastpy2 frast2/py/frastpy2.cc)
 target_link_libraries(frastpy2 PUBLIC frast2)
 
+# Install libs, headers, and python files.
+
+install(TARGETS frast2        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
+install(TARGETS runFlatWriter LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS frastTool     LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(DIRECTORY
+	${CMAKE_CURRENT_SOURCE_DIR}/frast2/
+	DESTINATION ${CMAKE_INSTALL_PREFIX}/include/frast2
+	FILES_MATCHING
+		PATTERN "*.h"
+		PATTERN "*.hpp"
+		PATTERN "*/__pycache__/*" EXCLUDE
+		PATTERN "*/frastgl/*" EXCLUDE # this is covered in frastgl/CMakeLists.txt
+		)
+
+# Don't install to normal dist-packages because we cannot control that well.
+# Instead, install to the user-configurable prefix in the "python" dir.
+#EXECUTE_PROCESS( COMMAND "python -c 'import site; print(site.getsitepackages()[0])'" OUTPUT_VARIABLE PYTHON3_DIST_PACKAGE_DIR )
+
+# For example, if DESTDIR=/data/temp, and CMAKE_INSTALL_PREFIX=/usr/local/:
+#     PYTHONPATH=/data/temp/usr/local/python/ python3
+# The above command will be able to load frastpy2
+install(TARGETS frastpy2 LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/python)
+install(DIRECTORY frast2/py/
+	DESTINATION ${CMAKE_INSTALL_PREFIX}/python
+	FILES_MATCHING
+		PATTERN "*.py"
+		PATTERN "*.proto"
+		PATTERN "*/__pycache__" EXCLUDE)
+
+
+
+#####################
+# FrastGL
+#####################
+
+add_subdirectory(frast2/frastgl)
 
 #####################
 # Tests
@@ -123,10 +172,6 @@ catch_discover_tests(testDataStructures)
 add_executable(testLruCacheAndRingBuffer frast2/detail/testLruCacheAndRingBuffer.cc)
 target_link_libraries(testLruCacheAndRingBuffer Catch2::Catch2WithMain frast2 fmt::fmt)
 catch_discover_tests(testLruCacheAndRingBuffer)
-
-# add_executable(testFlatWriter frast2/test_fw.cc)
-# target_link_libraries(testFlatWriter Catch2::Catch2WithMain frast2 fmt::fmt)
-# catch_discover_tests(testFlatWriter)
 
 add_executable(ebpfStuff frast2/experiment/ebpf_stuff.cc)
 target_link_libraries(ebpfStuff Catch2::Catch2WithMain fmt::fmt)

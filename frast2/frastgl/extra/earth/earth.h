@@ -1,7 +1,7 @@
 #pragma once
 
 // #include "frastgl/core/window.h"
-#include "frastgl/core/shader.h"
+#include "frast2/frastgl/core/shader.h"
 
 namespace frast {
 

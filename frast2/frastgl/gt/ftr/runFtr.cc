@@ -1,8 +1,9 @@
 #include <unistd.h>
 
-#include "frastgl/core/app.h"
-#include "frastgl/core/render_state.h"
-#include "frastgl/extra/earth/earth.h"
+#include "frast2/frastgl/core/app.h"
+#include "frast2/frastgl/core/imgui/imgui_app.h"
+#include "frast2/frastgl/core/render_state.h"
+#include "frast2/frastgl/extra/earth/earth.h"
 #include "ftr.h"
 
 #include <chrono>
@@ -13,11 +14,14 @@ using namespace frast;
 // No need for this to not use the main thread -- except that is an example for future applications.
 //
 
-class TestApp : public App {
+// using BaseClass_App = App;
+using BaseClass_App = ImguiApp;
+
+class TestApp : public BaseClass_App {
 	public:
 
 		inline TestApp(const AppConfig& cfg)
-			: App(cfg)
+			: BaseClass_App(cfg)
 		{
 			thread = std::thread(&TestApp::loop, this);
 		}
@@ -46,6 +50,8 @@ class TestApp : public App {
 
 			earthEllps->render(rs);
 
+			if constexpr (std::is_same_v<BaseClass_App, ImguiApp>)
+				ImguiApp::renderUi(rs);
 
 			window.endFrame();
 			
@@ -64,6 +70,7 @@ class TestApp : public App {
 			setExampleCasterData();
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
+
 
 
 		}

@@ -8,7 +8,7 @@
 #include <fmt/color.h>
 #include <fmt/ostream.h>
 
-#include "frastgl/shaders/ft.h"
+#include "frast2/frastgl/shaders/ft.h"
 
 #include <opencv2/highgui.hpp>
 
@@ -119,7 +119,7 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 		glUniformMatrix4fv(5, 1, true, casterStuff.cpuCasterBuffer.casterMatrix2);
 
 		Eigen::Map<RowMatrix4f> m(casterStuff.cpuCasterBuffer.casterMatrix1);
-		fmt::print(" - caster matrix:\n{} mask {}\n", m, casterStuff.casterMask);
+		// fmt::print(" - caster matrix:\n{} mask {}\n", m, casterStuff.casterMask);
 	}
 
 
@@ -505,7 +505,7 @@ bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, GtTileData& td) {
 }
 
 void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff) {
-	fmt::print(" - rendering casted\n");
+	// fmt::print(" - rendering casted\n");
 
 	glBindTexture(GL_TEXTURE_2D, td.tex);
 	glBindBuffer(GL_ARRAY_BUFFER, td.verts);

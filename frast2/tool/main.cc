@@ -1,11 +1,11 @@
 #include <fmt/core.h>
 
-#include <flat/reader.h>
+#include "frast2/flat/reader.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 
-#include "detail/argparse.hpp"
+#include "frast2/detail/argparse.hpp"
 
 
 int main(int argc, char** argv) {

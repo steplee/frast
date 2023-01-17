@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../gt.h"
-#include "flat/reader.h"
+#include "frast2/flat/reader.h"
 
 namespace frast {
 

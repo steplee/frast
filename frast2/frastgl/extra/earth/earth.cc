@@ -1,8 +1,8 @@
 #include "earth.h"
 
-#include "frastgl/core/render_state.h"
-#include "frastgl/core/shader.h"
-#include "frastgl/shaders/earth.h"
+#include "frast2/frastgl/core/render_state.h"
+#include "frast2/frastgl/core/shader.h"
+#include "frast2/frastgl/shaders/earth.h"
 
 namespace frast {
 

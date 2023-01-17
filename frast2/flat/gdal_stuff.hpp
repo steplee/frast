@@ -1,7 +1,7 @@
 #pragma once
 
-#include "coordinates.h"
-#include "detail/solve.hpp"
+#include "frast2/coordinates.h"
+#include "frast2/detail/solve.hpp"
 
 #include <algorithm>
 
