@@ -11,6 +11,8 @@ namespace frast {
 
 		window.setupWindow();
 
+		window.addIoUser(this);
+
 		doInit();
 
 	}

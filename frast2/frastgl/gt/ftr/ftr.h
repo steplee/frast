@@ -203,6 +203,7 @@ struct FtTile : public GtTile<FtTypes, FtTile> {
 	void updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer);
 
 	void doRender(GtTileData& td);
+	void doRenderCasted(GtTileData& td, const CasterStuff& casterStuff);
 
 };
 

@@ -215,7 +215,7 @@ void WriterMasterAddo::handleProcessedData(std::vector<ProcessedData>& processed
 	// TODO: do this on another thread than the one that queues data?
 	std::sort(processedData.begin(), processedData.end());
 
-	fmt::print(" - addo handle proc {}\n", processedData.size());
+	// fmt::print(" - addo handle proc {}\n", processedData.size());
 
 	for (auto& pd : processedData) {
 		if (pd.value == nullptr) assert(pd.valueLength == ProcessedData::INVALID_VALUE_LENGTH);
@@ -263,7 +263,7 @@ std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	auto reader = static_cast<FlatReader*>(masterData);
 	uint32_t lvlTlbr[4];
 	uint32_t mainTlbr[4];
-	auto mainLvl = reader->determineTlbr(mainTlbr); // FIXME: remove this call
+	auto mainLvl = reader->determineTlbr(mainTlbr); // FIXME: remove this call: it is slow!
 
 	int64_t zoom = mainLvl - curLevel;
 	assert(zoom > 0);
@@ -273,9 +273,21 @@ std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	lvlTlbr[1] = mainTlbr[1] / (1 << zoom);
 	lvlTlbr[2] = (mainTlbr[2] + ((1l<<zoom)-1l)) / (1 << zoom);
 	lvlTlbr[3] = (mainTlbr[3] + ((1l<<zoom)-1l)) / (1 << zoom);
+
+	auto ex = (mainTlbr[2]) / (1 << zoom);
+	auto ey = (mainTlbr[3]) / (1 << zoom);
+	auto w0 = ex - lvlTlbr[0];
+	auto h0 = ey - lvlTlbr[1];
+
+	if (w0 == 0 and h0 == 0) {
+		fmt::print(fmt::fg(fmt::color::magenta), " - [yieldNextKeys()] Reached end of lvl {} because floored coords were both zero.\n", curLevel);
+		return out;
+	}
+
+
 	// lvlTlbr[2] = (mainTlbr[2]) / (1 << zoom);
 	// lvlTlbr[3] = (mainTlbr[3]) / (1 << zoom);
-	fmt::print(" - level {}, tlbr {} {} -> {} {}\n", curLevel, lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3]);
+	fmt::print(" - level {}, tlbr {} {} -> {} {} (w0h0 {} {})\n", curLevel, lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3], w0,h0);
 
 	uint64_t w = lvlTlbr[2] - lvlTlbr[0];
 	uint64_t h = lvlTlbr[3] - lvlTlbr[1];
@@ -332,7 +344,7 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		// All empty...
 		value = nullptr;
 		valueLength = ProcessedData::INVALID_VALUE_LENGTH;
-		fmt::print(" - Empty tile for {} {} {}\n", above.z(), above.y(), above.x());
+		// fmt::print(" - Empty tile for {} {} {}\n", above.z(), above.y(), above.x());
 	} else {
 		if (imga.empty() or imgb.empty() or imgc.empty() or imgd.empty()) {
 			// Find the non empty image to use as a template -- the empty ones are like it, but filled zero

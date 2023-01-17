@@ -8,6 +8,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(libsZ "z")
 
 #####################
+# Options
+#####################
+
+option(STATIC_OPENCV "Force opencv static libs" ON)
+
+#####################
 # Catch2
 #####################
 
@@ -43,7 +49,14 @@ include_directories(/usr/local/include/eigen3)
 
 set(libsGdal gdal)
 
-find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
+
+if (STATIC_OPENCV)
+	find_package(OpenCV REQUIRED NO_DEFAULT_PATH HINTS /opt/opencvStatic47)
+else()
+	find_package(OpenCV REQUIRED)
+endif()
+
 include_directories(${OpenCV_INCLUDE_DIRS})
 set(libsCv ${OpenCV_LIBRARIES})
 

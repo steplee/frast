@@ -57,7 +57,11 @@ void GtTile<GtTypes,Derived>::render(typename GtTypes::RenderContext& gtrc) {
 
 			// FIXME: Do it.
 
-			static_cast<Derived*>(this)->doRender(td);
+			if (gtrc.casterStuff.casterMask != 0)
+				static_cast<Derived*>(this)->doRenderCasted(td, gtrc.casterStuff);
+			else
+				static_cast<Derived*>(this)->doRender(td);
+
 			/*
 			glBindTexture(GL_TEXTURE_2D, td.tex);
 			glBindBuffer(GL_ARRAY_BUFFER, td.verts);
@@ -548,7 +552,7 @@ void GtRenderer<GtTypes,Derived>::render(RenderState& rs) {
 		setCasterInRenderThread();
 	}
 
-	typename GtTypes::RenderContext gtrc { rs, gtpd };
+	typename GtTypes::RenderContext gtrc { rs, gtpd, casterStuff };
 
 	/*
 
@@ -637,10 +641,10 @@ void GtRenderer<GtTypes,Derived>::init(const AppConfig& cfg) {
 		glBindTexture(GL_TEXTURE_2D, gtpd.datas[i].tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-		// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		glGenBuffers(1, &gtpd.datas[i].verts);
@@ -879,6 +883,9 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 	for (int j=0; j<i; j++) std::swap(mvpf_column[i*4+j] , mvpf_column[j*4+i]);
 	glLoadMatrixf(mvpf_column);
 
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 
 	// DFS and draw
 	std::stack<typename GtTypes::Tile*> stack;
@@ -891,16 +898,16 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 		if (cur->leaf()) {
 
 			if (cur->terminal()) {
-				float color[4] = { 1.f, .2f, .2f, .5f };
+				float color[4] = { 1.f, .2f, .2f, .7f };
 				drawWithColor(cur, color);
 			} else {
-				float color[4] = { 1.f, 1.f, 1.f, .5f };
+				float color[4] = { 1.f, 1.f, 1.f, .7f };
 				drawWithColor(cur, color);
 			}
 
 		} else {
 
-			float color[4] = { 0.f, 1.f, 1.f, .3f };
+			float color[4] = { 0.f, 1.f, 1.f, .4f };
 			drawWithColor(cur, color);
 
 			for (auto child : cur->children) stack.push(child);

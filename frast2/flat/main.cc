@@ -1,11 +1,11 @@
-
 #include "writer.h"
+#include "detail/argparse.hpp"
 
 using namespace frast;
 
-int main() {
+int main(int argc, char** argv) {
 
-
+	/*
 	std::string fname = "/data/naip/mocoNaip/moco.fft";
 	unlink(fname.c_str());
 	ConvertConfig cfg;
@@ -15,20 +15,53 @@ int main() {
 	bool isTerrain = false;
 
 	if (0) {
-	fname = "/data/elevation/gmted/gmted.fft";
-	unlink(fname.c_str());
-	cfg.srcPaths = {"/data/elevation/gmted/usa_mean150.3857_4979.tif"};
-	cfg.baseLevel = 8;
-	cfg.addo = true;
-	isTerrain = true;
-	cfg.channels = 1;
+		fname = "/data/elevation/gmted/gmted.fft";
+		unlink(fname.c_str());
+		cfg.srcPaths = {"/data/elevation/gmted/usa_mean150.3857_4979.tif"};
+		cfg.baseLevel = 8;
+		cfg.addo = true;
+		isTerrain = true;
+		cfg.channels = 1;
+	}
+	*/
+
+	ArgParser parser(argc, argv);
+	auto color = parser.getChoice2("-c", "--color", "rgb", "gray", "terrain").value();
+	std::string inpPath = parser.get2<std::string>("-i", "--input").value();
+	std::string outPath = parser.get2<std::string>("-o", "--output").value();
+	int level = parser.get2<int>("-l", "--level").value();
+
+	struct stat statbuf;
+	int res = ::stat(outPath.c_str(), &statbuf);
+	if (res == 0) {
+		// unlink(outPath.c_str());
+		fmt::print(" - Not running: the output file '{}' already exists\n", outPath);
+		throw std::runtime_error("output file already exists");
 	}
 
+	EnvOptions envOpts;
+	ConvertConfig ccfg;
+
+	if (color == "terrain") {
+		envOpts.isTerrain = true;
+		ccfg.channels = 1;
+	} else if (color == "gray") {
+		ccfg.channels = 1;
+	} else if (color == "rgb") {
+		ccfg.channels = 3;
+	} else {
+		throw std::runtime_error("unsupported 'color' option");
+	}
+
+	ccfg.srcPaths = {inpPath};
+	ccfg.baseLevel = level;
+	ccfg.addo = true;
+
+
+	// Run initial job: convert gdal -> frast2
 	{
-		EnvOptions envOpts;
-		envOpts.isTerrain = isTerrain;
-		WriterMaster wm(fname, envOpts);
-		wm.start(cfg);
+		WriterMaster wm(outPath, envOpts);
+		wm.start(ccfg);
 
 		while (not wm.didWriterLoopExit())
 			sleep(1);
@@ -36,11 +69,11 @@ int main() {
 		wm.stop();
 	}
 
-	if (cfg.addo) {
-		EnvOptions envOpts;
-		envOpts.isTerrain = isTerrain;
-		WriterMasterAddo wm(fname, envOpts);
-		wm.start(cfg);
+	// Run addo job: convert frast2 -> frast2
+	//               half-scaling each level until the the range stops getting smaller (1x1 or so).
+	if (ccfg.addo) {
+		WriterMasterAddo wm(outPath, envOpts);
+		wm.start(ccfg);
 
 		while (not wm.didWriterLoopExit())
 			sleep(1);

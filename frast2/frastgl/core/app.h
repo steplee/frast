@@ -11,7 +11,7 @@ struct AppConfig {
 	bool headless = false;
 };
 
-class App {
+class App : public UsesIO {
 	public:
 		App(const AppConfig& cfg);
 

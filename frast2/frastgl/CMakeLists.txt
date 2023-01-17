@@ -24,10 +24,13 @@ add_library(frastgl
 	core/window.cc
 	core/app.cc
 	core/shader.cc
+
 	extra/caster/castable.cc
+	extra/earth/earth.cc
 
 	gt/ftr/ftr.cc
 	gt/gt.cc
+
 )
 
 target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW)

@@ -68,15 +68,12 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 		setCasterInRenderThread();
 	}
 
-	typename FtTypes::RenderContext gtrc { rs, gtpd };
-
-	// FIXME: Replace vk with gl. Set uniforms
-
+	typename FtTypes::RenderContext gtrc { rs, gtpd, casterStuff };
 
 	float mvpf[16];
 	rs.mvpf(mvpf);
 
-	glDisable(GL_CULL_FACE); // FIXME: remove.
+	glEnable(GL_CULL_FACE);
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
@@ -91,15 +88,39 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 	glColor4f(0,0,1,1); glVertex3f(0,0,0); glVertex3f(0,0,1);
 	glEnd();
 
-	glUseProgram(normalShader.prog);
+
 
 	glEnable(GL_TEXTURE_2D);
 
-	glUniformMatrix4fv(0, 1, true, mvpf); // mvp
-	glUniform1i(1, 0); // sampler2d
 
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
+
+	if (casterStuff.casterMask == 0) {
+		// Normal shader.
+		glUseProgram(normalShader.prog);
+		glUniformMatrix4fv(0, 1, true, mvpf); // mvp
+
+		glUniform1i(1, 0); // sampler2d
+		glActiveTexture(GL_TEXTURE0);
+	} else {
+		// Casted shader.
+		glUseProgram(castableShader.prog);
+		glUniformMatrix4fv(0, 1, true, mvpf); // mvp
+
+		glUniform1i(2, 1);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, casterStuff.tex);
+		glUniform1i(1, 0); // sampler2d
+		glActiveTexture(GL_TEXTURE0);
+
+		glUniform1ui(3, casterStuff.casterMask); // mask
+		glUniformMatrix4fv(4, 1, true, casterStuff.cpuCasterBuffer.casterMatrix1);
+		glUniformMatrix4fv(5, 1, true, casterStuff.cpuCasterBuffer.casterMatrix2);
+
+		Eigen::Map<RowMatrix4f> m(casterStuff.cpuCasterBuffer.casterMatrix1);
+		fmt::print(" - caster matrix:\n{} mask {}\n", m, casterStuff.casterMask);
+	}
 
 
 	for (auto root : roots) {
@@ -113,6 +134,9 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	if (GT_DEBUG and debugMode) renderDbg(rs);
@@ -202,16 +226,16 @@ void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData
 		*/
 
 		if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord)) {
-			fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
+			// fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
 			colorBuf = colorDset->getTile(tile->coord, 4);
-			fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
+			// fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
 			auto size = colorBuf.total()*colorBuf.elemSize();
 			mesh.img_buffer_cpu.resize(size);
 			mesh.texSize[0] = colorBuf.rows;
 			mesh.texSize[1] = colorBuf.cols;
 			mesh.texSize[2] = colorBuf.channels();
 			memcpy(mesh.img_buffer_cpu.data(), colorBuf.data, size);
-			cv::imshow("img", colorBuf); cv::waitKey(0);
+			// cv::imshow("img", colorBuf); cv::waitKey(0);
 			return;
 		}
 
@@ -480,19 +504,35 @@ bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, GtTileData& td) {
 	return false;
 }
 
+void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff) {
+	fmt::print(" - rendering casted\n");
+
+	glBindTexture(GL_TEXTURE_2D, td.tex);
+	glBindBuffer(GL_ARRAY_BUFFER, td.verts);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, td.inds);
+
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*6, 0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*6, (void*)(4*4));
+
+	glDrawElements(GL_TRIANGLES, td.residentInds, GL_UNSIGNED_SHORT, 0);
+}
+
 void FtTile::doRender(GtTileData& td) {
 
-		glBindTexture(GL_TEXTURE_2D, td.tex);
-		glBindBuffer(GL_ARRAY_BUFFER, td.verts);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, td.inds);
+	// NOTE: To avoid excessive state switches and line noise: assume correct shader is already bound (as well as uniforms)
 
-		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*6, 0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*6, (void*)(4*4));
+	glBindTexture(GL_TEXTURE_2D, td.tex);
+	glBindBuffer(GL_ARRAY_BUFFER, td.verts);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, td.inds);
 
-		// fmt::print("(rendering {} inds)\n", td.residentInds);
-		glDrawElements(GL_TRIANGLES, td.residentInds, GL_UNSIGNED_SHORT, 0);
-		// glDrawElements(GL_POINTS, td.residentInds, GL_UNSIGNED_SHORT, 0);
-		// glDrawArrays(GL_POINTS, 0, 2);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*6, 0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*6, (void*)(4*4));
+
+	// fmt::print("(rendering {} inds)\n", td.residentInds);
+	glDrawElements(GL_TRIANGLES, td.residentInds, GL_UNSIGNED_SHORT, 0);
+	// glDrawElements(GL_POINTS, td.residentInds, GL_UNSIGNED_SHORT, 0);
+	// glDrawArrays(GL_POINTS, 0, 2);
+
 }
 
 // Called for new tiles
@@ -650,6 +690,10 @@ void FtRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {
 
 		*/
 
+		if (this->cfg.allowCaster) {
+			do_init_caster_stuff();
+			castableShader = std::move(Shader{ft_tile_casted_vsrc, ft_tile_casted_fsrc});
+		}
 
 }
 

@@ -82,7 +82,7 @@ struct DatasetReaderIterator {
 
 		ii++;
 		
-		return py::make_tuple(key, arr);
+		return py::make_tuple(BlockCoordinate(key), arr);
 	}
 };
 
@@ -109,7 +109,7 @@ struct DatasetReaderIteratorNoImages {
 
 		ii++;
 		
-		return key;
+		return BlockCoordinate(key);
 	}
 };
 
@@ -150,7 +150,8 @@ PYBIND11_MODULE(frastpy2, m) {
 
 
 	py::class_<EnvOptions>(m, "EnvOptions")
-		.def(py::init<>());
+		.def(py::init<>())
+		.def_readwrite("isTerrain", &EnvOptions::isTerrain);
 
 	py::class_<FlatReaderCached>(m, "FlatReaderCached")
 		.def(py::init<const std::string&, const EnvOptions&>())

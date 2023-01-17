@@ -1,15 +1,20 @@
 #pragma once
 
-// #include <frast/image.h>
-// #include "frastVk/core/fvkApi.h"
+
+// NOTE: This is copied from the version designed for Vulkan, so the types here
+// don't make much sense and are overcomplicated.
 
 #include <opencv2/core.hpp>
+
+#include <GL/glew.h>
+#include <GL/gl.h>
 
 namespace frast {
 
 // This is not allocated on the CPU, but is useful to access mapped data instead of the void*
 struct __attribute__((packed)) CasterBuffer {
-	float casterMatrix[2*16];
+	float casterMatrix1[16];
+	float casterMatrix2[16];
 	float color1[4];
 	float color2[4];
 	uint32_t casterMask;
@@ -45,7 +50,10 @@ struct CasterWaitingData {
 		}
 
 	private:
+
 		cv::Mat image;
+
+
 		float casterMatrix1[16];
 		float casterMatrix2[16];
 		float color1[4];
@@ -59,8 +67,13 @@ struct CasterWaitingData {
 // GPU Resident data, should only be touched on render thread.
 // TODO Note: This is not taking full use of Vulkan's asynchroncity, but that is okay for now
 struct CasterStuff {
-	uint32_t casterMask; // should match the gpu buffer variable.
+	uint32_t casterMask=0; // should match the gpu buffer variable.
 	bool casterTextureSet = false; // true after first time set
+
+	CasterBuffer cpuCasterBuffer;
+	GLuint tex=0;
+	uint32_t lastTexSize = 0;
+
 
 	// ExImage casterImage;
 	// ExBuffer casterBuffer;

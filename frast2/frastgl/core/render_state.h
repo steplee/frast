@@ -7,7 +7,7 @@
 
 namespace frast {
 
-// class FrameData;
+void invertMatrix44(float* out, const float* __restrict__ in);
 
 struct CameraSpec {
 	double w, h;
@@ -166,6 +166,7 @@ class RenderState {
 		void frameBegin();
 
 		inline const double *view() const { return camera->view(); }
+		inline const double *viewInv() const { return camera->viewInv(); }
 		inline const double *proj() const { return camera->proj(); }
 		inline const double* mvp() const { return mstack.peek(); }
 		inline void mvpd(double* d) const {

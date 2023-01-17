@@ -150,6 +150,7 @@ template <class GtTypes>
 struct GtRenderContext {
 	const RenderState& rs;
 	GtPooledData<GtTypes>& pooledData;
+	const CasterStuff& casterStuff;
 	// PipelineStuff& pipelineStuff;
 	// GraphicsPipeline& pipeline;
 
@@ -157,6 +158,7 @@ struct GtRenderContext {
 	// VkCommandBuffer& cmd;
 	std::vector<uint32_t> drawIds;
 	uint32_t drawCount = 0;
+
 };
 
 struct GtUpdateCameraData {

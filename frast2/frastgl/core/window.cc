@@ -74,6 +74,7 @@ MyGlfwWindow::MyGlfwWindow() : Window() {
 
 void MyGlfwWindow::beginFrame() {
 	glfwPollEvents();
+	glViewport(0,0, windowWidth, windowHeight);
 }
 void MyGlfwWindow::endFrame() {
 	glfwSwapBuffers(glfwWindow);

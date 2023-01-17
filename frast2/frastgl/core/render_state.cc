@@ -12,6 +12,12 @@ using namespace Eigen;
 
 namespace frast {
 
+void invertMatrix44(float* out, const float* __restrict__ in) {
+	Map<const Matrix<float,4,4,RowMajor>> I ( in );
+	Map<      Matrix<float,4,4,RowMajor>> O ( out );
+	O = I.inverse();
+}
+
 /* ===================================================
  *
  *

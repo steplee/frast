@@ -135,14 +135,14 @@ namespace frast {
 
 		for (int chosenLvl = lvl; chosenLvl >=0; chosenLvl--) {
 			if (env.haveLevel(chosenLvl)) {
-				fmt::print(" - findLvlForRes {}, choose {} downward from {}\n", res, chosenLvl, lvl);
+				// fmt::print(" - findLvlForRes {}, choose {} downward from {}\n", res, chosenLvl, lvl);
 				return chosenLvl;
 			}
 		}
 
 		for (int chosenLvl = lvl; chosenLvl <30; chosenLvl++) {
 			if (env.haveLevel(chosenLvl)) {
-				fmt::print(" - findLvlForRes {}, choose {} upward from {}\n", res, chosenLvl, lvl);
+				// fmt::print(" - findLvlForRes {}, choose {} upward from {}\n", res, chosenLvl, lvl);
 				return chosenLvl;
 			}
 		}
@@ -229,7 +229,7 @@ namespace frast {
 		int iwm_h = iwmTlbr[3] - iwmTlbr[1];
 		int n_tiles = iwm_w * iwm_h;
 
-		fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
+		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
 		if (n_tiles > 256) {
 			std::string msg = fmt::format("[rasterIo] refusing to sample {} tiles ({} x {}) try a smaller patch.", n_tiles,iwm_w,iwm_h);

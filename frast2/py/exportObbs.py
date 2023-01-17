@@ -1,4 +1,5 @@
 import sys, os, numpy as np
+
 from .transformAuthalicToGeodetic import authalic_to_geodetic_corners, authalic_to_wgs84_pt, EarthGeodetic
 from .proto import rocktree_pb2 as RT
 from .utils import unit_wm_to_ecef
@@ -171,16 +172,23 @@ def export_rt_version1(outFp, root, transformToWGS84=True, bulkOverride=''):
 
 
 def export_frast_version1(outFp, colorPath, elevPath):
-    import frastpy
-    o = frastpy.DatasetReaderOptions()
-    c_dset = frastpy.DatasetReader(colorPath, o)
-    e_dset = frastpy.DatasetReader(elevPath, o)
+    import frastpy2
+    # o = frastpy.DatasetReaderOptions()
+    # c_dset = frastpy.DatasetReader(colorPath, o)
+    # e_dset = frastpy.DatasetReader(elevPath, o)
+    o1 = frastpy2.EnvOptions()
+    o2 = frastpy2.EnvOptions()
+    o2.isTerrain = True
+    c_dset = frastpy2.FlatReaderCached(colorPath, o1)
+    e_dset = frastpy2.FlatReaderCached(elevPath, o2)
 
-    minElev0 = 0 / frastpy.WebMercatorMapScale
-    maxElev0 = 200 / frastpy.WebMercatorMapScale
-    elevBuf = np.zeros((8,8,2), dtype=np.uint8) # Buffer should be uint8x2
+    minElev0 = 0 / frastpy2.WebMercatorMapScale
+    maxElev0 = 200 / frastpy2.WebMercatorMapScale
+    # elevBuf = np.zeros((8,8,2), dtype=np.uint8) # Buffer should be uint8x2
+    elevBuf = np.zeros((8,8,1), dtype=np.uint16) # Buffer should be uint8x2
     nseen = 0
 
+    print(' - existing levels',c_dset.getExistingLevels())
     for lvl in c_dset.getExistingLevels():
         for coord in c_dset.iterCoords(lvl):
             z,y,x = coord.z(), coord.y(), coord.x()
@@ -191,10 +199,10 @@ def export_frast_version1(outFp, colorPath, elevPath):
 
             if e_dset:
 		        #.def("rasterIo", [](DatasetReader& dset, py::array_t<uint8_t> out, py::array_t<double> tlbrWm_) -> py::object {
-                tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64) * frastpy.WebMercatorMapScale
-                # print(tlbr_wm)
+                tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64) * frastpy2.WebMercatorMapScale
+                # print(z,y,x,tlbr_wm)
                 # tlbr_wm = np.array((ox, oy, ox+lvlScale, oy+lvlScale), dtype=np.float64)
-                e_dset.rasterIo(elevBuf, tlbr_wm)
+                e_dset.rasterIo(tlbr_wm, 8,8,1)
                 elevBuf_ = elevBuf.view(np.uint16) # Actually stored as uint16
                 minElev = (elevBuf_.min() / 8) / np.pi
                 maxElev = (elevBuf_.max() / 8) / np.pi
@@ -246,13 +254,14 @@ if __name__ == '__main__':
     indexVersionStr = 'v1'
 
     if args.gearthDir:
-        indexFile = os.path.join(args.gearthDir, 'index.{}.bin'.format(indexVersionStr))
+        indexFile = os.path.join(args.gearthDir, 'obb.obb'.format(indexVersionStr))
         with open(indexFile, 'wb') as fp: export_rt_version1(fp, args.gearthDir, bulkOverride=args.gearthBulkDirOverride)
 
     if args.frastColor:
         assert(args.frastElev)
         colorDir = os.path.split(args.frastColor)[0]
-        indexFile = os.path.join(colorDir, 'index.{}.bin'.format(indexVersionStr))
+        # indexFile = os.path.join(colorDir, 'index.{}.bin'.format(indexVersionStr))
+        indexFile = args.frastColor + '.obb'
         with open(indexFile, 'wb') as fp: export_frast_version1(fp, colorPath=args.frastColor, elevPath=args.frastElev)
 
 
