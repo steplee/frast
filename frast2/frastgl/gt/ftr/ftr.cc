@@ -159,8 +159,9 @@ FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader
 		colorDsets.push_back(new FlatReaderCached(colorPath, opt));
 
 	// FIXME: Disabled
-	// if (renderer.cfg.elevDsetPath.length() > 1)
-		// elevDset = new FlatReader(renderer.cfg.elevDsetPath, opt);
+#error "bugged, stopped here"
+	if (renderer.cfg.elevDsetPath.length() > 1)
+		elevDset = new FlatReader(renderer.cfg.elevDsetPath, opt);
 
 
 	/*

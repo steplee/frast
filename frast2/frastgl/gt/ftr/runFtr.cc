@@ -4,6 +4,7 @@
 #include "frast2/frastgl/core/imgui/imgui_app.h"
 #include "frast2/frastgl/core/render_state.h"
 #include "frast2/frastgl/extra/earth/earth.h"
+#include "frast2/frastgl/extra/frustum/frustum.h"
 #include "ftr.h"
 
 #include <chrono>
@@ -45,10 +46,14 @@ class TestApp : public BaseClass_App {
 			glClearColor(0,0,.01,1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+			glLineWidth(1);
 			ftr->defaultUpdate(rs.camera);
 			ftr->render(rs);
 
 			earthEllps->render(rs);
+
+			glLineWidth(2);
+			frustum1->render(rs);
 
 			if constexpr (std::is_same_v<BaseClass_App, ImguiApp>)
 				ImguiApp::renderUi(rs);
@@ -71,6 +76,26 @@ class TestApp : public BaseClass_App {
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
 
+			{
+				Eigen::Vector3d pos0 { 0.170643 ,-0.757278  ,0.630622};
+				Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
+				R0.row(2) = -pos0.normalized();
+				R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+				R0.row(1) =  R0.row(2).cross(R0.row(0)).normalized();
+				R0.transposeInPlace();
+				frustum1 = std::make_unique<Frustum>();
+				RowMatrix4d P;
+				P.topLeftCorner<3,3>() = R0;
+				P.topRightCorner<3,1>() = pos0;
+				P.row(3) << 0,0,0,1;
+				frustum1->setPose(P.data());
+
+				RowMatrix4f casterMatrixFromFrustum;
+				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());
+				ftr->cwd.setMatrix2(casterMatrixFromFrustum.data());
+			}
+
+
 
 
 		}
@@ -84,6 +109,7 @@ class TestApp : public BaseClass_App {
 
 		std::unique_ptr<FtRenderer> ftr;
 		std::unique_ptr<EarthEllipsoid> earthEllps;
+		std::unique_ptr<Frustum> frustum1;
 
 		std::thread thread;
 
@@ -136,7 +162,10 @@ class TestApp : public BaseClass_App {
 		bool moveCaster = true;
 		void setExampleCasterData() {
 			// ftr->setCasterInRenderThread
-			float color[4] = {.1f,0.f,.1f,.1f};
+
+			// float color1[4] = {.1f,0.f,.1f,.6f};
+			// float color2[4] = {.0f,.5f,.2f,.6f};
+
 			// Image tstImg { 512,512,Image::Format::RGBA };
 			cv::Mat tstImg(512,512,CV_8UC4);
 			for (int y=0; y<512; y++)
@@ -148,9 +177,9 @@ class TestApp : public BaseClass_App {
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+3] = 200;
 			}
 			ftr->cwd.setImage(tstImg);
-			ftr->cwd.setColor1(color);
-			ftr->cwd.setColor2(color);
-			ftr->cwd.setMask(0b01);
+			// ftr->cwd.setColor1(color1);
+			// ftr->cwd.setColor2(color2);
+			ftr->cwd.setMask(0b11);
 		}
 
 	public:

@@ -425,6 +425,9 @@ struct GtRenderer : public Castable {
 		}
 		bool debugMode; // Note: GT_DEBUG (at top of this file) must also be compiled with true!
 
+		inline void setDebugMode(bool m) { debugMode = m; }
+		inline void flipDebugMode() { debugMode = !debugMode; }
+
 		typename GtTypes::Config cfg;
 
 		// void init(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);

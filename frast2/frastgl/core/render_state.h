@@ -46,7 +46,7 @@ struct Camera : public UsesIO {
 		inline const double *view() const { return view_; }
 		inline const double *proj() const { return proj_; }
 		inline const double *viewInv() const { return viewInv_; }
-		inline const CameraSpec spec() const { return spec_; }
+		inline const CameraSpec& spec() const { return spec_; }
 
 		inline void setSpec(const CameraSpec& spec) {
 			spec_ = spec;
@@ -139,7 +139,7 @@ struct SphericalEarthMovingCamera : public Camera {
 
 
 struct MatrixStack {
-	static constexpr int MAX_DEPTH = 10;
+	static constexpr int MAX_DEPTH = 5;
 	alignas(16) double m[16*MAX_DEPTH];
 	int d = 0;
 

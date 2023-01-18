@@ -634,7 +634,6 @@ void GtRenderer<GtTypes,Derived>::init(const AppConfig& cfg) {
 	*/
 
 	fmt::print(" - [GtRenderer::init] pre-allocating {} VBOs/Textures\n", GT_NUM_TILES);
-	fmt::print(" - [GtRenderer::init] glGenTextures {}\n", (void*)&glGenTextures);
 	gtpd.datas.resize(GT_NUM_TILES);
 	for (int i=0; i<GT_NUM_TILES; i++) {
 		glGenTextures(1, &gtpd.datas[i].tex);
@@ -651,7 +650,7 @@ void GtRenderer<GtTypes,Derived>::init(const AppConfig& cfg) {
 		glGenBuffers(1, &gtpd.datas[i].inds);
 	}
 
-	fmt::print(" - [GtRenderer::init] telling loader to init\n");
+	// fmt::print(" - [GtRenderer::init] telling loader to init\n");
 	loader.init();
 }
 

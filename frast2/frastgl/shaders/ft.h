@@ -82,6 +82,7 @@ void main() {
 	if ((u_casterMask & 1u) != 0u) {
 		vec4 pp = (u_casterMatrix1) * pos;
 		vec3 p = pp.xyz / pp.w;
+		// v_caster_uv.xy = (p.xy) * .5 + .5;
 		v_caster_uv.xy = (p.xy) * .5 + .5;
 	} else v_caster_uv.xy = vec2(0.0);
 
@@ -90,6 +91,8 @@ void main() {
 		vec3 p = pp.xyz / pp.w;
 		v_caster_uv.zw = (p.xy) * .5 + .5;
 	} else v_caster_uv.zw = vec2(0.);
+
+	v_caster_uv.yz = 1. - v_caster_uv.yz;
 }
 
 )";
@@ -114,8 +117,8 @@ void main() {
 
 	outColor = vec4(texture(u_tex, v_uv).rgb,1.);
 
-	const vec4 color1 = vec4(1.,0.,0.,1.);
-	const vec4 color2 = vec4(0.,1.,0.,1.);
+	const vec4 color1 = vec4(0.,1.,0.,1.);
+	const vec4 color2 = vec4(0.,0.,1.,1.);
 
 	//
 	// Caster stuff

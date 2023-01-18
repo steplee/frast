@@ -22,7 +22,8 @@ namespace frast {
 
 				auto fmt = cwd.image.channels() == 4 ? GL_RGBA : cwd.image.channels() == 3 ? GL_RGB : GL_LUMINANCE;
 				glBindTexture(GL_TEXTURE_2D, casterStuff.tex);
-				glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, cwd.image.cols, cwd.image.cols, fmt, GL_UNSIGNED_BYTE, cwd.image.data);
+				// glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, cwd.image.cols, cwd.image.cols, fmt, GL_UNSIGNED_BYTE, cwd.image.data);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cwd.image.cols, cwd.image.rows, 0, fmt, GL_UNSIGNED_BYTE, cwd.image.data);
 				glBindTexture(GL_TEXTURE_2D, 0);
 			}
 

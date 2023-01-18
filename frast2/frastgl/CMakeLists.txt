@@ -70,6 +70,7 @@ add_library(frastgl
 
 	extra/caster/castable.cc
 	extra/earth/earth.cc
+	extra/frustum/frustum.cc
 
 	gt/ftr/ftr.cc
 	gt/gt.cc
