@@ -104,10 +104,10 @@ target_link_libraries(frast2 fmt::fmt pthread ${libsCv} ${libsZ})
 # target_link_options(frast2 PUBLIC "-Wl,--whole-archive ${libsCv} ${libsZ} -Wl,--no-whole-archive")
 # target_link_options(frast2 PRIVATE -Wl,--no-as-needed ${libsCv} ${libsZ} -Wl,--as-needed)
 
-# add_executable(runFlatWriter frast2/convertFlatBlocked/run.cc)
-# target_link_libraries(runFlatWriter frast2 fmt::fmt)
-add_executable(runFlatWriter frast2/flat/convertMain.cc)
-target_link_libraries(runFlatWriter frast2 fmt::fmt ${libsGdal})
+# add_executable(frastFlatWriter frast2/convertFlatBlocked/run.cc)
+# target_link_libraries(frastFlatWriter frast2 fmt::fmt)
+add_executable(frastFlatWriter frast2/flat/convertMain.cc)
+target_link_libraries(frastFlatWriter frast2 fmt::fmt ${libsGdal})
 
 add_executable(frastTool frast2/tool/main.cc)
 target_link_libraries(frastTool frast2 fmt::fmt)
@@ -123,7 +123,7 @@ target_link_libraries(frastpy2 PUBLIC frast2)
 # Install libs, headers, and python files.
 
 install(TARGETS frast2        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
-install(TARGETS runFlatWriter LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS frastFlatWriter LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(TARGETS frastTool     LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(DIRECTORY
 	${CMAKE_CURRENT_SOURCE_DIR}/frast2/

@@ -285,6 +285,8 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 
 		cv::Mat tmp;
 		tmp.create(read_h, read_w, internalCvType);
+		// tmp = cv::Scalar{0};
+		// out = cv::Scalar{0};
 
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0), inner(1), inner_w, inner_h,
@@ -320,7 +322,8 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 		cv::warpPerspective(tmp, out, HH, cv::Size{out.cols, out.rows});
 
     } else {
-		memset(out.data, 0, out.rows*out.cols*out.channels());
+		// memset(out.data, 0, out.rows*out.cols*out.channels());
+		out = cv::Scalar{0};
         return Vector4d::Zero();
     }
 

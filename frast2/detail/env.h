@@ -126,8 +126,12 @@ namespace frast {
 				throw std::runtime_error("stat failed.");
 			}
 
+			if (opts.readonly and fileIsNew_) {
+				throw std::runtime_error("If opts.readonly is true, file must already exist!");
+			}
+
 			auto flags = opts.readonly ? O_RDONLY : O_RDWR;
-			flags |= O_CREAT;
+			if (not opts.readonly) flags |= O_CREAT;
 			auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
 			fd_ = open(path.c_str(), flags, mode);
 			if (fd_ == -1) {

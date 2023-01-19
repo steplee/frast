@@ -79,7 +79,8 @@ class TestApp : public BaseClass_App {
 
 			cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
 			cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
-			cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
+			// cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
+			cfg.elevDsetPath = {"/data/elevation/srtm/srtm.fft"};
 
 			ftr = std::make_unique<FtRenderer>(cfg);
 			ftr->init(this->cfg);

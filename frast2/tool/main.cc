@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
 	std::string path = parser.get2<std::string>("-i", "--input").value();
 	bool isTerrain = parser.get2<bool>("-t", "--terrain", 0).value();
 	EnvOptions opts;
+	opts.readonly = true;
 	opts.isTerrain = isTerrain;
 	FlatReaderCached reader(path, opts);
 
