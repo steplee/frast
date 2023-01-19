@@ -3,6 +3,20 @@
 
 #include "codec.h"
 
+namespace {
+	bool image_is_black(const cv::Mat& img) {
+
+		// optimization: check a few pixels first
+		if (img.data[0] != 0 or img.data[5*img.step+5*img.channels()+1] != 0) {
+			// std::cout << " known not black, no sum \n";
+			return false;
+		}
+
+		auto r = cv::sum(img);
+		// std::cout << " sum " << r << "\n";
+		return r[0] == 0 and r[1] == 0 and r[2] == 0;
+	}
+}
 
 namespace frast {
 
@@ -47,7 +61,7 @@ void WriterMaster::process(int workerId, const Key& key) {
 	void* val = nullptr;
 	auto valueLength = ProcessedData::INVALID_VALUE_LENGTH;
 
-	if (not img.empty()) {
+	if (!img.empty() and !image_is_black(img)) {
 		// Encode.
 		Value v = encodeValue(img, isTerrain());
 		val = v.value;

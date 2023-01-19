@@ -16,6 +16,7 @@ namespace {
 		if (c == 3) return CV_8UC3;
 		if (c == 4) return CV_8UC4;
 		assert(false and "invalid num channels");
+		return false;
 	}
 
 

@@ -2,6 +2,7 @@
 
 #include "frast2/frastgl/core/app.h"
 
+#include "frast2/frastgl/core/imgui/generated/imgui.h"
 
 namespace frast {
 

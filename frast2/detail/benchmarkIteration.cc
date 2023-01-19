@@ -17,6 +17,7 @@
 // Tried a bunch of things to speed up.
 // Will have to see if it is due to opencv jpeg codec.
 
+
 struct GdalRunner {
 
 	GDALDataset* dset = nullptr;

@@ -1,6 +1,5 @@
 #include "imgui_app.h"
 
-#include "generated/imgui.h"
 #include "generated/imgui_impl_glfw.h"
 #include "generated/imgui_impl_opengl3.h"
 

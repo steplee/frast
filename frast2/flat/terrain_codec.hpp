@@ -15,6 +15,7 @@ namespace frast {
 
 Value encode_terrain_2x8(const cv::Mat& img) {
 	assert(img.type() == CV_16UC1);
+
 	
 	Value v;
 	v.value = malloc(img.elemSize() * img.total());
@@ -27,6 +28,8 @@ Value encode_terrain_2x8(const cv::Mat& img) {
 
 cv::Mat decode_terrain_2x8(const Value& eimg) {
 	cv::Mat out(256,256, CV_16UC1);
+
+	fmt::print(" - decode raw\n");
 
 	assert(eimg.len == 256*256*2);
 	memcpy(out.data, eimg.value, eimg.len);
