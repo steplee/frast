@@ -53,5 +53,27 @@ namespace frast {
 		}
 	}
 
+	bool decodeValue(cv::Mat& out, const Value& val, int channels, bool isTerrain) {
+		if (val.value == nullptr) return true;
+
+		if (isTerrain) {
+			assert (channels == 1);
+			return decode_terrain_2x8(out,val);
+		} else {
+			assert(channels == 1 or channels == 3 or channels == 4);
+
+			bool grayscale = channels == 1;
+			auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
+
+			cv::_InputArray buf((uint8_t*)val.value, val.len);
+			cv::imdecode(buf, flags, &out);
+
+			if (channels == 4 and out.channels() == 1) cv::cvtColor(out,out, cv::COLOR_GRAY2BGRA);
+			if (channels == 4 and out.channels() == 3) cv::cvtColor(out,out, cv::COLOR_BGR2BGRA);
+
+			return false;
+		}
+	}
+
 
 }

@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 2.20)
 project(frast)
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
+set(CMAKE_CXX_FLAGS "-std=c++17 -g -O3 -Werror=return-type")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -g -O1 -Werror=return-type -fno-inline-functions")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -O1 -Werror=return-type -fno-omit-frame-pointer -fno-inline -fno-inline-functions")
+
 # set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O0 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS_DEBUG)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -179,3 +184,10 @@ target_link_libraries(ebpfStuff Catch2::Catch2WithMain fmt::fmt)
 add_executable(testTpool frast2/tpool/test_tpool.cc)
 target_link_libraries(testTpool Catch2::Catch2WithMain frast2 fmt::fmt)
 catch_discover_tests(testTpool)
+
+#####################
+# Benchmarks
+#####################
+
+add_executable(benchmarkIteration frast2/detail/benchmarkIteration.cc)
+target_link_libraries(benchmarkIteration frast2 fmt::fmt ${libsGdal})

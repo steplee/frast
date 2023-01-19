@@ -34,6 +34,8 @@ void WriterMasterAddo::destroyWorkerData(int workerId, void *ptr) {
 }
 void WriterMasterAddo::destroy_master_data() {
 	auto dset = static_cast<FlatReader*>(masterData);
+	for (int i=0; i<16; i++)
+		dset->env.haveLevel(i);
 	delete dset;	
 }
 
@@ -70,74 +72,8 @@ void WriterMasterAddo::writerLoop() {
 	bool haveMoreWork = true;
 
 
-	// auto dset = static_cast<MyGdalDataset*>(masterData);
-	// uint64_t lvlTlbr[4];
-	// dset->getTlbrForLevel(lvlTlbr, curLevel);
-	// uint64_t w = lvlTlbr[2] - lvlTlbr[0];
-	// uint64_t h = lvlTlbr[3] - lvlTlbr[1];
-
 	curLevel = cfg.baseLevel - 1;
 
-	/*
-	while (haveMoreWork and !doStop_) {
-
-		// TODO: This appears to work: now work on actual business code.
-
-		// sleep(1);
-
-		// Gather next batch of keys from tiff...
-		std::vector<uint64_t> currKeys = yieldNextKeys();
-		lastNumEnqueued = currKeys.size();
-		haveMoreWork = lastNumEnqueued > 0;
-		fmt::print(fmt::fg(fmt::color::green), " - Enqueing {} items ready.\n", lastNumEnqueued);
-
-		// Enqueue them
-		for (auto key : currKeys) enqueue(key);
-
-		// Wait until workers complete. We need an exact match.
-		{
-			std::unique_lock<std::mutex> lck(writerMtx);
-			writerCv.wait(lck, [&] { return doStop_ or processedData.size() == currKeys.size(); });
-			fmt::print(fmt::fg(fmt::color::green), " - All {} items ready.\n", processedData.size());
-
-			handleProcessedData(processedData);
-		}
-	}
-
-	if (cfg.addo) {
-
-		uint64_t w=1,h=1;
-		int level = args.baseLevel;
-
-		while (level > 0 and (w > 0 or h > 0)) {
-
-			level--;
-			getNumTilesForLevel(w,h,level);
-
-			haveMoreWork = true;
-			while (haveMoreWork and !doStop_) {
-
-				std::vector<uint64_t> currKeys = yieldNextKeysAddo();
-				lastNumEnqueued = currKeys.size();
-				haveMoreWork = lastNumEnqueued > 0;
-				fmt::print(fmt::fg(fmt::color::green), " - Enqueing {} items ready.\n", lastNumEnqueued);
-
-				// Enqueue them
-				for (auto key : currKeys) enqueue(key);
-
-				// Wait until workers complete. We need an exact match.
-				{
-					std::unique_lock<std::mutex> lck(writerMtx);
-					writerCv.wait(lck, [&] { return doStop_ or processedData.size() == currKeys.size(); });
-					fmt::print(fmt::fg(fmt::color::green), " - All {} items ready.\n", processedData.size());
-
-					handleProcessedData(processedData);
-				}
-			}
-
-		}
-	}
-	*/
 
 	usleep(55'000);
 

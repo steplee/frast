@@ -42,7 +42,7 @@ uniform layout(location=0) mat4 u_invMvp;
 in vec2 v_uv;
 
 out layout(location=0) vec4 out_color;
-out layout(location=1) float out_frag_depth;
+// out layout(location=1) float out_frag_depth;
 
 /*
 void main() {
@@ -125,14 +125,14 @@ void main() {
 		outColor = vec4(color, 1.*length(color.rgb));
 
 		/* outDepth = length(pt - ro); */
-		outDepth = .9999999;
+		outDepth = .99999;
 	} else {
 		outColor = vec4(0.,0.,0.,.0);
 		outDepth = 1.1;
 	}
 
 	out_color = outColor;
-	out_frag_depth = outDepth;
+	gl_FragDepth = outDepth;
 
 }
 

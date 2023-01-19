@@ -882,8 +882,6 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 	for (int j=0; j<i; j++) std::swap(mvpf_column[i*4+j] , mvpf_column[j*4+i]);
 	glLoadMatrixf(mvpf_column);
 
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 
 	// DFS and draw

@@ -117,6 +117,8 @@ float CameraSpec::vfov() const {
 }
 
 void CameraSpec::compute_projection(double* dest) const {
+	// compute_ortho(dest); return;
+
 	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
 	// double u = aspect() / std::tan(.5* vfov);
 	// double u = fx_ * 2. / (w /  aspect());
@@ -132,6 +134,25 @@ void CameraSpec::compute_projection(double* dest) const {
 		0, -2*1 / 2*v, 0, 0, // negative in gl, pos in vk
 		0, 0, (f+n)/(f-n), -2*f*n/(f-n),
 		0, 0, 1, 0;
+}
+
+void CameraSpec::compute_ortho(double* dest) const {
+	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
+	// double u = aspect() / std::tan(.5* vfov);
+	// double u = fx_ * 2. / (w /  aspect());
+	double u = fx_ * 1. / (w);
+	double v = fy_ * 1. / h;
+	// u=1/u;
+	// v=1/v;
+	// double u = w / (.5 * fx_);
+	// double v = h / (.5 * fy_);
+	double n = near, f = far;
+	proj <<
+		2*1 / 2*u, 0, 0, 0,
+		0, -2*1 / 2*v, 0, 0, // negative in gl, pos in vk
+		// 0, 0, (f+n)/(f-n), -2*f*n/(f-n),
+		0, 0, -2/(f-n),  (f+n)/(f-n),
+		0, 0, 0, 1;
 
 }
 

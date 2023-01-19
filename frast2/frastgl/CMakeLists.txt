@@ -71,6 +71,7 @@ add_library(frastgl
 	extra/caster/castable.cc
 	extra/earth/earth.cc
 	extra/frustum/frustum.cc
+	extra/textSet/textSet.cc
 
 	gt/ftr/ftr.cc
 	gt/gt.cc

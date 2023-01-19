@@ -45,6 +45,9 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 
 			if (opts.isTerrain) assert(meta()->rasterType == FileMeta::RasterType::eTerrain);
 			else assert(meta()->rasterType != FileMeta::RasterType::eTerrain);
+
+			for (int i=0; i<16; i++)
+				haveLevel(i);
 		}
 
 }
@@ -86,7 +89,7 @@ bool FlatEnvironment::beginLevel(int lvl) {
 	spec.valsCapacity = iniValBlobSize;
 	currentEnd += spec.valsCapacity;
 
-	fmt::print(" - [beginLevel] lvl={} ko={}, k2vo={}, vo={}\n", lvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset);
+	fmt::print(" - [beginLevel] lvl={} ko={}, k2vo={}, vo={}\n", lvl, (uint64_t)spec.keysOffset, (uint64_t)spec.k2vsOffset, (uint64_t)spec.valsOffset);
 	int r = fallocate(fd_, 0, 0, currentEnd);
 	if (r != 0) {
 		throw std::runtime_error("fallocate() failed: " + std::string{strerror(errno)});
@@ -107,13 +110,13 @@ bool FlatEnvironment::endLevel(bool finalLevel) {
 	currentEnd = spec.valsOffset + spec.valsCapacity;
 
 	if (finalLevel) {
-		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} then truncating to {}\n", currentLvl, spec.valsCapacity, currentEnd);
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} then truncating to {}\n", currentLvl, (uint64_t)spec.valsCapacity, currentEnd);
 		int r = ftruncate(fd_, currentEnd);
 		if (r != 0) {
 			throw std::runtime_error("ftruncate() failed: " + std::string{strerror(errno)});
 		}
 	} else {
-		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} and rewinding currentEnd to {}\n", currentLvl, spec.valsCapacity, currentEnd);
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} and rewinding currentEnd to {}\n", currentLvl, (uint64_t)spec.valsCapacity, currentEnd);
 	}
 
 
@@ -197,7 +200,7 @@ uint64_t FlatEnvironment::growLevelKeys() {
 	auto& spec = meta()->levelSpecs[currentLvl];
 
 	fmt::print(" - [growLevelKeys] lvl={}, from ko={}, k2vo={}, vo={}, kcap={}, vcap={}\n",
-				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.valsCapacity);
+				currentLvl, (uint64_t)spec.keysOffset, (uint64_t)spec.k2vsOffset, (uint64_t)spec.valsOffset, (uint64_t)spec.keysCapacity, (uint64_t)spec.valsCapacity);
 	// printFirstLastEightCurLvl();
 
 
@@ -231,7 +234,7 @@ uint64_t FlatEnvironment::growLevelKeys() {
 	bzero(((char*)basePointer)+oldK2vsOffset, oldCap);
 
 	fmt::print(" - [growLevelKeys] lvl={}, to   ko={}, k2vo={}, vo={}, kcap={}, vcap={}\n",
-				currentLvl, spec.keysOffset, spec.k2vsOffset, spec.valsOffset, spec.keysCapacity, spec.valsCapacity);
+				currentLvl, (uint64_t)spec.keysOffset, (uint64_t)spec.k2vsOffset, (uint64_t)spec.valsOffset, (uint64_t)spec.keysCapacity, (uint64_t)spec.valsCapacity);
 	// fmt::print(" - (post) distance b/t end of k2vs and start of values: {}\n", spec.valsOffset-(spec.k2vsOffset+spec.keysCapacity));
 	// printFirstLastEightCurLvl();
 
@@ -247,7 +250,7 @@ uint64_t FlatEnvironment::growLevelValues() {
 	uint64_t g = spec.valsCapacity * 2;
 	uint64_t vals_change = (g - oldCap);
 	spec.valsCapacity += vals_change;
-	fmt::print(" - [growLevelVals] lvl={}, increasing valsCap to {} from {} (+{})\n", currentLvl, spec.valsCapacity, oldCap, vals_change);
+	fmt::print(" - [growLevelVals] lvl={}, increasing valsCap to {} from {} (+{})\n", currentLvl, (uint64_t)spec.valsCapacity, oldCap, vals_change);
 
 	// We cannot use the 'insert range' mode when we want to extend the file at the end,
 	// so use the default fallocate mode.
@@ -327,7 +330,7 @@ uint64_t FlatEnvironment::growLevelValues() {
 	bool FlatEnvironment::keyExists(uint64_t lvl, uint64_t key) {
 		auto& spec = meta()->levelSpecs[lvl];
 
-		if (spec.keysLength == 0) false;
+		if (spec.keysLength == 0) return false;
 
 		// Binary search for the key
 		int64_t n = spec.nitemsUsed();

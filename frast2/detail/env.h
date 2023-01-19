@@ -110,6 +110,7 @@ namespace frast {
 		auto prot = PROT_READ;
 		if (not opts.readonly) prot |= PROT_WRITE;
 
+
 		size_t offset = opts.mapOffset;
 
 		fileIsNew_ = opts.anon;
@@ -141,6 +142,9 @@ namespace frast {
 			throw std::runtime_error("mmap failed.");
 		}
 		fmt::print(" - basePointer: {}\n", basePointer);
+
+		// int err = madvise(basePointer, opts.mapSize, MADV_SEQUENTIAL);
+		// assert(err == 0);
 
 
 		mapSize_ = opts.mapSize;

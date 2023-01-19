@@ -34,6 +34,16 @@ cv::Mat decode_terrain_2x8(const Value& eimg) {
 	return out;
 }
 
+bool decode_terrain_2x8(cv::Mat& out, const Value& eimg) {
+	// cv::Mat out(256,256, CV_16UC1);
+	out.create(256,256,CV_16UC1);
+
+	assert(eimg.len == 256*256*2);
+	memcpy(out.data, eimg.value, eimg.len);
+
+	return false;
+}
+
 #else
 
 //
@@ -179,6 +189,12 @@ cv::Mat decode_terrain_2x8(const Value& eimg) {
 	cv::Mat out(256,256,CV_16UC1);
 	bool stat = inflate_img(out, (uint8_t*)eimg.value, eimg.len);
 	return out;
+}
+
+bool decode_terrain_2x8(cv::Mat& out, const Value& eimg) {
+	out.create(256,256,CV_16UC1);
+	bool stat = inflate_img(out, (uint8_t*)eimg.value, eimg.len);
+	return false;
 }
 
 #endif

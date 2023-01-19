@@ -139,6 +139,7 @@ void ThreadPool::workerLoop(int I) {
 		wakeups++;
 	}
 
+	fmt::print(" (call destroy)\n");
 	destroyWorkerData(I, workerDatas[I]);
 }
 

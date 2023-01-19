@@ -9,4 +9,5 @@ namespace frast {
 	Value encodeValue(const cv::Mat& img, bool isTerrain);
 
 	cv::Mat decodeValue(const Value& val, int outChannels, bool isTerrain);
+	bool decodeValue(cv::Mat& out, const Value& val, int outChannels, bool isTerrain);
 }

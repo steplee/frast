@@ -5,6 +5,7 @@
 #include "frast2/frastgl/core/render_state.h"
 #include "frast2/frastgl/extra/earth/earth.h"
 #include "frast2/frastgl/extra/frustum/frustum.h"
+#include "frast2/frastgl/extra/textSet/textSet.h"
 #include "ftr.h"
 
 #include <chrono>
@@ -46,14 +47,23 @@ class TestApp : public BaseClass_App {
 			glClearColor(0,0,.01,1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+			glEnable(GL_DEPTH_TEST);
+			glDepthFunc(GL_LESS);
+
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+
 			glLineWidth(1);
 			ftr->defaultUpdate(rs.camera);
 			ftr->render(rs);
 
 			earthEllps->render(rs);
 
+
 			glLineWidth(2);
 			frustum1->render(rs);
+			textSet->render(rs);
 
 			if constexpr (std::is_same_v<BaseClass_App, ImguiApp>)
 				ImguiApp::renderUi(rs);
@@ -69,12 +79,18 @@ class TestApp : public BaseClass_App {
 
 			cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
 			cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
+			cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
 
 			ftr = std::make_unique<FtRenderer>(cfg);
 			ftr->init(this->cfg);
 			setExampleCasterData();
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
+
+			textSet = std::make_unique<TextSet>();
+			// textSet->setText(0, "HelloWorld");
+			float pp[3] = {0.172643 ,-0.767278  ,0.650622};
+			textSet->setTextPointingNormalToEarth(0, "HelloWorld", pp);
 
 			{
 				Eigen::Vector3d pos0 { 0.170643 ,-0.757278  ,0.630622};
@@ -102,6 +118,7 @@ class TestApp : public BaseClass_App {
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
 			if (action == GLFW_PRESS and key == GLFW_KEY_M) moveCaster = !moveCaster;
+			if (action == GLFW_PRESS and key == GLFW_KEY_K) if (ftr) ftr->flipDebugMode();
 			return false;
 		}
 
@@ -110,6 +127,7 @@ class TestApp : public BaseClass_App {
 		std::unique_ptr<FtRenderer> ftr;
 		std::unique_ptr<EarthEllipsoid> earthEllps;
 		std::unique_ptr<Frustum> frustum1;
+		std::unique_ptr<TextSet> textSet;
 
 		std::thread thread;
 

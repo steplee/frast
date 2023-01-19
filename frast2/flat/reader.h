@@ -29,6 +29,8 @@ namespace frast {
 
 
 			cv::Mat getTile(uint64_t tile, int channels);
+			bool getTile(cv::Mat& out, uint64_t tile, int channels);
+
 			bool tileExists(uint64_t tile);
 
 			void refreshMemMap();
@@ -55,6 +57,8 @@ namespace frast {
 			FlatReaderCached(const std::string& path, const EnvOptions& opts);
 
 			cv::Mat getTile(uint64_t tile, int channels);
+			bool getTile(cv::Mat& out, uint64_t tile, int channels);
+
 			cv::Mat getTlbr(uint64_t lvl, uint32_t tlbr[4], int channels);
 
 			cv::Mat rasterIo(double tlbr[4], int w, int h, int c);

@@ -24,7 +24,7 @@ namespace {
 namespace frast {
 
 	void dwm_to_iwm(uint32_t iwmTlbr[4], const double wmTlbr[4], int lvl) {
-		assert(lvl > 0 and lvl < 30);
+		assert(lvl >= 0 and lvl < 30);
 
 		// iwmTlbr[0] = static_cast<uint32_t>((wmTlbr[0]+WebMercatorMapScale) / (2<<lvl));
 		iwmTlbr[0] = static_cast<uint32_t>(    ((wmTlbr[0]+WebMercatorMapScale) / (2*WebMercatorMapScale)) * (1<<lvl));
@@ -34,7 +34,7 @@ namespace frast {
 	}
 
 	void iwm_to_dwm(double dwmTlbr[4], const uint32_t iwmTlbr[4], int lvl) {
-		assert(lvl > 0 and lvl < 30);
+		assert(lvl >= 0 and lvl < 30);
 
 		// iwmTlbr[0] = static_cast<uint32_t>((wmTlbr[0]+WebMercatorMapScale) / (2<<lvl));
 		dwmTlbr[0] = (static_cast<double>(iwmTlbr[0]) / (1<<lvl) - .5) * (2*WebMercatorMapScale);
@@ -107,9 +107,14 @@ namespace frast {
 		BlockCoordinate bc(tile);
 		auto val = env.lookup(bc.z(), tile);
 		// fmt::print(" - found tile {} :: {} {}\n", tile, val.value, val.len);
-
 		return decodeValue(val, channels, isTerrain());
+	}
 
+	bool FlatReader::getTile(cv::Mat& out, uint64_t tile, int channels) {
+		BlockCoordinate bc(tile);
+		auto val = env.lookup(bc.z(), tile);
+		// fmt::print(" - found tile {} :: {} {}\n", tile, val.value, val.len);
+		return decodeValue(out, val, channels, isTerrain());
 	}
 
 	int FlatReader::find_level_for_mpp(float res) {
@@ -167,6 +172,17 @@ namespace frast {
 			cache.set(tile, out);
 		}
 		return out;
+	}
+
+	bool FlatReaderCached::getTile(cv::Mat& out, uint64_t tile, int channels) {
+		if (cache.get(out, tile)) {
+			bool stat = FlatReader::getTile(out, tile, channels);
+			if (stat) return stat;
+
+			cache.set(tile, out);
+			return stat;
+		}
+		return false;
 	}
 
 

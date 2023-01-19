@@ -159,9 +159,10 @@ FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader
 		colorDsets.push_back(new FlatReaderCached(colorPath, opt));
 
 	// FIXME: Disabled
-#error "bugged, stopped here"
+	EnvOptions opt1;
+	opt1.isTerrain = true;
 	if (renderer.cfg.elevDsetPath.length() > 1)
-		elevDset = new FlatReader(renderer.cfg.elevDsetPath, opt);
+		elevDset = new FlatReaderCached(renderer.cfg.elevDsetPath, opt1);
 
 
 	/*
@@ -253,14 +254,13 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 	float oy = (ty * lvlScale * 1. - 1.);
 
 	/*
-	double bboxWm[4] = {
-			ox * WebMercatorMapScale,
-			oy * WebMercatorMapScale,
-			(ox+lvlScale) * WebMercatorMapScale,
-			(oy+lvlScale) * WebMercatorMapScale,
-	};
-	bool failure = elevDset->rasterIo(elevBuf, bboxWm);
-	*/
+	// double bboxWm[4] = {
+			// ox * WebMercatorMapScale,
+			// oy * WebMercatorMapScale,
+			// (ox+lvlScale) * WebMercatorMapScale,
+			// (oy+lvlScale) * WebMercatorMapScale,
+	// };
+	// bool failure = elevDset->rasterIo(elevBuf, bboxWm);
 
 	uint16_t res_ratio = cfg.texSize / cfg.vertsAlongEdge; // 32 for now
 	uint32_t lvlOffset = log2_(res_ratio);
@@ -271,13 +271,23 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 	uint64_t tlbr[4] = { x,y, x+1lu,y+1lu };
 
 	// FIXME: REPLACE
-	/*
 	int n_missing = elevDset->fetchBlocks(elevBuf, z, tlbr, elev_txn);
 
 	if (n_missing > 0) {
 		memset(elevBuf.buffer, 0, elevBuf.size());
 	}
 	*/
+
+	// elevBuf.create(cfg.vertsAlongEdge, cfg.vertsAlongEdge, CV_16UC1);
+	// cv::Mat rasterIo(double tlbr[4], int w, int h, int c);
+	double tlbrWm[4] = {
+			ox * WebMercatorMapScale,
+			oy * WebMercatorMapScale,
+			(ox+lvlScale) * WebMercatorMapScale,
+			(oy+lvlScale) * WebMercatorMapScale,
+	};
+	// fmt::print(" - elev tlbr {} {} {} {}\n", tlbrWm[0], tlbrWm[1], tlbrWm[2], tlbrWm[3]);
+	elevBuf = elevDset->rasterIo(tlbrWm, cfg.vertsAlongEdge, cfg.vertsAlongEdge, 1);
 
 	int S = cfg.vertsAlongEdge;
 	for (uint16_t yy=0; yy<cfg.vertsAlongEdge-1; yy++)
@@ -291,8 +301,10 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 		}
 
 	mesh.vert_buffer_cpu.resize(cfg.vertsAlongEdge*cfg.vertsAlongEdge);
-	uint32_t y_off = (res_ratio - 1 - (ty % res_ratio)) * cfg.texSize / res_ratio;
-	uint32_t x_off = (tx % res_ratio) * cfg.texSize / res_ratio;
+	// uint32_t y_off = (res_ratio - 1 - (ty % res_ratio)) * cfg.texSize / res_ratio;
+	// uint32_t x_off = (tx % res_ratio) * cfg.texSize / res_ratio;
+	uint32_t y_off = 0;
+	uint32_t x_off = 0;
 	uint16_t* elevData = (uint16_t*) elevBuf.data;
 
 	for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)

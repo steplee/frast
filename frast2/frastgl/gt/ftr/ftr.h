@@ -46,7 +46,7 @@ struct FtTypes {
 		// std::string colorDsetPath = "/data/naip/mocoNaip/out.ft";
 		std::vector<std::string> obbIndexPaths;
 		std::vector<std::string> colorDsetPaths;
-		std::string elevDsetPath  = "/data/elevation/srtm/usa.11.ft";
+		std::string elevDsetPath  = "/data/elevation/gmted/gmted.fft";
 
 	};
 
@@ -157,7 +157,7 @@ struct FtDataLoader : public GtDataLoader<FtTypes, FtDataLoader> {
 		cv::Mat elevBuf;
 
 		std::vector<FlatReaderCached*> colorDsets;
-		FlatReader* elevDset  = nullptr;
+		FlatReaderCached* elevDset  = nullptr;
 
 };
 

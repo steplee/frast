@@ -28,6 +28,7 @@ struct CameraSpec {
 	float vfov() const;
 
 	void compute_projection(double* dest) const;
+	void compute_ortho(double* dest) const;
 };
 
 /*

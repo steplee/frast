@@ -65,7 +65,7 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	// NOTE: value lengths are not stored, instead the length is taken to be the distance
 	//       to the next value (or until the end, for the last key)
 	//
-	struct LevelSpec {
+	struct __attribute__((packed)) LevelSpec {
 		uint64_t keysCapacity=0, valsCapacity=0;
 		uint64_t keysOffset=0, keysLength=0;
 		uint64_t k2vsOffset=0;
@@ -97,6 +97,7 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 		return meta()->levelSpecs[lvl];
 	}
 	inline bool haveLevel(int lvl) const {
+		// fmt::print(" - have lvl {} -> {}\n", lvl, meta()->levelSpecs[lvl].keysLength);
 		return meta()->levelSpecs[lvl].keysLength > 0;
 	}
 	inline uint64_t* getKeys(int lvl) {
