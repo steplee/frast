@@ -67,11 +67,13 @@ class MyGlfwWindow : public Window, public UsesIO {
 
 		GLFWwindow* glfwWindow = nullptr;
 
-		inline virtual bool headless() override { return false; }
+		inline virtual bool headless() override { return headless_; }
 		inline virtual void addIoUser(UsesIO* ptr) override { ioUsers.push_back(ptr); }
 
 
 	private:
+
+		bool headless_;
 
 		std::vector<UsesIO*> ioUsers;
 		static void _reshapeFunc(GLFWwindow* window, int w, int h);

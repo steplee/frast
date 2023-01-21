@@ -7,6 +7,7 @@ namespace frast {
 class RenderState;
 
 struct AppConfig {
+	std::string title;
 	int w=512, h=512;
 	bool headless = false;
 };

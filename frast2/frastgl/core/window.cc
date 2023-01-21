@@ -30,13 +30,10 @@ void MyGlfwWindow::setupWindow() {
             glfwTerminate();
         }
 	}
-	windowCnt++;
-	__didInit = true;
-	__window_mtx.unlock();
 
 	bool egl = false;
     if (egl) glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-    // if (headless) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    if (headless_) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	// glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     glfwWindow = glfwCreateWindow(windowWidth, windowHeight, title.c_str(), NULL, NULL);
@@ -44,6 +41,10 @@ void MyGlfwWindow::setupWindow() {
         std::cerr << "Failed to open GLFW window: " << title << " " << windowWidth << "," << windowHeight << std::endl;
         glfwTerminate();
     }
+
+	windowCnt++;
+	__didInit = true;
+	__window_mtx.unlock();
 
     glfwMakeContextCurrent(glfwWindow);
 	int ww, hh;
@@ -65,7 +66,8 @@ void MyGlfwWindow::setupWindow() {
 }
 
 MyGlfwWindow::MyGlfwWindow(int w, int h, bool headless) : Window(w,h) {
-	assert(headless == false and "not supported yet");
+	headless_ = headless;
+	// assert(headless == false and "not supported yet");
 	title = "noName";
 }
 MyGlfwWindow::MyGlfwWindow() : Window() {

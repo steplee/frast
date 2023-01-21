@@ -27,7 +27,7 @@ struct CameraSpec {
 	float hfov() const;
 	float vfov() const;
 
-	void compute_projection(double* dest) const;
+	void compute_projection(double* dest, bool flipY=false) const;
 	void compute_ortho(double* dest) const;
 };
 
@@ -59,12 +59,13 @@ struct Camera : public UsesIO {
 		virtual void step(double dt) = 0;
 
 		inline void compute_projection() {
-			spec_.compute_projection(proj_);
+			spec_.compute_projection(proj_, flipY_);
 		}
 
 		virtual bool handleKey(int key, int scancode, int action, int mods) =0;
 		virtual bool handleMousePress(int button, int action, int mods) =0;
 		virtual bool handleMouseMotion(double x, double y) =0;
+
 
 
 	protected:
@@ -74,6 +75,9 @@ struct Camera : public UsesIO {
 		alignas(16) double view_[16];
 		alignas(16) double viewInv_[16];
 		alignas(16) double proj_[16];
+
+	public:
+		bool flipY_ = false;
 };
 
 struct FlatEarthMovingCamera : public Camera {

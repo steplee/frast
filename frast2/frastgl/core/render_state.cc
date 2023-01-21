@@ -116,7 +116,7 @@ float CameraSpec::vfov() const {
 	return 2 * std::atan(h / (2 * fy_));
 }
 
-void CameraSpec::compute_projection(double* dest) const {
+void CameraSpec::compute_projection(double* dest, bool flipY) const {
 	// compute_ortho(dest); return;
 
 	Map<Matrix<double,4,4,RowMajor>> proj ( dest );
@@ -131,7 +131,7 @@ void CameraSpec::compute_projection(double* dest) const {
 		//2*n / 2*u, 0, 0, 0,
 		//0, 2*n / 2*v, 0, 0,
 		2*1 / 2*u, 0, 0, 0,
-		0, -2*1 / 2*v, 0, 0, // negative in gl, pos in vk
+		0, (flipY?-1:1) * -2*1 / 2*v, 0, 0, // negative in gl, pos in vk
 		0, 0, (f+n)/(f-n), -2*f*n/(f-n),
 		0, 0, 1, 0;
 }

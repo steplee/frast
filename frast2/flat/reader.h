@@ -61,7 +61,8 @@ namespace frast {
 
 			cv::Mat getTlbr(uint64_t lvl, uint32_t tlbr[4], int channels);
 
-			cv::Mat rasterIo(double tlbr[4], int w, int h, int c);
+			cv::Mat rasterIo(const double tlbr[4], int w, int h, int c);
+			bool rasterIo(cv::Mat out, const double tlbr[4]); // false on success
 
 		private:
 

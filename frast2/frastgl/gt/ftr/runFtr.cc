@@ -16,8 +16,8 @@ using namespace frast;
 // No need for this to not use the main thread -- except that is an example for future applications.
 //
 
-// using BaseClass_App = App;
-using BaseClass_App = ImguiApp;
+using BaseClass_App = App;
+// using BaseClass_App = ImguiApp;
 
 class TestApp : public BaseClass_App {
 	public:
@@ -65,8 +65,7 @@ class TestApp : public BaseClass_App {
 			frustum1->render(rs);
 			textSet->render(rs);
 
-			if constexpr (std::is_same_v<BaseClass_App, ImguiApp>)
-				ImguiApp::renderUi(rs);
+			// if constexpr (std::is_same_v<BaseClass_App, ImguiApp>) ImguiApp::renderUi(rs);
 
 			window.endFrame();
 			
@@ -199,6 +198,7 @@ class TestApp : public BaseClass_App {
 			// ftr->cwd.setColor1(color1);
 			// ftr->cwd.setColor2(color2);
 			ftr->cwd.setMask(0b11);
+			// ftr->cwd.setMask(0b0);
 		}
 
 	public:

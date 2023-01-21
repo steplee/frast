@@ -219,7 +219,7 @@ namespace frast {
 
 		//WARNING: Lightly test
 		//FIXME: Test me
-	cv::Mat FlatReaderCached::rasterIo(double wmTlbr[4], int w, int h, int c) {
+	cv::Mat FlatReaderCached::rasterIo(const double wmTlbr[4], int w, int h, int c) {
 		// Determine optimal level to sample from.
 		// Determine integer tlbr on that level.
 		// getTlbr() to get those tiles.
@@ -254,7 +254,7 @@ namespace frast {
 		}
 
 		cv::Mat sampledImg = getTlbr(lvl, iwmTlbr, c);
-		// return sampledImg;
+		if (sampledImg.empty()) return cv::Mat();
 
 
 		double sampledWmW = sampledWmTlbr[2] - sampledWmTlbr[0];
@@ -312,6 +312,71 @@ namespace frast {
 		// cv::resize(sampledImg, out, cv::Size{w,h});
 		return out;
 		// return sampledImg;
+	}
+
+	bool FlatReaderCached::rasterIo(cv::Mat out, const double wmTlbr[4]) {
+		auto w = out.cols;
+		auto h = out.rows;
+
+		auto meter_w = (wmTlbr[2] - wmTlbr[0]);
+		float res = meter_w * (tileSize / static_cast<float>(w));
+
+		uint32_t lvl = find_level_for_mpp(res);
+
+		uint32_t iwmTlbr[4];
+		double sampledWmTlbr[4];
+
+		dwm_to_iwm(iwmTlbr, wmTlbr, lvl);
+		iwm_to_dwm(sampledWmTlbr, iwmTlbr, lvl);
+		// uint32_t iwmTlbrPlusOne[4] = {iwmTlbr[0],iwmTlbr[1], 1+iwmTlbr[2],1+iwmTlbr[3]};
+		// iwm_to_dwm(sampledWmTlbr, iwmTlbrPlusOne, lvl);
+
+		int iwm_w = iwmTlbr[2] - iwmTlbr[0];
+		int iwm_h = iwmTlbr[3] - iwmTlbr[1];
+		int n_tiles = iwm_w * iwm_h;
+
+		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
+
+		if (n_tiles > 256) {
+			std::string msg = fmt::format("[rasterIo] refusing to sample {} tiles ({} x {}) try a smaller patch.", n_tiles,iwm_w,iwm_h);
+			throw std::runtime_error(msg);
+		}
+
+		// FIXME: Cache this image allocation as well.
+		cv::Mat sampledImg = getTlbr(lvl, iwmTlbr, out.channels());
+		if (sampledImg.empty()) return true;
+
+		double sampledWmW = sampledWmTlbr[2] - sampledWmTlbr[0];
+		double sampledWmH = sampledWmTlbr[3] - sampledWmTlbr[1];
+		double sampledW = tileSize * iwm_w;
+		double sampledH = tileSize * iwm_h;
+		double dw=w, dh=h;
+		// double queryW = wmTlbr[2] - wmTlbr[0];
+		// double queryH = wmTlbr[3] - wmTlbr[1];
+
+		double pts1[] = {
+			0, dh,
+			dw, dh,
+			dw, 0,
+		};
+		double pts2[] = {
+			(wmTlbr[0]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+			(wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[1]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+			(wmTlbr[2]-sampledWmTlbr[0]) * (sampledW/sampledWmW), sampledH-(wmTlbr[3]-sampledWmTlbr[1]) * (sampledH/sampledWmH),
+		};
+
+		float pts1f[6];
+		float pts2f[6];
+		for (int i=0; i<6; i++) pts1f[i] = static_cast<float>(pts1[i]);
+		for (int i=0; i<6; i++) pts2f[i] = static_cast<float>(pts2[i]);
+
+		cv::Mat pts1_(3,2,CV_32FC1,pts1f);
+		cv::Mat pts2_(3,2,CV_32FC1,pts2f);
+		cv::Mat A = cv::getAffineTransform(pts2_, pts1_);
+
+		cv::warpAffine(sampledImg, out, A, cv::Size{w,h});
+
+		return false;
 	}
 
 
