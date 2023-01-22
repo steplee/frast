@@ -38,8 +38,8 @@ struct GdalRunner {
 		for (int i=0; i<nbands; i++) histo[i].resize(256);
 
 		// for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i);
-		for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i)->GetOverview(0);
-		// for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i)->GetOverview(1);
+		// for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i)->GetOverview(0);
+		for (int i = 0; i < nbands; i++) bands[i] = dset->GetRasterBand(1 + i)->GetOverview(1);
 	}
 	~GdalRunner() {
 		delete ((GDALDataset*)dset);
@@ -290,7 +290,8 @@ int main() {
 	}
 
 	if (1){
-		FrastRunner frastRunner { "/data/naip/mocoNaip/mocoDefrag.fft" };
+		// FrastRunner frastRunner { "/data/naip/mocoNaip/mocoDefrag.fft" };
+		FrastRunner frastRunner { "/data/naip/mocoNaip/moco2.fft" };
 		frastRunner.run();
 	}
 

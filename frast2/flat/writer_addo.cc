@@ -13,7 +13,7 @@
 namespace frast {
 
 WriterMasterAddo::WriterMasterAddo(const std::string& outPath, const EnvOptions& opts)
-	: ThreadPool(4),
+	: ThreadPool(FRAST_WRITER_THREADS),
 	  path_(outPath),
 	  env(outPath, opts), envOpts(opts) {
 

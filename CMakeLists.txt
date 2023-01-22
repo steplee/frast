@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 2.20)
 project(frast)
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -g -O3 -Werror=return-type")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -g -O3 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type -fsanitize=address")
+set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -g -O1 -Werror=return-type -fno-inline-functions")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -O1 -Werror=return-type -fno-omit-frame-pointer -fno-inline -fno-inline-functions")
@@ -27,6 +29,10 @@ set(libsZ "z")
 option(STATIC_OPENCV "Force opencv static libs" OFF)
 
 option(ENABLE_IMGUI "Enable imgui" ON)
+
+# 4 is a good value, but it is easier to debug with 1
+option(FRAST_WRITER_THREADS "Number of parallel jobs for frastFlatWriter" 4)
+add_definitions(-DFRAST_WRITER_THREADS=${FRAST_WRITER_THREADS})
 
 #####################
 # Catch2

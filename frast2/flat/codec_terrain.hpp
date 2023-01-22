@@ -2,7 +2,7 @@
 #include <opencv2/core.hpp>
 #include <fmt/core.h>
 
-#define FRAST_COMPRESS_TERRAIN=1
+#define FRAST_COMPRESS_TERRAIN
 
 namespace frast {
 

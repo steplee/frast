@@ -7,7 +7,7 @@
 namespace frast {
 
 WriterMaster::WriterMaster(const std::string& outPath, const EnvOptions& opts)
-	: ThreadPool(4),
+	: ThreadPool(FRAST_WRITER_THREADS),
 	  env(outPath, opts), envOpts(opts) {
 
 

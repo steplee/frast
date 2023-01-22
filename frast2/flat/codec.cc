@@ -1,11 +1,13 @@
 #include "codec.h"
 
-#include "terrain_codec.hpp"
+#include "codec_terrain.hpp"
+#include "codec_stb.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
+	constexpr bool USE_STB = true;
 }
 
 namespace frast {
@@ -15,19 +17,32 @@ namespace frast {
 	Value encodeValue(const cv::Mat& img, bool isTerrain) {
 		assert (not img.empty());
 
+
 		if (isTerrain) {
 			assert(img.channels() == 1);
 			assert(img.type() == CV_16UC1);
 			return encode_terrain_2x8(img);
 		} else {
-			std::vector<uint8_t> buf;
-			bool stat = cv::imencode(".jpg", img, buf);
-			assert(stat);
-			Value v;
-			v.value = malloc(buf.size());
-			v.len = buf.size();
-			memcpy(v.value, buf.data(), buf.size());
-			return v;
+
+			if constexpr (USE_STB) {
+				std::vector<uint8_t> buf;
+				my_write_jpg_stb(buf, img);
+				Value v;
+				// fmt::print(" - Writing {} bytes:", buf.size()); for (int i=0; i<20; i++) fmt::print(" {:0x}", buf[i]); fmt::print("\n");
+				v.value = malloc(buf.size());
+				v.len = buf.size();
+				memcpy(v.value, buf.data(), buf.size());
+				return v;
+			} else {
+				std::vector<uint8_t> buf;
+				bool stat = cv::imencode(".jpg", img, buf);
+				assert(stat);
+				Value v;
+				v.value = malloc(buf.size());
+				v.len = buf.size();
+				memcpy(v.value, buf.data(), buf.size());
+				return v;
+			}
 		}
 	}
 
@@ -40,16 +55,25 @@ namespace frast {
 		} else {
 			assert(channels == 1 or channels == 3 or channels == 4);
 
-			bool grayscale = channels == 1;
-			auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
+			if constexpr (USE_STB) {
+				int w,h,c;
+				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);
+				cv::Mat out (w,h, CV_8UC3); // FIXME: correct type
+				memcpy(out.data, mem, out.total() * out.elemSize());
+				free(mem);
+				return out;
 
-			cv::_InputArray buf((uint8_t*)val.value, val.len);
-			cv::Mat img = cv::imdecode(buf, flags);
+			} else {
+				bool grayscale = channels == 1;
+				auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
 
-			if (channels == 4 and img.channels() == 1) cv::cvtColor(img,img, cv::COLOR_GRAY2BGRA);
-			if (channels == 4 and img.channels() == 3) cv::cvtColor(img,img, cv::COLOR_BGR2BGRA);
+				cv::_InputArray buf((uint8_t*)val.value, val.len);
+				cv::Mat img = cv::imdecode(buf, flags);
 
-			return img;
+				if (channels == 4 and img.channels() == 1) cv::cvtColor(img,img, cv::COLOR_GRAY2BGRA);
+				if (channels == 4 and img.channels() == 3) cv::cvtColor(img,img, cv::COLOR_BGR2BGRA);
+				return img;
+			}
 		}
 	}
 
@@ -62,16 +86,26 @@ namespace frast {
 		} else {
 			assert(channels == 1 or channels == 3 or channels == 4);
 
-			bool grayscale = channels == 1;
-			auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
+			if constexpr (USE_STB) {
+				int w,h,c;
+				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);
+				out.create(w,h, CV_8UC3); // FIXME: correct type
+				memcpy(out.data, mem, out.total() * out.elemSize());
+				free(mem);
+				return false;
 
-			cv::_InputArray buf((uint8_t*)val.value, val.len);
-			cv::imdecode(buf, flags, &out);
+			} else {
+				bool grayscale = channels == 1;
+				auto flags = grayscale ? 0 : cv::IMREAD_COLOR;
 
-			if (channels == 4 and out.channels() == 1) cv::cvtColor(out,out, cv::COLOR_GRAY2BGRA);
-			if (channels == 4 and out.channels() == 3) cv::cvtColor(out,out, cv::COLOR_BGR2BGRA);
+				cv::_InputArray buf((uint8_t*)val.value, val.len);
+				cv::imdecode(buf, flags, &out);
 
-			return false;
+				if (channels == 4 and out.channels() == 1) cv::cvtColor(out,out, cv::COLOR_GRAY2BGRA);
+				if (channels == 4 and out.channels() == 3) cv::cvtColor(out,out, cv::COLOR_BGR2BGRA);
+
+				return false;
+			}
 		}
 	}
 
