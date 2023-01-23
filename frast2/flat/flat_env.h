@@ -76,6 +76,7 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 	};
 
 	struct __attribute__((packed)) FileMeta {
+		uint64_t version=0;
 		uint64_t metaOffset=0, metaLength=0;
 		LevelSpec levelSpecs[26];
 
@@ -85,6 +86,9 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 			eGrayscale = 1,
 			eTerrain = 2,
 		} rasterType = RasterType::eColor;
+		enum class CodecOverride : uint8_t {
+			eDefault = 0,
+		} codecOverride = CodecOverride::eDefault;
 	};
 
 	static constexpr uint64_t fileMetaLength   = sizeof(uint64_t) * 2 + sizeof(LevelSpec) * 26;

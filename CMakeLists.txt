@@ -1,12 +1,8 @@
 cmake_minimum_required(VERSION 2.20)
 project(frast)
 
-# set(CMAKE_CXX_FLAGS "-std=c++17 -g -O3 -Werror=return-type")
-# set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type -fsanitize=address")
-set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
-# set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O3 -Werror=return-type")
-# set(CMAKE_CXX_FLAGS "-std=c++17 -g -O1 -Werror=return-type -fno-inline-functions")
+set(CMAKE_CXX_FLAGS "-std=c++17 -g -O3 -Werror=return-type")
 # set(CMAKE_CXX_FLAGS "-std=c++17 -O1 -Werror=return-type -fno-omit-frame-pointer -fno-inline -fno-inline-functions")
 
 # set(CMAKE_CXX_FLAGS "-std=c++17 -gdwarf-2 -O0 -Werror=return-type")
@@ -26,29 +22,33 @@ set(libsZ "z")
 # What I wanted was to just copy all needed symbols from the static opencv libs and make them private.
 # Kind of like inlining functions. But instead you get undefined references and this forces you to pass
 # the same opencv libs to link with, destroying the encapsulation.
+option(TESTS "Build Tests" ON)
 option(STATIC_OPENCV "Force opencv static libs" OFF)
 
 option(ENABLE_IMGUI "Enable imgui" ON)
 
 # 4 is a good value, but it is easier to debug with 1
-option(FRAST_WRITER_THREADS "Number of parallel jobs for frastFlatWriter" 4)
+set(FRAST_WRITER_THREADS 4 CACHE INTEGER "Number of parallel jobs for frastFlatWriter" )
 add_definitions(-DFRAST_WRITER_THREADS=${FRAST_WRITER_THREADS})
+
+include(FetchContent)
 
 #####################
 # Catch2
 #####################
 
-include(FetchContent)
-FetchContent_Declare(
-  Catch2
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG        v3.2.1)
-FetchContent_MakeAvailable(Catch2)
+if (TESTS)
+	FetchContent_Declare(
+	Catch2
+	GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+	GIT_TAG        v3.2.1)
+	FetchContent_MakeAvailable(Catch2)
 
-list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
-list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
-include(CTest)
-include(Catch)
+	list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
+	list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+	include(CTest)
+	include(Catch)
+endif()
 
 
 #####################
@@ -79,7 +79,12 @@ find_package(Eigen3 REQUIRED)
 if (STATIC_OPENCV)
 	find_package(OpenCV REQUIRED NO_DEFAULT_PATH HINTS /opt/opencvStatic47)
 else()
-	find_package(OpenCV REQUIRED)
+	if (EXISTS /usr/local/terrapixel/include/opencv4)
+		find_package(OpenCV REQUIRED PATHS /usr/local/terrapixel/ NO_DEFAULT_PATH)
+		include_directories(${OpenCV_INCLUDE_DIRS})
+	else()
+		find_package(OpenCV REQUIRED)
+	endif()
 endif()
 
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -168,28 +173,30 @@ add_subdirectory(frast2/frastgl)
 # Tests
 #####################
 
-add_executable(testFlatWriter1 frast2/flat/test.cc)
-target_link_libraries(testFlatWriter1 Catch2::Catch2WithMain frast2 fmt::fmt)
-catch_discover_tests(testFlatWriter1)
+if (TESTS)
+	add_executable(testFlatWriter1 frast2/flat/test.cc)
+	target_link_libraries(testFlatWriter1 Catch2::Catch2WithMain frast2 fmt::fmt)
+	catch_discover_tests(testFlatWriter1)
 
-add_executable(testGdalStuff frast2/flat/testGdalStuff.cc)
-target_link_libraries(testGdalStuff Catch2::Catch2WithMain frast2 fmt::fmt ${libsGdal})
-catch_discover_tests(testGdalStuff)
+	add_executable(testGdalStuff frast2/flat/testGdalStuff.cc)
+	target_link_libraries(testGdalStuff Catch2::Catch2WithMain frast2 fmt::fmt ${libsGdal})
+	catch_discover_tests(testGdalStuff)
 
-add_executable(testDataStructures frast2/detail/testDataStructures.cc)
-target_link_libraries(testDataStructures Catch2::Catch2WithMain frast2 fmt::fmt)
-catch_discover_tests(testDataStructures)
+	add_executable(testDataStructures frast2/detail/testDataStructures.cc)
+	target_link_libraries(testDataStructures Catch2::Catch2WithMain frast2 fmt::fmt)
+	catch_discover_tests(testDataStructures)
 
-add_executable(testLruCacheAndRingBuffer frast2/detail/testLruCacheAndRingBuffer.cc)
-target_link_libraries(testLruCacheAndRingBuffer Catch2::Catch2WithMain frast2 fmt::fmt)
-catch_discover_tests(testLruCacheAndRingBuffer)
+	add_executable(testLruCacheAndRingBuffer frast2/detail/testLruCacheAndRingBuffer.cc)
+	target_link_libraries(testLruCacheAndRingBuffer Catch2::Catch2WithMain frast2 fmt::fmt)
+	catch_discover_tests(testLruCacheAndRingBuffer)
 
-add_executable(ebpfStuff frast2/experiment/ebpf_stuff.cc)
-target_link_libraries(ebpfStuff Catch2::Catch2WithMain fmt::fmt)
+	add_executable(ebpfStuff frast2/experiment/ebpf_stuff.cc)
+	target_link_libraries(ebpfStuff Catch2::Catch2WithMain fmt::fmt)
 
-add_executable(testTpool frast2/tpool/test_tpool.cc)
-target_link_libraries(testTpool Catch2::Catch2WithMain frast2 fmt::fmt)
-catch_discover_tests(testTpool)
+	add_executable(testTpool frast2/tpool/test_tpool.cc)
+	target_link_libraries(testTpool Catch2::Catch2WithMain frast2 fmt::fmt)
+	catch_discover_tests(testTpool)
+endif()
 
 #####################
 # Benchmarks
