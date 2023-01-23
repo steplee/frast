@@ -42,6 +42,13 @@ namespace frast {
 		bool anon = false;
 		bool readonly = false;
 		bool isTerrain = false;
+
+		static EnvOptions getReadonly(bool terrain=false) {
+			EnvOptions o;
+			o.isTerrain = terrain;
+			o.readonly = true;
+			return o;
+		}
 	};
 
 	template <class Derived>
