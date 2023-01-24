@@ -70,7 +70,11 @@ FetchContent_MakeAvailable(dep_fmt)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # include_directories(${CMAKE_CURRENT_SOURCE_DIR}/frast2) # Actually: don't do this, makes installing easier
-include_directories(/usr/local/include/eigen3)
+if (EXISTS /usr/local/include/eigen3)
+	include_directories(/usr/local/include/eigen3)
+else()
+	include_directories(/usr/include/eigen3)
+endif()
 
 set(libsGdal gdal)
 
@@ -80,7 +84,7 @@ if (STATIC_OPENCV)
 	find_package(OpenCV REQUIRED NO_DEFAULT_PATH HINTS /opt/opencvStatic47)
 else()
 	if (EXISTS /usr/local/terrapixel/include/opencv4)
-		find_package(OpenCV REQUIRED PATHS /usr/local/terrapixel/ NO_DEFAULT_PATH)
+		find_package(OpenCV REQUIRED PATHS /usr/local/terrapixel/ NO_DEFAULT_PATH COMPONENTS opencv_core opencv_imgproc opencv_imgcodecs opencv_highgui)
 		include_directories(${OpenCV_INCLUDE_DIRS})
 	else()
 		find_package(OpenCV REQUIRED)
@@ -89,6 +93,7 @@ endif()
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 set(libsCv ${OpenCV_LIBRARIES})
+message(STATUS "libsCv: ${libsCv}")
 
 #####################
 # Frast
