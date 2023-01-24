@@ -76,6 +76,10 @@ else()
 	include_directories(/usr/include/eigen3)
 endif()
 
+if (EXISTS /usr/include/gdal)
+	include_directories(/usr/include/gdal)
+endif()
+
 set(libsGdal gdal)
 
 find_package(Eigen3 REQUIRED)
