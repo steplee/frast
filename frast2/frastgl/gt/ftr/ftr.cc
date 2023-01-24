@@ -157,15 +157,13 @@ FtDataLoader::~FtDataLoader() {
 
 FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader<FtTypes, FtDataLoader>(renderer_) {
 
-	EnvOptions opt;
+	EnvOptions optColor = EnvOptions::getReadonly(false);
 	for (const auto& colorPath : renderer.cfg.colorDsetPaths)
-		colorDsets.push_back(new FlatReaderCached(colorPath, opt));
+		colorDsets.push_back(new FlatReaderCached(colorPath, optColor));
 
-	// FIXME: Disabled
-	EnvOptions opt1;
-	opt1.isTerrain = true;
+	EnvOptions optElev = EnvOptions::getReadonly(true);
 	if (renderer.cfg.elevDsetPath.length() > 1)
-		elevDset = new FlatReaderCached(renderer.cfg.elevDsetPath, opt1);
+		elevDset = new FlatReaderCached(renderer.cfg.elevDsetPath, optElev);
 
 
 	/*
