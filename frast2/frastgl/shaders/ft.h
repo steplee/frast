@@ -92,7 +92,7 @@ void main() {
 		v_caster_uv.zw = (p.xy) * .5 + .5;
 	} else v_caster_uv.zw = vec2(0.);
 
-	v_caster_uv.yz = 1. - v_caster_uv.yz;
+	v_caster_uv.yw = 1. - v_caster_uv.yw;
 }
 
 )";

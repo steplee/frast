@@ -140,6 +140,7 @@ namespace frast {
 			auto flags = opts.readonly ? O_RDONLY : O_RDWR;
 			if (not opts.readonly) flags |= O_CREAT;
 			auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+			if (opts.readonly) mode = S_IRUSR | S_IROTH | S_IRGRP;
 			fd_ = open(path.c_str(), flags, mode);
 			if (fd_ == -1) {
 				fmt::print(" - open failed with: {}, {}\n", errno, strerror(errno));
