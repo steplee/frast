@@ -199,11 +199,11 @@ struct FtTile : public GtTile<FtTypes, FtTile> {
 		}
 	}
 
-	bool upload(FtTypes::DecodedCpuTileData& dctd, GtTileData& td);
-	void updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer);
+	bool upload(FtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td);
+	// void updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer);
 
-	void doRender(GtTileData& td);
-	void doRenderCasted(GtTileData& td, const CasterStuff& casterStuff);
+	void doRender(GtTileData& td, int meshIdx);
+	void doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int meshIdx);
 
 };
 

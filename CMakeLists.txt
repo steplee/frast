@@ -137,8 +137,8 @@ target_link_libraries(frastTool frast2 fmt::fmt)
 #####################
 
 find_package(pybind11 REQUIRED)
-pybind11_add_module(frastpy2 frast2/py/frastpy2.cc)
-target_link_libraries(frastpy2 PUBLIC frast2)
+pybind11_add_module(frastpy2_c frast2/frastpy2/frastpy2_c.cc)
+target_link_libraries(frastpy2_c PUBLIC frast2)
 
 # Install libs, headers, and python files.
 
@@ -162,9 +162,9 @@ install(DIRECTORY
 # For example, if DESTDIR=/data/temp, and CMAKE_INSTALL_PREFIX=/usr/local/:
 #     PYTHONPATH=/data/temp/usr/local/python/ python3
 # The above command will be able to load frastpy2
-install(TARGETS frastpy2 LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/python)
-install(DIRECTORY frast2/py/
-	DESTINATION ${CMAKE_INSTALL_PREFIX}/python
+install(TARGETS frastpy2_c LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/python/frastpy2)
+install(DIRECTORY frast2/frastpy2/
+	DESTINATION ${CMAKE_INSTALL_PREFIX}/python/frastpy2/
 	FILES_MATCHING
 		PATTERN "*.py"
 		PATTERN "*.proto"

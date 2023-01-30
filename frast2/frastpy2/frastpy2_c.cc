@@ -114,13 +114,28 @@ struct DatasetReaderIteratorNoImages {
 };
 
 
-PYBIND11_MODULE(frastpy2, m) {
+PYBIND11_MODULE(frastpy2_c, m) {
 
 	m.def("getCellSize", [](int lvl) {
 		if (lvl < 0 or lvl >= MAX_LVLS) throw std::runtime_error("Lvl must be >0 and <" + std::to_string(MAX_LVLS));
 		return WebMercatorCellSizes[lvl];
 	});
 	m.attr("WebMercatorMapScale") = WebMercatorMapScale;
+
+	// void dwm_to_iwm(uint32_t iwmTlbr[4], const double wmTlbr[4], int lvl);
+	// void iwm_to_dwm(double dwmTlbr[4], const uint32_t iwmTlbr[4], int lvl);
+	m.def("dwm_to_iwm", [](py::array_t<uint32_t> tlbr, int lvl) -> py::array_t<double> {
+		double data[4];
+		iwm_to_dwm(data, tlbr.data(), lvl);
+		auto result = py::array(py::dtype::of<double>(), {4},{1}, data);
+		return result;
+	});
+	m.def("iwm_to_dwm", [](py::array_t<double> tlbr, int lvl) -> py::array_t<double> {
+		uint32_t data[4];
+		dwm_to_iwm(data, tlbr.data(), lvl);
+		auto result = py::array(py::dtype::of<uint32_t>(), {4},{1}, data);
+		return result;
+	});
 
 	py::class_<DatasetReaderIterator>(m, "DatasetReaderIterator")
 		.def(py::init<FlatReaderCached*, int, int>())
@@ -151,6 +166,7 @@ PYBIND11_MODULE(frastpy2, m) {
 
 	py::class_<EnvOptions>(m, "EnvOptions")
 		.def(py::init<>())
+		.def_readwrite("readonly", &EnvOptions::readonly)
 		.def_readwrite("isTerrain", &EnvOptions::isTerrain);
 
 	py::class_<FlatReaderCached>(m, "FlatReaderCached")
@@ -192,8 +208,8 @@ PYBIND11_MODULE(frastpy2, m) {
 				if (lvl<0 or lvl>30) throw std::runtime_error("invalid lvl, must be >0, <30");
 				if (tlbr_.size() != 4) throw std::runtime_error("tlbr must be length 4.");
 				if (tlbr_.ndim() != 1) throw std::runtime_error("tlbr must have one dim.");
-				if (tlbr_.strides(0) != 8)
-					throw std::runtime_error("tlbr must have stride 8 (be contiguous uint64_t), was: " +
+				if (tlbr_.strides(0) != 4)
+					throw std::runtime_error("tlbr must have stride 4 (be contiguous uint64_t), was: " +
 							std::to_string(tlbr_.strides(0)));
 
 				uint32_t* tlbr = const_cast<uint32_t*>(tlbr_.data());

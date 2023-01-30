@@ -100,8 +100,33 @@ namespace frast {
 		return lvl;
 	}
 
-	std::vector<double[4]> FlatReader::computeRegionsOnDeepestLevel() {
-		throw std::runtime_error("not implemented yet.");
+	std::vector<std::array<double,4>> FlatReader::computeRegionsOnDeepestLevel() {
+		int lvl = determineDeepeseLevel();
+		if (lvl < 0 or lvl > 30) throw std::runtime_error("invalid level from determineDeepeseLevel()");
+
+		uint64_t* keys = env.getKeys(lvl);
+		auto nitems = env.getLevelSpec(lvl).nitemsUsed();
+
+		uint32_t tlbr[4] = {
+			std::numeric_limits<uint32_t>::max(),
+			std::numeric_limits<uint32_t>::max(),
+			std::numeric_limits<uint32_t>::min(),
+			std::numeric_limits<uint32_t>::min() };
+
+		for (int i=0; i<nitems; i++) {
+			BlockCoordinate c(keys[i]);
+			tlbr[0] = std::min(tlbr[0], (uint32_t)c.x());
+			tlbr[1] = std::min(tlbr[1], (uint32_t)c.y());
+			tlbr[2] = std::max(tlbr[2], 1u+(uint32_t)c.x());
+			tlbr[3] = std::max(tlbr[3], 1u+(uint32_t)c.y());
+		}
+
+		std::array<double,4> dwmTlbr;
+		iwm_to_dwm(dwmTlbr.begin(), tlbr, lvl);
+
+		std::vector<std::array<double,4>> out;
+		out.push_back(dwmTlbr);
+		return out;
 	}
 
 	cv::Mat FlatReader::getTile(uint64_t tile, int channels) {

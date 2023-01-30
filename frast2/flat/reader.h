@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv2/core.hpp>
+#include <array>
 
 #include "flat_env.h"
 #include "frast2/detail/data_structures.hpp"
@@ -25,7 +26,7 @@ namespace frast {
 			static constexpr int logTileSize=8;
 
 			int64_t determineTlbr(uint32_t tlbr[4]);
-			std::vector<double[4]> computeRegionsOnDeepestLevel();
+			std::vector<std::array<double,4>> computeRegionsOnDeepestLevel();
 
 
 			cv::Mat getTile(uint64_t tile, int channels);

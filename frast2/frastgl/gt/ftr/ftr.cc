@@ -457,7 +457,8 @@ int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool 
 //
 // NOTE: Unlike in frast1, in frast2 this is **called in the render thread**.
 //
-bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, GtTileData& td) {
+bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) {
+	assert(idx == 0);
 	// Upload vertices, indices, texture
 
 	{
@@ -518,7 +519,7 @@ bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, GtTileData& td) {
 	return false;
 }
 
-void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff) {
+void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int meshIdx) {
 	// fmt::print(" - rendering casted\n");
 
 	glBindTexture(GL_TEXTURE_2D, td.tex);
@@ -531,7 +532,7 @@ void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff) {
 	glDrawElements(GL_TRIANGLES, td.residentInds, GL_UNSIGNED_SHORT, 0);
 }
 
-void FtTile::doRender(GtTileData& td) {
+void FtTile::doRender(GtTileData& td, int meshIdx) {
 
 	// NOTE: To avoid excessive state switches and line noise: assume correct shader is already bound (as well as uniforms)
 
@@ -550,8 +551,7 @@ void FtTile::doRender(GtTileData& td) {
 }
 
 // Called for new tiles
-void FtTile::updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer) {
-}
+// void FtTile::updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer) { }
 
 
 void FtRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {

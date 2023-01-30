@@ -36,7 +36,8 @@ out layout(location=0) vec4 out_color;
 void main() {
 	// out_color = texture(u_tex, v_uv);
 
-	out_color = .1 + vec4(texture(u_tex, v_uv).rgb,1.);
+	// out_color = .1 + vec4(texture(u_tex, v_uv).rgb,1.);
+	out_color = vec4(texture(u_tex, v_uv).rgb,1.);
 
 	// out_color = vec4(1.0);
 }

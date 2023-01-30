@@ -73,16 +73,20 @@ add_library(frastgl
 	extra/frustum/frustum.cc
 	extra/textSet/textSet.cc
 
-	gt/ftr/ftr.cc
 	gt/gt.cc
+	gt/ftr/ftr.cc
+	gt/rt/rt.cc
+	gt/rt/protos/rocktree.pb.cc
 
 	${imgui_sources} ${frast_imgui_sources}
 )
 
-target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW)
+target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW protobuf)
 
 add_executable(runFtr gt/ftr/runFtr.cc)
 target_link_libraries(runFtr frastgl)
+add_executable(runRtr gt/rt/runRt.cc)
+target_link_libraries(runRtr frastgl)
 
 # Install
 

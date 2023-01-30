@@ -178,6 +178,8 @@ def export_frast_version1(outFp, colorPath, elevPath):
     # e_dset = frastpy.DatasetReader(elevPath, o)
     o1 = frastpy2.EnvOptions()
     o2 = frastpy2.EnvOptions()
+    o1.readonly = True
+    o2.readonly = True
     o2.isTerrain = True
     c_dset = frastpy2.FlatReaderCached(colorPath, o1)
     e_dset = frastpy2.FlatReaderCached(elevPath, o2)

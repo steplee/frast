@@ -58,9 +58,9 @@ void GtTile<GtTypes,Derived>::render(typename GtTypes::RenderContext& gtrc) {
 			// FIXME: Do it.
 
 			if (gtrc.casterStuff.casterMask != 0)
-				static_cast<Derived*>(this)->doRenderCasted(td, gtrc.casterStuff);
+				static_cast<Derived*>(this)->doRenderCasted(td, gtrc.casterStuff, mi);
 			else
-				static_cast<Derived*>(this)->doRender(td);
+				static_cast<Derived*>(this)->doRender(td, mi);
 
 			/*
 			glBindTexture(GL_TEXTURE_2D, td.tex);
@@ -468,8 +468,11 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 					// tile->updateGlobalBuffer((typename GtTypes::GlobalBuffer*)gtpd.globalBuffer.mappedAddr);
 					// checkWriteImgDesc(tile);
 
-					uint32_t meshId = tile->meshIds[0];
-					tile->upload(r.datas[i++], gtpd.datas[meshId]);
+					for (int j=0; j<tile->meshIds.size(); j++) {
+						uint32_t meshId = tile->meshIds[j];
+						tile->upload(r.datas[i], j, gtpd.datas[meshId]);
+					}
+					i++;
 				}
 			}
 
@@ -494,8 +497,10 @@ void GtRenderer<GtTypes,Derived>::update(GtUpdateContext<GtTypes>& gtuc) {
 
 				// tile->updateGlobalBuffer((typename GtTypes::GlobalBuffer*)gtpd.globalBuffer.mappedAddr);
 				// checkWriteImgDesc(tile);
-				uint32_t meshId = tile->meshIds[0];
-				tile->upload(r.datas[0], gtpd.datas[meshId]);
+				for (int j=0; j<tile->meshIds.size(); j++) {
+					uint32_t meshId = tile->meshIds[j];
+					tile->upload(r.datas[0], j, gtpd.datas[meshId]);
+				}
 			}
 		}
 	}
