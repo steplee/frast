@@ -170,8 +170,6 @@ install(DIRECTORY frast2/frastpy2/
 		PATTERN "*.proto"
 		PATTERN "*/__pycache__" EXCLUDE)
 
-
-
 #####################
 # FrastGL
 #####################

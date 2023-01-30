@@ -57,9 +57,11 @@ endif()
 
 
 
+
 #####################
 # FrastGl
 #####################
+
 
 add_library(frastgl
 	STATIC
@@ -88,7 +90,24 @@ target_link_libraries(runFtr frastgl)
 add_executable(runRtr gt/rt/runRt.cc)
 target_link_libraries(runRtr frastgl)
 
+
+#####################
+# Proto
+#####################
+
+add_custom_command(
+  #TARGET frastgl
+  #PRE_BUILD
+  #BYPRODUCTS "${PROJECT_SOURCE_DIR}/frast2/frastgl/gt/rt/protos/rocktree.pb.cc"
+  OUTPUT "${PROJECT_SOURCE_DIR}/frast2/frastgl/gt/rt/protos/rocktree.pb.cc"
+  "${PROJECT_SOURCE_DIR}/frast2/frastgl/gt/rt/protos/rocktree.pb.h"
+  COMMAND protoc --cpp_out=./ rocktree.proto
+  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/frast2/frastgl/gt/rt/protos")
+
+
+#####################
 # Install
+#####################
 
 # NOTE: This copies private headers too, but that is okay.
 install(TARGETS frastgl LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
