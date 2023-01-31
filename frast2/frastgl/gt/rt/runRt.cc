@@ -77,7 +77,7 @@ class TestApp : public BaseClass_App {
 			cfg.debugMode = true;
 
 			cfg.rootDir = "/data/gearth/naipAoisWgs";
-			cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/index.v1.bin"};
+			cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/obb.obb"};
 			// cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/index.v1.bin"};
 
 			rtr = std::make_unique<RtRenderer>(cfg);

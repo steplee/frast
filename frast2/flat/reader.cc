@@ -93,8 +93,8 @@ namespace frast {
 			BlockCoordinate bc(keys[i]);
 			tlbr[0] = std::min(tlbr[0], (uint32_t)bc.x());
 			tlbr[1] = std::min(tlbr[1], (uint32_t)bc.y());
-			tlbr[2] = std::max(tlbr[2], (uint32_t)bc.x());
-			tlbr[3] = std::max(tlbr[3], (uint32_t)bc.y());
+			tlbr[2] = std::max(tlbr[2], 1u+(uint32_t)bc.x());
+			tlbr[3] = std::max(tlbr[3], 1u+(uint32_t)bc.y());
 		}
 
 		return lvl;

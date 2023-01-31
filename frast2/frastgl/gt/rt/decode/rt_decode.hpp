@@ -213,7 +213,7 @@ inline bool decode_node_to_tile(
 			// md.uvOffset[1] -= 1.0 / md.uvScale[1];
 			// md.uvScale[1] *= -1.0;
 		}
-		fmt::print(" - UV SO {} {} {} {}\n", md.uvScale[0], md.uvScale[1], md.uvOffset[0], md.uvOffset[1]);
+		// fmt::print(" - UV SO {} {} {} {}\n", md.uvScale[0], md.uvScale[1], md.uvOffset[0], md.uvOffset[1]);
 
 		// if (nv >= RtCfg::maxVerts) fmt::print(" - WARNING: nv {} / {}\n", nv, RtCfg::maxVerts);
 

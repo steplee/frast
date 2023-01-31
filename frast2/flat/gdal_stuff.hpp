@@ -22,6 +22,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/calib3d.hpp>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -46,6 +47,12 @@ namespace {
 
 			buf[y*w+x] = val;
 		}
+	}
+
+	void show_debug_stuff(
+			cv::Mat sampled,
+			cv::Mat final
+			) {
 	}
 }
 
@@ -110,8 +117,8 @@ namespace {
 void MyGdalDataset::getTlbrForLevel(uint64_t tlbr[4], int lvl) {
 	tlbr[0] = static_cast<uint64_t>((tlbr_uwm[0]+1)*.5 * (1<<lvl));
 	tlbr[1] = static_cast<uint64_t>((tlbr_uwm[1]+1)*.5 * (1<<lvl));
-	tlbr[2] = static_cast<uint64_t>((tlbr_uwm[2]+1)*.5 * (1<<lvl));
-	tlbr[3] = static_cast<uint64_t>((tlbr_uwm[3]+1)*.5 * (1<<lvl));
+	tlbr[2] = 1+static_cast<uint64_t>((tlbr_uwm[2]+1)*.5 * (1<<lvl));
+	tlbr[3] = 1+static_cast<uint64_t>((tlbr_uwm[3]+1)*.5 * (1<<lvl));
 }
 
 cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
@@ -121,6 +128,11 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		assert(gdalType == GDT_Int16);
 		internalCvType = CV_16UC1;
 	}
+
+	// NOTE: Adds a little bit of aliasing, but makes less blurry
+	constexpr float sampleRatio = 3.f / 2.f;
+	int sw = w * 3 / 2;
+	int sh = w * 3 / 2;
 
 	assert(cvType != -1);
 	assert(internalCvType != -1);
@@ -145,54 +157,92 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	aabb.extend(corners.row(3).transpose());
 	// fmt::print(" - pix aabb: {} {}\n", aabb.min().transpose(), aabb.max().transpose());
 
-	Vector2d tl_pix = aabb.min();
-	Vector2d br_pix = aabb.max();
-	Matrix<double,4,2> corners_nat; corners_nat <<
-		tl_pix(0), tl_pix(1),
-		br_pix(0), tl_pix(1),
-		br_pix(0), br_pix(1),
-		tl_pix(0), br_pix(1);
-	corners_nat = (corners_nat * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
-    prj2wm->Transform(4, corners_nat.data(), corners_nat.data()+4, nullptr);
-	// fmt::print(" - corners nat: {}\n", corners_nat);
 
-
-
-
-	Vector4d tlbr_pix { aabb.min()(0), aabb.min()(1), aabb.max()(0), aabb.max()(1) };
+	// Vector4d tlbr_pix { aabb.min()(0)-1, aabb.min()(1)-1, aabb.max()(0)+1, aabb.max()(1)+1 };
+	// Vector4d tlbr_pix { aabb.min()(0)-2, aabb.min()(1)-2, aabb.max()(0)+2, aabb.max()(1)+2 };
+	Vector4d tlbr_pix { aabb.min()(0)-1, aabb.min()(1)-1, aabb.max()(0)+2, aabb.max()(1)+2 };
+	// Vector4d tlbr_pix { aabb.min()(0), aabb.min()(1), aabb.max()(0)+1, aabb.max()(1)+1 };
 	cv::Mat sampledImg;
-	sampledImg.create(h,w,internalCvType);
+	// sampledImg.create(h,w,internalCvType);
+	sampledImg.create(sh,sw,internalCvType);
+
 	Vector4d tlbr_pix_sampled = bboxPix(tlbr_pix, sampledImg);
 
 	// fmt::print(" - sampled tlbr: {}\n", tlbr_pix_sampled.transpose());
 	// cv::imshow("sampled", sampledImg);
 
+	// Vector2d tl_pix = aabb.min();
+	// Vector2d br_pix = aabb.max();
+	Vector2d tl_pix = tlbr_pix_sampled.head<2>();
+	Vector2d br_pix = tlbr_pix_sampled.tail<2>();
+	Matrix<double,4,2> corners_nat; corners_nat <<
+		tl_pix(0), tl_pix(1),
+		br_pix(0), tl_pix(1),
+		br_pix(0), br_pix(1),
+		tl_pix(0), br_pix(1);
+		// tl_pix(0), br_pix(1),
+		// br_pix(0), br_pix(1),
+		// br_pix(0), tl_pix(1),
+		// tl_pix(0), tl_pix(1);
+	corners_nat = (corners_nat * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
+    prj2wm->Transform(4, corners_nat.data(), corners_nat.data()+4, nullptr);
 
+	const Matrix<double,4,2> &sampWm = corners_nat; // We're re-purposing the buffer
+	Vector2d sampledWmTl { sampWm.col(0).minCoeff(), sampWm.col(1).minCoeff() };
+	Vector2d sampledWmBr { sampWm.col(0).maxCoeff(), sampWm.col(1).maxCoeff() };
 
 	float H[9];
+	float iw = sw - 1.f;
+	float ih = sh - 1.f;
+	// iw=w; ih=h;
+	// iw=w-.5f; ih=h-.5f;
 	float in_pts[] = {
 		// 0,0,
 		// (float)(w-1),0,
 		// (float)(w-1),(float)(h-1),
 		// 0,(float)(h-1)
-		0,(float)(h-1),
-		(float)(w-1),(float)(h-1),
-		(float)(w-1),0.f,
-		0,0.f
+		0,0,
+		iw,0,
+		iw,ih,
+		0,ih
 	};
-	float out_pts[] = {
-		(float)(w * (corners_nat(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		(float)(w * (corners_nat(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		(float)(w * (corners_nat(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		(float)(w * (corners_nat(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (corners_nat(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
-		// (float)(w * (corners_nat(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (corners_nat(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (corners_nat(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (corners_nat(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), h-1-(float)(h * (corners_nat(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
-	};
-	solveHomography(H, in_pts, out_pts);
 
-	cv::Mat HH(3,3,CV_32F,H);
+	float ow = w - 1.f;
+	float oh = h - 1.f;
+	ow=w; oh=h;
+	// ow=w+1.f; oh=h+1.f;
+	// ow=w-.5f; oh=h-.5f;
+	float out_pts[] = {
+		// (float)(w * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
+
+		(float)(ow * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		(float)(ow * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		(float)(ow * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		(float)(ow * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
+
+		// (float)(w * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
+		// (float)(w * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
+
+		// (float)(w * (cornersWm[0*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
+		// (float)(h * (cornersWm[0*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
+		// (float)(w * (cornersWm[1*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
+		// (float)(h * (cornersWm[1*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
+		// (float)(w * (cornersWm[2*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
+		// (float)(h * (cornersWm[2*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
+		// (float)(w * (cornersWm[3*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
+		// (float)(h * (cornersWm[3*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1)))
+	};
+
+
+	cv::Mat HH = cv::getPerspectiveTransform(cv::Mat{4,2,CV_32F,in_pts}, cv::Mat{4,2,CV_32F,out_pts});
+	// cv::Mat HH = cv::getPerspectiveTransform(cv::Mat{4,2,CV_32F,out_pts}, cv::Mat{4,2,CV_32F,in_pts});
+	std::cout << " - H:\n" << HH << "\n";
+
 	cv::warpPerspective(sampledImg, out, HH, cv::Size{out.cols, out.rows});
 	// fmt::print(" - final H:\n{}\n", HH);
 
@@ -328,7 +378,13 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
     }
 
 	Vector2d tl_sampled = Vector2d { xoff, yoff };
-	Vector2d br_sampled = Vector2d { xoff+xsize, yoff+ysize };
+	// Vector2d br_sampled = Vector2d { xoff+xsize, yoff+ysize };
+	Vector2d br_sampled = Vector2d { xoff+xsize-1, yoff+ysize-1 };
+	// Vector2d br_sampled = Vector2d { xoff+xsize+1, yoff+ysize+1 };
+
+	// Vector2d tl_sampled = Vector2d { xoff-.5, yoff-.5 };
+	// Vector2d br_sampled = Vector2d { xoff+xsize+.5, yoff+ysize+.5 };
+
 	// Vector2d br_sampled = pix2prj * Vector3d { xoff+xsize-1, yoff+ysize-1, 1 };
 	if (tl_sampled(0) > br_sampled(0)) std::swap(tl_sampled(0), br_sampled(0));
 	if (tl_sampled(1) > br_sampled(1)) std::swap(tl_sampled(1), br_sampled(1));
