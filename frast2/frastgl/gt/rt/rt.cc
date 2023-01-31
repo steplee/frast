@@ -255,8 +255,8 @@ void RtTile::doRender(GtTileData& td, int meshIdx) {
 	// NOTE: To avoid excessive state switches and line noise: assume correct shader is already bound (as well as uniforms)
 
 	// FIXME: Uniforms (model, uvScaleOff)
-	glUniformMatrix4fv(2, 1, false, this->model.data());
-	glUniform4fv(3, 1, &this->uvInfos[meshIdx*4]);
+	glUniformMatrix4fv(3, 1, false, this->model.data());
+	glUniform4fv(4, 1, &this->uvInfos[meshIdx*4]);
 
 	glBindTexture(GL_TEXTURE_2D, td.tex);
 	glBindBuffer(GL_ARRAY_BUFFER, td.verts);
@@ -283,14 +283,30 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 
 	typename RtTypes::RenderContext gtrc { rs, gtpd, casterStuff };
 
+	/*
 	float mvpf[16];
 	rs.mvpf(mvpf);
+	*/
+
+	// Shift vertices by the negative eye vector before multiplying by the MVP.
+	// This helps avoid float32 precision problems and make things render *MUCH* nicer.
+	// It decomposes the scale+rotation+translation into a two step (translation, scale+rotation) process,
+	// that allows the scale+rotation part to operate on smaller numbers.
+	double mvpd[16];
+	Vector3d offset;
+	rs.eyed(offset.data());
+	rs.mvpd(mvpd);
+	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
+	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
+	Vector3f anchor = offset.cast<float>();
 
 	// WARNING: This is tricky!
 	if (rs.camera and rs.camera->flipY_) glFrontFace(GL_CW);
 	else glFrontFace(GL_CCW);
 	glEnable(GL_CULL_FACE);
 
+	/*
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	glMatrixMode(GL_MODELVIEW);
@@ -303,6 +319,7 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 	glColor4f(0,1,0,1); glVertex3f(0,0,0); glVertex3f(0,1,0);
 	glColor4f(0,0,1,1); glVertex3f(0,0,0); glVertex3f(0,0,1);
 	glEnd();
+	*/
 
 	glEnable(GL_TEXTURE_2D);
 	glEnableVertexAttribArray(0);
@@ -311,8 +328,12 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 	if (casterStuff.casterMask == 0) {
 		// Normal shader.
 		glUseProgram(normalShader.prog);
-		glUniformMatrix4fv(0, 1, true, mvpf); // mvp
-		glUniform1i(1, 0); // sampler2d
+
+		// glUniformMatrix4fv(0, 1, true, mvpf); // mvp
+		glUniformMatrix4fv(0, 1, true, new_mvp.data()); // mvp
+		glUniform4fv(1, 1, anchor.data()); // anchor
+
+		glUniform1i(2, 0); // sampler2d
 		// glUniformMatrix4fv(2, 1, true, mvpf); // model: different for each tile
 		// glUniformMatrix4fv(3, 1, true, mvpf); // uvScaleOff: different for each tile
 

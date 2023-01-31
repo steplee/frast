@@ -73,6 +73,8 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 	float mvpf[16];
 	rs.mvpf(mvpf);
 
+	// FIXME: Do the two step xform with 'anchor', like rtr does!
+
 	// WARNING: This is tricky!
 	if (rs.camera and rs.camera->flipY_) glFrontFace(GL_CW);
 	else glFrontFace(GL_CCW);

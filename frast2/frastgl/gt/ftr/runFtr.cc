@@ -78,7 +78,7 @@ class TestApp : public BaseClass_App {
 
 			cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
 			cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
-			cfg.colorDsetPaths = {"/data/naip/mocoNaip/mocoUtm.fft"};
+			// cfg.colorDsetPaths = {"/data/naip/mocoNaip/mocoUtm.fft"};
 			// cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
 			cfg.elevDsetPath = {"/data/elevation/srtm/srtm.fft"};
 
