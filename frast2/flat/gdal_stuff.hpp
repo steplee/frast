@@ -56,13 +56,6 @@ namespace {
 	}
 }
 
-enum class ImageFormat {
-	GRAY =0,
-	RGB =1,
-	RGBA =2,
-	TERRAIN_2x8 =3
-};
-
 using namespace Eigen;
 template <class T, int r, int c>
 using RowMatrix = Eigen::Matrix<T,r,c,Eigen::RowMajor>;
@@ -95,15 +88,12 @@ namespace {
 		Vector4d tlbr_prj;
 
 		int w, h;
-		// int cv_type;
 		GDALDataType gdalType;
 		bool isTerrain = false;
 		int eleSize;
 		int nbands;
 		GDALRasterBand* bands[4];
 		bool bilinearSampling = true;
-		// bool clampToBorder = true; // For tiles on the edge, where to make missing pixels black or the clamped nearest color
-		bool clampToBorder = false;
 
 		GDALWarpOptions *warpOptions = nullptr;
 
@@ -158,10 +148,8 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	// fmt::print(" - pix aabb: {} {}\n", aabb.min().transpose(), aabb.max().transpose());
 
 
-	// Vector4d tlbr_pix { aabb.min()(0)-1, aabb.min()(1)-1, aabb.max()(0)+1, aabb.max()(1)+1 };
-	// Vector4d tlbr_pix { aabb.min()(0)-2, aabb.min()(1)-2, aabb.max()(0)+2, aabb.max()(1)+2 };
-	Vector4d tlbr_pix { aabb.min()(0)-1, aabb.min()(1)-1, aabb.max()(0)+2, aabb.max()(1)+2 };
 	// Vector4d tlbr_pix { aabb.min()(0), aabb.min()(1), aabb.max()(0)+1, aabb.max()(1)+1 };
+	Vector4d tlbr_pix { aabb.min()(0)-1, aabb.min()(1)-1, aabb.max()(0)+2, aabb.max()(1)+2 };
 	cv::Mat sampledImg;
 	// sampledImg.create(h,w,internalCvType);
 	sampledImg.create(sh,sw,internalCvType);
@@ -171,8 +159,6 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	// fmt::print(" - sampled tlbr: {}\n", tlbr_pix_sampled.transpose());
 	// cv::imshow("sampled", sampledImg);
 
-	// Vector2d tl_pix = aabb.min();
-	// Vector2d br_pix = aabb.max();
 	Vector2d tl_pix = tlbr_pix_sampled.head<2>();
 	Vector2d br_pix = tlbr_pix_sampled.tail<2>();
 	Matrix<double,4,2> corners_nat; corners_nat <<
@@ -180,10 +166,6 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		br_pix(0), tl_pix(1),
 		br_pix(0), br_pix(1),
 		tl_pix(0), br_pix(1);
-		// tl_pix(0), br_pix(1),
-		// br_pix(0), br_pix(1),
-		// br_pix(0), tl_pix(1),
-		// tl_pix(0), tl_pix(1);
 	corners_nat = (corners_nat * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
     prj2wm->Transform(4, corners_nat.data(), corners_nat.data()+4, nullptr);
 
@@ -194,60 +176,26 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	float H[9];
 	float iw = sw - 1.f;
 	float ih = sh - 1.f;
-	// iw=w; ih=h;
-	// iw=w-.5f; ih=h-.5f;
 	float in_pts[] = {
-		// 0,0,
-		// (float)(w-1),0,
-		// (float)(w-1),(float)(h-1),
-		// 0,(float)(h-1)
 		0,0,
 		iw,0,
 		iw,ih,
 		0,ih
 	};
 
-	float ow = w - 1.f;
-	float oh = h - 1.f;
-	ow=w; oh=h;
-	// ow=w+1.f; oh=h+1.f;
-	// ow=w-.5f; oh=h-.5f;
+	float ow = w;
+	float oh = h;
 	float out_pts[] = {
-		// (float)(w * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
-
 		(float)(ow * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(ow * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(ow * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
 		(float)(ow * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), oh -(float)(oh * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
-
-		// (float)(w * (sampWm(0,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(0,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(1,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(1,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(2,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(2,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1])),
-		// (float)(w * (sampWm(3,0)-wmTlbr[0]) / (wmTlbr[2]-wmTlbr[0])), (float)(h * (sampWm(3,1)-wmTlbr[1]) / (wmTlbr[3]-wmTlbr[1]))
-
-		// (float)(w * (cornersWm[0*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
-		// (float)(h * (cornersWm[0*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
-		// (float)(w * (cornersWm[1*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
-		// (float)(h * (cornersWm[1*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
-		// (float)(w * (cornersWm[2*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
-		// (float)(h * (cornersWm[2*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1))),
-		// (float)(w * (cornersWm[3*2+0] - sampledWmTl(0)) / (sampledWmBr(0)-sampledWmTl(0))),
-		// (float)(h * (cornersWm[3*2+1] - sampledWmTl(1)) / (sampledWmBr(1)-sampledWmTl(1)))
 	};
 
-
 	cv::Mat HH = cv::getPerspectiveTransform(cv::Mat{4,2,CV_32F,in_pts}, cv::Mat{4,2,CV_32F,out_pts});
-	// cv::Mat HH = cv::getPerspectiveTransform(cv::Mat{4,2,CV_32F,out_pts}, cv::Mat{4,2,CV_32F,in_pts});
 	std::cout << " - H:\n" << HH << "\n";
 
 	cv::warpPerspective(sampledImg, out, HH, cv::Size{out.cols, out.rows});
-	// fmt::print(" - final H:\n{}\n", HH);
-
-	// cv::flip(out,out, 0);
-
 	// cv::imshow("finalTile", out);
 	// cv::waitKey(1);
 
@@ -268,8 +216,6 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 
 
 Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
-	// AtomicTimerMeasurement tg(t_gdal);
-    //out.create(outh, outw, cv_type);
 	int outh = out.rows, outw = out.cols;
 
 	auto internalCvType = nbands == 1 ? CV_8UC1 : nbands == 3 ? CV_8UC3 : nbands == 4 ? CV_8UC4 : -1;
@@ -335,8 +281,6 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 
 		cv::Mat tmp;
 		tmp.create(read_h, read_w, internalCvType);
-		// tmp = cv::Scalar{0};
-		// out = cv::Scalar{0};
 
         auto            err = dset->RasterIO(GF_Read,
                                   inner(0), inner(1), inner_w, inner_h,
@@ -365,10 +309,7 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 		float H[9];
 		solveHomography(H, in_pts, out_pts);
 
-		// buf.warpPerspective(out, H, clampToBorder);
 		cv::Mat HH(3,3,CV_32F,H);
-		// fmt::print(" tmp: {} {} {} |{}\n", tmp.rows, tmp.cols, tmp.channels(), tmp.type());
-		// fmt::print(" out: {} {} {} |{}\n", out.rows, out.cols, out.channels(), out.type());
 		cv::warpPerspective(tmp, out, HH, cv::Size{out.cols, out.rows});
 
     } else {
@@ -390,121 +331,6 @@ Vector4d MyGdalDataset::bboxPix(const Vector4d& bboxPix, cv::Mat& out) {
 	if (tl_sampled(1) > br_sampled(1)) std::swap(tl_sampled(1), br_sampled(1));
 	return Vector4d { tl_sampled(0), tl_sampled(1), br_sampled(0), br_sampled(1) };
 }
-
-
-/*
-Vector4d MyGdalDataset::bboxProj(const Vector4d& bboxProj, cv::Mat& out) {
-	// AtomicTimerMeasurement tg(t_gdal);
-    //out.create(outh, outw, cv_type);
-	int outh = out.rows, outw = out.cols;
-
-	auto internalCvType = nbands == 1 ? CV_8UC1 : nbands == 3 ? CV_8UC3 : nbands == 4 ? CV_8UC4 : -1;
-
-	int out_c = out.channels();
-	if (nbands >= 3 and out_c == 1)
-		out.create(outh, outw, CV_8UC3);
-
-
-    Vector2d tl = (prj2pix * Vector3d{bboxProj(0), bboxProj(1), 1.});
-    Vector2d br = (prj2pix * Vector3d{bboxProj(2) + bboxProj(0), bboxProj(3) + bboxProj(1), 1.});
-    if (tl(0) > br(0)) std::swap(tl(0), br(0));
-    if (tl(1) > br(1)) std::swap(tl(1), br(1));
-    int xoff  = tl(0);
-    int yoff  = tl(1);
-    int xsize = (int)(.5 + br(0) - tl(0));
-    int ysize = (int)(.5 + br(1) - tl(1));
-    if (xsize == 0) xsize++;
-    if (ysize == 0) ysize++;
-
-    if (xoff > 0 and xoff + xsize < w and yoff > 0 and yoff + ysize < h) {
-        // auto arg = nullptr;
-        GDALRasterIOExtraArg arg;
-        arg.nVersion = RASTERIO_EXTRA_ARG_CURRENT_VERSION;
-        if (bilinearSampling)
-            arg.eResampleAlg = GRIORA_Bilinear;
-        else
-            arg.eResampleAlg = GRIORA_NearestNeighbour;
-        arg.pfnProgress                  = 0;
-        arg.pProgressData                = 0;
-        arg.bFloatingPointWindowValidity = 0;
-        auto err                         = dset->RasterIO(GF_Read,
-                                  xoff, yoff, xsize, ysize,
-                                  out.data, outw, outh, gdalType,
-                                  nbands, nullptr,
-                                  eleSize * nbands, eleSize * nbands * outw, eleSize,
-                                  &arg);
-
-		// TODO If converting from other terrain then GMTED, must modify here
-		if (isTerrain)
-			transform_gmted((uint16_t*) out.data, outh, outw);
-
-        if (err != CE_None)
-			return Vector4d::Zero();
-
-    } else if (xoff + xsize >= 1 and xoff < w and yoff + ysize >= 1 and yoff < h) {
-        // case where there is partial overlap
-
-        // WARNING: This is not correct. Border tiles have artifacts at corners.
-
-        Eigen::Vector4i inner{std::max(0, xoff),
-                              std::max(0, yoff),
-                              std::min(w - 1, xoff + xsize),
-                              std::min(h - 1, yoff + ysize)};
-        float           sx      = ((float)outw) / xsize;
-        float           sy      = ((float)outh) / ysize;
-        int             inner_w = inner(2) - inner(0), inner_h = inner(3) - inner(1);
-        int             read_w = (inner(2) - inner(0)) * sx, read_h = (inner(3) - inner(1)) * sy;
-        //printf(" - partial bbox: %dh %dw %dc\n", read_h, read_w, out.channels()); fflush(stdout);
-        if (read_w <= 0 or read_h <= 0) return Vector4d::Zero();
-
-		cv::Mat tmp;
-		tmp.create(read_h, read_w, internalCvType);
-
-        auto            err = dset->RasterIO(GF_Read,
-                                  inner(0), inner(1), inner_w, inner_h,
-								  tmp.data,
-                                  read_w, read_h, gdalType,
-                                  nbands, nullptr,
-                                  eleSize * nbands, eleSize * nbands * read_w, eleSize * 1, nullptr);
-        if (err != CE_None) return Vector4d::Zero();
-
-		// TODO If converting from other terrain then GMTED, must modify here
-		if (isTerrain)
-			transform_gmted((uint16_t*) tmp.data, outh, outw);
-
-        float in_pts[8]  = {0, 0, sx * inner_w, 0, 0, sy * inner_h, sx*inner_w, sy*inner_h};
-        float out_pts[8] = {sx * (inner(0) - xoff),
-                            sy * (inner(1) - yoff),
-                            sx * (inner(2) - xoff),
-                            sy * (inner(1) - yoff),
-                            sx * (inner(0) - xoff),
-                            sy * (inner(3) - yoff),
-                            sx * (inner(2) - xoff),
-                            sy * (inner(3) - yoff)};
-
-		// xoff = inner(0); yoff = inner(1);
-		// xsize = inner_w; ysize = inner_h;
-
-		float H[9];
-		solveHomography(H, in_pts, out_pts);
-
-		// buf.warpPerspective(out, H, clampToBorder);
-		cv::Mat HH(3,3,CV_32F,H);
-		cv::warpPerspective(tmp, out, HH, cv::Size{out.cols, out.rows});
-
-    } else {
-		memset(out.data, 0, out.rows*out.cols*out.channels());
-        return Vector4d::Zero();
-    }
-
-	Vector2d tl_sampled = pix2prj * Vector3d { xoff, yoff, 1 };
-	Vector2d br_sampled = pix2prj * Vector3d { xoff+xsize, yoff+ysize, 1 };
-	// Vector2d br_sampled = pix2prj * Vector3d { xoff+xsize-1, yoff+ysize-1, 1 };
-	if (tl_sampled(0) > br_sampled(0)) std::swap(tl_sampled(0), br_sampled(0));
-	if (tl_sampled(1) > br_sampled(1)) std::swap(tl_sampled(1), br_sampled(1));
-	return Vector4d { tl_sampled(0), tl_sampled(1), br_sampled(0), br_sampled(1) };
-}
-*/
 
 MyGdalDataset::MyGdalDataset(const std::string& path, bool isTerrain) : isTerrain(isTerrain) {
 	std::call_once(flag__, &GDALAllRegister);
