@@ -36,11 +36,13 @@ inline auto get_dtype(int cv_type) {
 
 py::array create_py_image(cv::Mat& img) {
 
-	std::vector<ssize_t> outStrides {
-		img.channels() * img.cols,
-		img.channels(),
-		1 };
 	auto dtype = get_dtype(img.type());
+	auto elemSize = dtype.itemsize();
+
+	std::vector<ssize_t> outStrides {
+		elemSize*img.channels() * img.cols,
+		elemSize*img.channels(),
+		elemSize*1 };
 
 	std::vector<ssize_t> outShape {
 		img.rows,

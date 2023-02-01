@@ -35,7 +35,7 @@ struct ProcessedData {
 
 class WriterMaster : public ThreadPool {
 	public:
-		WriterMaster(const std::string& outPath, const EnvOptions& opts);
+		WriterMaster(const std::string& outPath, const EnvOptions& opts, int threads=FRAST_WRITER_THREADS);
 		virtual ~WriterMaster();
 
 		// inline const WriteCfg& getCfg() const { return cfg; }

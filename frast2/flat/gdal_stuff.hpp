@@ -193,7 +193,7 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	};
 
 	cv::Mat HH = cv::getPerspectiveTransform(cv::Mat{4,2,CV_32F,in_pts}, cv::Mat{4,2,CV_32F,out_pts});
-	std::cout << " - H:\n" << HH << "\n";
+	// std::cout << " - H:\n" << HH << "\n";
 
 	cv::warpPerspective(sampledImg, out, HH, cv::Size{out.cols, out.rows});
 	// cv::imshow("finalTile", out);

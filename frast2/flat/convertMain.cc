@@ -5,6 +5,8 @@ using namespace frast;
 
 int main(int argc, char** argv) {
 
+	setenv("VRT_SHARED_SOURCE", "0", false);
+
 	/*
 	std::string fname = "/data/naip/mocoNaip/moco.fft";
 	unlink(fname.c_str());
@@ -30,6 +32,14 @@ int main(int argc, char** argv) {
 	std::string inpPath = parser.get2<std::string>("-i", "--input").value();
 	std::string outPath = parser.get2<std::string>("-o", "--output").value();
 	int level = parser.get2<int>("-l", "--level").value();
+
+	auto threads_ = parser.get<int>("--threads");
+	int threads = FRAST_WRITER_THREADS;
+	if (threads_) {
+		threads = threads_.value();
+		if (threads <= 0) throw std::runtime_error(fmt::format("given threads ({}) should be >0 and <=FRAST_WRITER_THREADS ({})", threads, FRAST_WRITER_THREADS));
+		if (threads > FRAST_WRITER_THREADS) throw std::runtime_error(fmt::format("given threads ({}) should be >0 and <=FRAST_WRITER_THREADS ({})", threads, FRAST_WRITER_THREADS));
+	}
 
 	struct stat statbuf;
 	int res = ::stat(outPath.c_str(), &statbuf);
@@ -60,7 +70,7 @@ int main(int argc, char** argv) {
 
 	// Run initial job: convert gdal -> frast2
 	{
-		WriterMaster wm(outPath, envOpts);
+		WriterMaster wm(outPath, envOpts, threads);
 		wm.start(ccfg);
 
 		while (not wm.didWriterLoopExit())
