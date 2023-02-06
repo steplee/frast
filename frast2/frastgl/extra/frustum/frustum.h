@@ -27,7 +27,8 @@ class Frustum {
 		// This is a helper function to get the caster matrix.
 		//
 		// The caster matrix is the forward projection (which requires proj*view)
-		void getCasterMatrix(float* out);
+		void getCasterMatrix(float* out) const;
+		void getModelMatrix(double* out) const;
 
 	protected:
 		// CameraSpec spec;

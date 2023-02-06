@@ -294,10 +294,10 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 	// that allows the scale+rotation part to operate on smaller numbers.
 	double mvpd[16];
 	Vector3d offset;
-	rs.eyed(offset.data());
-	rs.mvpd(mvpd);
+	rs.copyEye(offset.data());
+	rs.computeMvp(mvpd);
 	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
-	Eigen::Map<const RowMatrix4d> mvp_ { rs.mstack.peek() };
+	Eigen::Map<const RowMatrix4d> mvp_ { mvpd };
 	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
 	Vector3f anchor = offset.cast<float>();
 

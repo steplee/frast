@@ -70,8 +70,9 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 
 	typename FtTypes::RenderContext gtrc { rs, gtpd, casterStuff };
 
+	// FIXME: Cache this in RenderState, this is very wasteful.
 	float mvpf[16];
-	rs.mvpf(mvpf);
+	rs.computeMvpf(mvpf);
 
 	// FIXME: Do the two step xform with 'anchor', like rtr does!
 

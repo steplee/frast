@@ -882,7 +882,7 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 	glLoadIdentity();
 	glMatrixMode(GL_MODELVIEW);
 	float mvpf_column[16];
-	rs.mvpf(mvpf_column);
+	rs.computeMvpf(mvpf_column);
 	for (int i=0; i<4; i++)
 	for (int j=0; j<i; j++) std::swap(mvpf_column[i*4+j] , mvpf_column[j*4+i]);
 	glLoadMatrixf(mvpf_column);

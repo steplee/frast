@@ -74,6 +74,8 @@ add_library(frastgl
 	extra/earth/earth.cc
 	extra/frustum/frustum.cc
 	extra/textSet/textSet.cc
+	extra/loaders/mesh.cc
+	extra/loaders/obj.cc
 
 	gt/gt.cc
 	gt/ftr/ftr.cc

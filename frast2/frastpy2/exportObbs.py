@@ -94,6 +94,8 @@ def rt_decode_obb(bites, headNodeCtr, metersPerTexel):
         -c0*s2-c2*c1*s0, c0*c1*c2-s0*s2, c2*s1,
         s1*s0, -c0*s1, c1), dtype=np.float32).reshape(3,3)
 
+# NOTE: Even if your downloader converts node model matrices to WGS84,
+#       it probably leaves bulks untouched, which is I also transform here by default.
 def export_rt_version1(outFp, root, transformToWGS84=True, bulkOverride=''):
 
     if bulkOverride:
@@ -253,10 +255,8 @@ if __name__ == '__main__':
         default='')
     args = parser.parse_args()
 
-    indexVersionStr = 'v1'
-
     if args.gearthDir:
-        indexFile = os.path.join(args.gearthDir, 'obb.obb'.format(indexVersionStr))
+        indexFile = os.path.join(args.gearthDir, 'obb.obb')
         with open(indexFile, 'wb') as fp: export_rt_version1(fp, args.gearthDir, bulkOverride=args.gearthBulkDirOverride)
 
     if args.frastColor:

@@ -22,14 +22,12 @@ namespace frast {
 			Shader& operator=(const Shader&) = delete;
 
 			inline Shader(Shader&& o) {
-				auto oo = o.prog;
-				o.prog = prog;
-				prog = oo;
+				prog = o.prog;
+				o.prog = 0;
 			}
 			inline Shader& operator=(Shader&& o) {
-				auto oo = o.prog;
-				o.prog = prog;
-				prog = oo;
+				prog = o.prog;
+				o.prog = 0;
 				return *this;
 			}
 

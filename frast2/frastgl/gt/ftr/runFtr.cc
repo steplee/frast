@@ -6,6 +6,7 @@
 #include "frast2/frastgl/extra/earth/earth.h"
 #include "frast2/frastgl/extra/frustum/frustum.h"
 #include "frast2/frastgl/extra/textSet/textSet.h"
+#include "frast2/frastgl/extra/loaders/obj.h"
 #include "ftr.h"
 
 #include <chrono>
@@ -60,6 +61,25 @@ class TestApp : public BaseClass_App {
 
 			earthEllps->render(rs);
 
+			if (uav) {
+				double time = this->time * .05 * M_PI*2;
+				double s = 11 / 6e6;
+				double t[3] = {0,0,std::sin(time*1.3)/s};
+				double q[4] = {0,0,std::sin(time),std::cos(time)};
+				// double s = 1 / 6e6;
+
+				uav->setTransform(t,q,s);
+
+				RowMatrix4d M;
+				frustum1->getModelMatrix(M.data());
+				RowMatrix4d scaleMatrix(RowMatrix4d::Identity());
+				scaleMatrix(3,3) = 1/s;
+				M *= scaleMatrix;
+				uav->setTransform(M.data());
+
+				uav->renderRecursive(rs);
+			}
+
 
 			glLineWidth(2);
 			frustum1->render(rs);
@@ -113,6 +133,12 @@ class TestApp : public BaseClass_App {
 			}
 
 
+			ObjLoader uavLoader{"../data/reaper.obj"};
+			uav = std::unique_ptr<Object>(new Object{uavLoader.getRoot()});
+			Shader* fixmeAwful = new Shader();
+			get_basicMeshNoTex_shader(*fixmeAwful);
+			uav->program = fixmeAwful->prog;
+			fmt::print(" - uav program is {}\n", uav->program);
 
 
 		}
@@ -129,8 +155,10 @@ class TestApp : public BaseClass_App {
 		std::unique_ptr<EarthEllipsoid> earthEllps;
 		std::unique_ptr<Frustum> frustum1;
 		std::unique_ptr<TextSet> textSet;
+		std::unique_ptr<Object> uav;
 
 		std::thread thread;
+		float time=0;
 
 		inline void loop() {
 			int frames=0;
@@ -161,6 +189,7 @@ class TestApp : public BaseClass_App {
 
 				auto now_time = std::chrono::high_resolution_clock::now();
 				float dt = std::chrono::duration_cast<std::chrono::microseconds>(now_time - last_time).count() * 1e-6;
+				time += dt;
 				last_time = now_time;
 
 				cam.step(dt);

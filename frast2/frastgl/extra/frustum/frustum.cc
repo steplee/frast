@@ -58,11 +58,16 @@ void Frustum::setPose(const double* viewInv_) {
 	v.row(3) << 0,0,0,1;
 }
 
-void Frustum::getCasterMatrix(float* out) {
+void Frustum::getCasterMatrix(float* out) const {
 	Map<const RowMatrix4d> v(this->view);
 	Map<const RowMatrix4d> p(this->proj);
 	Map<RowMatrix4f> o(out);
 	o = (p * v).cast<float>();
+}
+void Frustum::getModelMatrix(double* out) const {
+	Map<const RowMatrix4d> v(this->view);
+	Map<RowMatrix4d> o(out);
+	o = v.inverse();
 }
 
 void Frustum::render(const RenderState& rs) {
@@ -96,8 +101,10 @@ void Frustum::render(const RenderState& rs) {
 		glLoadIdentity();
 		glMatrixMode(GL_MODELVIEW);
 
-		const double *mvp = rs.mvp();
-		Map<const RowMatrix4d> mvp_(mvp);
+		// const double *mvp = rs.mvp();
+		// Map<const RowMatrix4d> mvp_(mvp);
+		RowMatrix4d mvp;
+		rs.computeMvp(mvp.data());
 		Map<const RowMatrix4d> frustumViewInv_(viewInv);
 
 		// double proj[16];
@@ -110,7 +117,7 @@ void Frustum::render(const RenderState& rs) {
 
 		float mvpf_column[16];
 		Map<Matrix4f> mvpf_column_(mvpf_column);
-		mvpf_column_ = (mvp_ * frustumViewInv_ * frustumProj_).cast<float>();
+		mvpf_column_ = (mvp * frustumViewInv_ * frustumProj_).cast<float>();
 
 		glLoadMatrixf(mvpf_column);
 	}

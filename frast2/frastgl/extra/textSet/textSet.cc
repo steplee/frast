@@ -88,9 +88,9 @@ namespace frast {
 				// Using UBOs
 
 				// Use standard projection matrix
-				rs.mvpf(uboHost.mat);
+				rs.computeMvpf(uboHost.mat);
 				double eye[4];
-				rs.eyed(eye);
+				rs.copyEye(eye);
 				for (int i=0; i<3; i++) uboHost.eye[i] = eye[i];
 				/*
 				// for (int i=0; i<16; i++) uboHost.mat[i] = rs.view()[i];
