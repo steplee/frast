@@ -7,6 +7,7 @@ namespace frast {
 
 	Shader::~Shader() {
 		if (prog != 0) glDeleteProgram(prog);
+		prog = 0;
 	}
 
 	bool Shader::compile(const std::string& vsrc, const std::string& fsrc) {

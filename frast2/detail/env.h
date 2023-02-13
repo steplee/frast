@@ -96,6 +96,7 @@ namespace frast {
 				fmt::print(" - close failed with: {}, {}\n", errno, strerror(errno));
 				// throw std::runtime_error("close failed.");
 				assert(false);
+				exit(1);
 			}
 			fd_ = -1;
 		}

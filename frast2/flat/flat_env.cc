@@ -260,6 +260,7 @@ uint64_t FlatEnvironment::growLevelValues() {
 	} else {
 		// NOTE: This is not supported rn because we can only alter the current level.
 		assert(false);
+		exit(1);
 		int r = fallocate(fd_, FALLOC_FL_INSERT_RANGE, oldValsOffset+oldCap, vals_change);
 		if (r != 0) throw std::runtime_error("fallocate failed: " + std::string{strerror(errno)});
 	}

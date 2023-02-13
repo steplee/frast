@@ -13,6 +13,7 @@ namespace frast {
 
 			inline Shader() : prog(0) {}
 			inline Shader(const std::string& vsrc, const std::string& fsrc) {
+				prog = 0;
 				compile(vsrc,fsrc);
 			}
 
