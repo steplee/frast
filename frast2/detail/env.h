@@ -42,6 +42,7 @@ namespace frast {
 		bool anon = false;
 		bool readonly = false;
 		bool isTerrain = false;
+		bool cache = true;
 
 		static EnvOptions getReadonly(bool terrain=false) {
 			EnvOptions o;
@@ -96,6 +97,7 @@ namespace frast {
 				fmt::print(" - close failed with: {}, {}\n", errno, strerror(errno));
 				// throw std::runtime_error("close failed.");
 				assert(false);
+				exit(1);
 			}
 			fd_ = -1;
 		}

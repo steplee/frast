@@ -10,6 +10,7 @@
 #include "ftr.h"
 
 #include <chrono>
+#include <signal.h>
 
 using namespace frast;
 
@@ -19,6 +20,11 @@ using namespace frast;
 
 using BaseClass_App = App;
 // using BaseClass_App = ImguiApp;
+
+static bool g_stop = false;
+void handle_signal(int s) {
+	g_stop = true;
+}
 
 class TestApp : public BaseClass_App {
 	public:
@@ -183,7 +189,7 @@ class TestApp : public BaseClass_App {
 
 			auto last_time = std::chrono::high_resolution_clock::now();
 
-			while (true) {
+			while (!g_stop) {
 				usleep(33'000);
 				frames++;
 
@@ -203,6 +209,12 @@ class TestApp : public BaseClass_App {
 
 			fmt::print(" - Destroying ftr in render thread\n");
 			ftr = nullptr;
+
+			ftr = nullptr;
+			earthEllps = nullptr;
+			frustum1 = nullptr;
+			textSet = nullptr;
+			uav = nullptr;
 
 			isDone = true;
 		}
@@ -236,8 +248,10 @@ class TestApp : public BaseClass_App {
 };
 
 
+
 int main() {
 
+	signal(SIGINT, &handle_signal);
 
 	AppConfig appCfg;
 	// appCfg.w = 1024;

@@ -193,20 +193,30 @@ namespace frast {
 
 	cv::Mat FlatReaderCached::getTile(uint64_t tile, int channels) {
 		cv::Mat out;
-		if (cache.get(out, tile)) {
+
+		if (openOpts.cache) {
+			if (cache.get(out, tile)) {
+				out = FlatReader::getTile(tile, channels);
+				cache.set(tile, out);
+			}
+		} else {
 			out = FlatReader::getTile(tile, channels);
-			cache.set(tile, out);
 		}
 		return out;
 	}
 
 	bool FlatReaderCached::getTile(cv::Mat& out, uint64_t tile, int channels) {
-		if (cache.get(out, tile)) {
+		if (openOpts.cache) {
+			if (cache.get(out, tile)) {
+				bool stat = FlatReader::getTile(out, tile, channels);
+				if (stat) return stat;
+
+				cache.set(tile, out);
+				return stat;
+			}
+		} else {
 			bool stat = FlatReader::getTile(out, tile, channels);
 			if (stat) return stat;
-
-			cache.set(tile, out);
-			return stat;
 		}
 		return false;
 	}

@@ -46,7 +46,8 @@ namespace frast {
 				case GL_UNSIGNED_INT:
 				case GL_FLOAT: return 4;
 			}
-			throw std::runtime_error("invalid arg to scalarSize");
+			return 0;
+			// throw std::runtime_error("invalid arg to scalarSize");
 		}
 
 		inline int byteSize() const {
