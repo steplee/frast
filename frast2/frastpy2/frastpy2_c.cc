@@ -169,7 +169,8 @@ PYBIND11_MODULE(frastpy2_c, m) {
 	py::class_<EnvOptions>(m, "EnvOptions")
 		.def(py::init<>())
 		.def_readwrite("readonly", &EnvOptions::readonly)
-		.def_readwrite("isTerrain", &EnvOptions::isTerrain);
+		.def_readwrite("isTerrain", &EnvOptions::isTerrain)
+		.def_readwrite("cache", &EnvOptions::cache);
 
 	py::class_<FlatReaderCached>(m, "FlatReaderCached")
 		.def(py::init<const std::string&, const EnvOptions&>())

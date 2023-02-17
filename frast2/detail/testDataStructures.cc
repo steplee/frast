@@ -107,6 +107,7 @@ std::ostream& operator<<(std::ostream& os, const MyValue& dt) {
 	os << dt.v;
 	return os;
 }
+template <> struct fmt::formatter<MyValue> : ostream_formatter {};
 
 TEST_CASE( "BPTreeGraphViz", "[bptree]" ) {
 

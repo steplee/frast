@@ -1,7 +1,7 @@
 #include "codec.h"
 
 #include "codec_terrain.hpp"
-#include "codec_stb.hpp"
+// #include "codec_stb.hpp"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -32,6 +32,8 @@ namespace frast {
 		} else {
 
 			if (use_stb(option)) {
+				assert(false);
+				/*
 				std::vector<uint8_t> buf;
 				my_write_jpg_stb(buf, img);
 				Value v;
@@ -40,6 +42,7 @@ namespace frast {
 				v.len = buf.size();
 				memcpy(v.value, buf.data(), buf.size());
 				return v;
+				*/
 			} else {
 				std::vector<uint8_t> buf;
 				bool stat = cv::imencode(".jpg", img, buf);
@@ -63,12 +66,15 @@ namespace frast {
 			assert(channels == 1 or channels == 3 or channels == 4);
 
 			if (use_stb(option)) {
+				assert(false);
+				/*
 				int w,h,c;
 				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);
 				cv::Mat out (w,h, CV_8UC3); // FIXME: correct type
 				memcpy(out.data, mem, out.total() * out.elemSize());
 				free(mem);
 				return out;
+				*/
 
 			} else {
 				bool grayscale = channels == 1;
@@ -94,12 +100,15 @@ namespace frast {
 			assert(channels == 1 or channels == 3 or channels == 4);
 
 			if (use_stb(option)) {
+				assert(false);
+				/*
 				int w,h,c;
 				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);
 				out.create(w,h, CV_8UC3); // FIXME: correct type
 				memcpy(out.data, mem, out.total() * out.elemSize());
 				free(mem);
 				return false;
+				*/
 
 			} else {
 				bool grayscale = channels == 1;

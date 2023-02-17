@@ -5,7 +5,6 @@
 #include "frast2/frastgl/core/render_state.h"
 #include "frast2/frastgl/extra/earth/earth.h"
 #include "frast2/frastgl/extra/frustum/frustum.h"
-#include "frast2/frastgl/extra/textSet/textSet.h"
 #include "rt.h"
 
 #include <chrono>
@@ -63,7 +62,6 @@ class TestApp : public BaseClass_App {
 
 			glLineWidth(2);
 			frustum1->render(rs);
-			textSet->render(rs);
 
 			// if constexpr (std::is_same_v<BaseClass_App, ImguiApp>) ImguiApp::renderUi(rs);
 
@@ -86,10 +84,6 @@ class TestApp : public BaseClass_App {
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
 
-			textSet = std::make_unique<TextSet>();
-			// textSet->setText(0, "HelloWorld");
-			float pp[3] = {0.172643 ,-0.767278  ,0.650622};
-			textSet->setTextPointingNormalToEarth(0, "HelloWorld", pp);
 
 			{
 				Eigen::Vector3d pos0 { 0.170643 ,-0.757278  ,0.630622};
@@ -126,7 +120,6 @@ class TestApp : public BaseClass_App {
 		std::unique_ptr<RtRenderer> rtr;
 		std::unique_ptr<EarthEllipsoid> earthEllps;
 		std::unique_ptr<Frustum> frustum1;
-		std::unique_ptr<TextSet> textSet;
 
 		std::thread thread;
 

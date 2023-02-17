@@ -1,4 +1,5 @@
 #include "textSet.h"
+#include "frast2/frastgl/shaders/textSet.h"
 
 #include "frast2/frastgl/core/render_state.h"
 #include "frast2/frastgl/utils/eigen.h"
@@ -28,7 +29,7 @@ namespace frast {
 
 				uint32_t full_width  = _texWidth * _cols;
 				uint32_t full_height = _texHeight * _rows;
-				fmt::print(" - tex size {} {}\n", full_width, full_height);
+				// fmt::print(" - tex size {} {}\n", full_width, full_height);
 				glGenTextures(1, &tex);
 				glBindTexture(GL_TEXTURE_2D, tex);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
@@ -130,6 +131,10 @@ namespace frast {
 				glUseProgram(0);
 			}
 
+			void TextSet::clear() {
+				for (int j=0; j<MAX_SETS; j++) txtLens[j] = 0;
+			}
+
 			void TextSet::setText(int i, const std::string& s) {
 				assert(s.length() < MAX_LEN);
 				txtLens[i] = s.length();
@@ -138,9 +143,11 @@ namespace frast {
 			}
 
 
-			void TextSet::setTextPointingNormalToEarth(int i, const std::string& s, const float pos_[3]) {
+			void TextSet::setTextPointingNormalToEarth(int i, const std::string& s, const float pos_[3], float size, const float color[4]) {
 				setText(i, s);
 
+				for (int j=0; j<4; j++)
+					uboHost.datas[i].color[j] = color[j];
 
 				using namespace Eigen;
 				Vector3f pos{pos_[0], pos_[1], pos_[2]};
@@ -152,7 +159,8 @@ namespace frast {
 
 				// float scale = 2000 / 6e6;
 				// float scale = 1;
-				float scale = .1;
+				// float scale = .1;
+				float scale = size;
 				M.topLeftCorner<3,3>() *= scale;
 
 				M.row(3) << 0,0,0,1;

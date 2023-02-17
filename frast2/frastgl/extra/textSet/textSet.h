@@ -1,7 +1,6 @@
 #pragma once
 
 #include "frast2/frastgl/core/shader.h"
-#include "frast2/frastgl/shaders/textSet.h"
 
 
 
@@ -19,7 +18,8 @@ namespace frast {
 			void render(const RenderState& rs);
 
 			void setText(int i, const std::string& s);
-			void setTextPointingNormalToEarth(int i, const std::string& s, const float pos[3]);
+			void setTextPointingNormalToEarth(int i, const std::string& s, const float pos[3], float size, const float color[4]);
+			void clear();
 
 		private:
 			constexpr static int MAX_SETS = 16;

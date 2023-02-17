@@ -61,7 +61,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 FetchContent_Declare(
 	dep_fmt
 	GIT_REPOSITORY "https://github.com/fmtlib/fmt"
-	GIT_TAG 8.1.0
+	GIT_TAG 9.1.0
 	GIT_SHALLOW 1
 )
 FetchContent_MakeAvailable(dep_fmt)

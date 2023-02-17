@@ -92,6 +92,11 @@ target_link_libraries(runFtr frastgl)
 add_executable(runRtr gt/rt/runRt.cc)
 target_link_libraries(runRtr frastgl)
 
+if (TESTS)
+	add_executable(runPingPongTest extra/pingPong/test.cc)
+	target_link_libraries(runPingPongTest frastgl)
+endif()
+
 
 #####################
 # Proto

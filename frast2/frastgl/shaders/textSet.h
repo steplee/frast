@@ -91,8 +91,8 @@ void main() {
 	// v_uv = p;
 	// v_uv = vec2((col+p.x) * (w-1.)/ww, (row+p.y) * (h-1.)/hh);
 
-	// v_color = ubo.datas[replacementInstanceIdx].color;
-	v_color = vec4(1.);
+	v_color = ubo.datas[replacementInstanceIdx].color;
+	// v_color = vec4(1.);
 
 	const float SPACING = .82;
 	vec2 localOffset = vec2(float(index), 0.) * SPACING;
@@ -102,11 +102,17 @@ void main() {
 
 	float z = float(index)*.00001;
 	// vec4 p1 = transpose(ubo.datas[replacementInstanceIdx].matrix) * vec4(p, z, 1.);
-	vec4 p1 = transpose(ubo.datas[replacementInstanceIdx].matrix) * vec4(.5,.5, z, 1.);
+	// vec4 p1 = transpose(ubo.datas[replacementInstanceIdx].matrix) * vec4(p.x+.5,p.y+.5, z, 1.);
+	// vec4 p1 = transpose(ubo.datas[replacementInstanceIdx].matrix) * vec4(.5,.5, z, 1.);
+	vec4 p1 = transpose(ubo.datas[replacementInstanceIdx].matrix) * vec4(.0,.0, z, 1.);
 
-	float dist = distance(ubo.eye.xyz, p1.xyz/p1.z);
-	float scale = 1./dist;
-	scale = dist;
+	// vec4 pp1 = transpose(ubo.matrix) * p1;
+	float dist = distance(ubo.eye.xyz, p1.xyz);
+	// float scale = 1./(1.+dist);
+	// float scale = 1./dist;
+	float scale = dist;
+	// float scale = 1.;
+	// float scale = 1.;
 
 	// p1 = vec4(p1.xyz / p1.w, 1.);
 	// p1.xyz *= scale;

@@ -271,6 +271,9 @@ struct GtTile {
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 	inline GtTile(const typename GtTypes::Coord& c) : coord(c) {}
+	inline ~GtTile() {
+		for (auto child : children) if (child) delete child;
+	}
 
 	Derived* parent = nullptr;
 	Matrix4f model;
@@ -393,6 +396,7 @@ struct GtRenderer : public Castable {
 		inline ~GtRenderer() {
 			loader.join();
 			delete obbMap;
+			for (auto root : roots) delete root;
 			// sampler.destroy(*device);
 		}
 

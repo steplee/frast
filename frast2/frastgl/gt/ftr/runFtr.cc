@@ -117,7 +117,8 @@ class TestApp : public BaseClass_App {
 			textSet = std::make_unique<TextSet>();
 			// textSet->setText(0, "HelloWorld");
 			float pp[3] = {0.172643 ,-0.767278  ,0.650622};
-			textSet->setTextPointingNormalToEarth(0, "HelloWorld", pp);
+			float color[4] = {1,1,0,1};
+			textSet->setTextPointingNormalToEarth(0, "HelloWorld", pp, .01f, color);
 
 			{
 				Eigen::Vector3d pos0 { 0.170643 ,-0.757278  ,0.630622};

@@ -87,7 +87,10 @@ MyGlfwWindow::~MyGlfwWindow() {
 }
 void MyGlfwWindow::destroyWindow() {
 	ioUsers.clear();
-    if (glfwWindow) glfwDestroyWindow(glfwWindow);
+    if (glfwWindow) {
+		glfwMakeContextCurrent(glfwWindow);
+		glfwDestroyWindow(glfwWindow);
+	}
     glfwWindow = nullptr;
 }
 bool MyGlfwWindow::pollWindowEvents() {
