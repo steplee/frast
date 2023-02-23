@@ -17,23 +17,10 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 
 			new (meta()) FileMeta;
 			currentEnd = fileMetaCapacity;
-			// *meta() = FileMeta;
-			// fileMetaLength =
-			// metaOffset = metaLength =
-			// keysOffset = keysLength =
-			// valsOffset = valsLength = 0;
 			meta()->rasterType = opts.isTerrain ? FileMeta::RasterType::eTerrain : FileMeta::RasterType::eColor;
 			// fmt::print(" - [FlatEnv] using new file, currentEnd {}\n", currentEnd);
 		} else {
 
-			// uint64_t* baseAsULong = static_cast<uint64_t*>(basePointer);
-			// fileMetaLength = baseAsULong[0];
-			// metaOffset = baseAsULong[1];
-			// metaLength = baseAsULong[2];
-			// keysOffset = baseAsULong[3];
-			// keysLength = baseAsULong[4];
-			// valsOffset = baseAsULong[5];
-			// valsLength = baseAsULong[6];
 			uint64_t off = fileMetaCapacity;
 			for (int i=0; i<26; i++) {
 				uint64_t off_ = meta()->levelSpecs[i].valsOffset + meta()->levelSpecs[i].valsLength;
@@ -45,7 +32,7 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 
 			if (opts.isTerrain and meta()->rasterType != FileMeta::RasterType::eTerrain)
 				throw std::runtime_error("if opts.isTerrain, rasterType should be eTerrain");
-			else
+			if (!opts.isTerrain and meta()->rasterType == FileMeta::RasterType::eTerrain)
 				throw std::runtime_error("if not opts.isTerrain, rasterType should not be eTerrain");
 
 			for (int i=0; i<16; i++)
@@ -56,9 +43,6 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 
 FlatEnvironment::~FlatEnvironment() {
 	assert(currentLvl == INVALID_LVL && "you called startLevel without endLevel later");
-		// fmt::print(" - [~FlatEnv] writing  {}\n", head);
-		// static_cast<uint64_t*>(basePointer)[0] = head;
-		// fmt::print(" - [~ArenaEnv] wrote   head {}\n", static_cast<uint64_t*>(basePointer)[0]);
 }
 
 bool FlatEnvironment::beginLevel(int lvl) {
@@ -71,10 +55,6 @@ bool FlatEnvironment::beginLevel(int lvl) {
 
 	auto& spec = meta()->levelSpecs[lvl];
 
-	// static constexpr uint64_t iniNumKeys = BLOCK_SIZE;
-	// static constexpr uint64_t iniValBlobSize = 1024*4096;
-	// static constexpr uint64_t iniNumKeys = 512;
-	// static constexpr uint64_t iniValBlobSize = BLOCK_SIZE;
 	static constexpr uint64_t iniNumKeys = 2048;
 	static constexpr uint64_t iniValBlobSize = 2048*BLOCK_SIZE;
 

@@ -32,6 +32,11 @@ namespace frast {
 // Since we need a depth buffer only for the fbo rendered to the scene,
 // we split the scene & internal fbos -- needing a total of 3 textures/fbos.
 //
+// If Derived has a non-empty string pingPongFinalMerge_fsrc, then
+// that specifies a shader to run at the final step, before rendering to fboFinal.
+// Otherwise, the last 'up' step is rendered directly to fboFinal.
+//
+//
 // WARNING:
 // The problem with this class is that it does not store textures
 // past the previous step, and so with too many levels, the
