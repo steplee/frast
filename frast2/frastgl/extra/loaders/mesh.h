@@ -103,6 +103,8 @@ struct Object {
 	void setTransform(const double model[16]);
 	void setTransform(const double t[3], const double q[4], double s=1.);
 
+	void setColor(const float color[4]);
+
 	private:
 
 
@@ -111,6 +113,9 @@ struct Object {
 	// does not push stack (just multiplies by model matrix)
 	// called for children, to not require a large matrix stack.
 	void renderRecursiveDoNotPush(RenderState& rs);
+
+	bool haveColor = false;
+	float color[4] = {1.};
 
 };
 

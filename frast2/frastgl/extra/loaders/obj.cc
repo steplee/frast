@@ -185,6 +185,8 @@ ObjLoader::ObjLoader(const std::string& path) {
 	}
 	push_object();
 
+	float white[4] = {1,1,1,1};
+	root.setColor(white);
 	fmt::print(" - Done loading obj file '{}'. Root has {} children\n", path, root.children.size());
 
 }

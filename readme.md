@@ -19,6 +19,10 @@ The important part of the file format is a **completely flat* triplet of arrays.
 The interesting part is how this file is created. We want something like `std::vector`, an array that can expand. We can guarantee that **all keys are added in order**.
 To start with, I `mmap` a big range. Then keys and compressed images are added to it. To prevent copying like `std::vector`, which would be awfully slow and require atleast 2x free disk space, I use `fallocate` with the `FALLOC_FL_INSERT_RANGE` mode. This allows extending each of the three arrays individually. The only immediate caveat is the arrays need to be block aligned, which is no bid deal. A secondary caveat is that the resulting files will be fragmented. This is not a big deal either: just use `e4defrag` or copy the file to another partition/disk and back.
 
+> TODO: Benchmark these three cases
+> 1. Reading from random file locations using seek() and read()
+> 2. Reading from random file locations using mmap accesses
+> 3. Reading from random file locations using mmap accesses with madvise() calls to prefetch.
 
 ### `FlatReaderCached`
 The main way to use an already populated dataset is through `FlatReaderCached`. This offers a `rasterIo` function similar to that of GDAL, only it takes an AABB in Web Mercator coords. Can also get tiles individually or in groups.

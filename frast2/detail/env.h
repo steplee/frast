@@ -90,7 +90,7 @@ namespace frast {
 	template <class Derived>
 	BaseEnvironment<Derived>::~BaseEnvironment() {
 
-		fmt::print(" - [~BaseEnv] closing fd\n");
+		// fmt::print(" - [~BaseEnv] closing fd\n");
 		if (fd_ >= 0) {
 			int stat = close(fd_);
 			if (stat == -1) {
@@ -155,7 +155,7 @@ namespace frast {
 			fmt::print(" - mmap failed with: {}, {}\n", errno, strerror(errno));
 			throw std::runtime_error("mmap failed.");
 		}
-		fmt::print(" - basePointer: {}\n", basePointer);
+		// fmt::print(" - basePointer: {}\n", basePointer);
 
 		// int err = madvise(basePointer, opts.mapSize, MADV_SEQUENTIAL);
 		// assert(err == 0);

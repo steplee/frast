@@ -8,6 +8,7 @@ const std::string basicMeshWithTex_vsrc = R"(#version 440
 
 uniform layout(location=0) mat4 u_mvp;
 uniform layout(location=1) sampler2D u_tex;
+uniform layout(location=2) vec4 u_color;
 
 in layout(location=0) vec4 a_pos;
 in layout(location=1) vec2 a_uv;
@@ -30,6 +31,7 @@ const std::string basicMeshWithTex_fsrc = R"(#version 440
 
 uniform layout(location=0) mat4 u_mvp;
 uniform layout(location=1) sampler2D u_tex;
+uniform layout(location=2) vec4 u_color;
 
 in vec2 v_uv;
 in vec3 v_normal;
@@ -37,7 +39,7 @@ in vec3 v_normal;
 out layout(location=0) vec4 out_color;
 
 void main() {
-	out_color = vec4(texture(u_tex, v_uv).rgb,1.);
+	out_color = u_color * vec4(texture(u_tex, v_uv).rgb,1.);
 }
 
 )";
@@ -47,6 +49,7 @@ const std::string basicMeshNoTex_vsrc = R"(#version 440
 
 uniform layout(location=0) mat4 u_proj;
 uniform layout(location=1) mat4 u_mv;
+uniform layout(location=2) vec4 u_color;
 
 in layout(location=0) vec4 a_pos;
 in layout(location=1) vec2 a_uv;
@@ -71,6 +74,7 @@ const std::string basicMeshNoTex_fsrc = R"(#version 440
 
 uniform layout(location=0) mat4 u_proj;
 uniform layout(location=1) mat4 u_mv;
+uniform layout(location=2) vec4 u_color;
 
 in vec2 v_uv;
 in vec3 v_normal;
@@ -88,7 +92,7 @@ void main() {
 	vec3 col = vec3(s);
 	// vec3 col = s*abs(v_normal);
 
-	out_color = vec4(col, 1.);
+	out_color = u_color * vec4(col, 1.);
 }
 
 )";

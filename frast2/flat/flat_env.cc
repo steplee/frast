@@ -23,7 +23,7 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 			// keysOffset = keysLength =
 			// valsOffset = valsLength = 0;
 			meta()->rasterType = opts.isTerrain ? FileMeta::RasterType::eTerrain : FileMeta::RasterType::eColor;
-			fmt::print(" - [FlatEnv] using new file, currentEnd {}\n", currentEnd);
+			// fmt::print(" - [FlatEnv] using new file, currentEnd {}\n", currentEnd);
 		} else {
 
 			// uint64_t* baseAsULong = static_cast<uint64_t*>(basePointer);
@@ -41,10 +41,12 @@ FlatEnvironment::FlatEnvironment(const std::string& path, const EnvOptions& opts
 				off = std::max(off,off_);
 			}
 			currentEnd = off;
-			fmt::print(" - [FlatEnv] using old file, found currentEnd {}\n", currentEnd);
+			// fmt::print(" - [FlatEnv] using old file, found currentEnd {}\n", currentEnd);
 
-			if (opts.isTerrain) assert(meta()->rasterType == FileMeta::RasterType::eTerrain);
-			else assert(meta()->rasterType != FileMeta::RasterType::eTerrain);
+			if (opts.isTerrain and meta()->rasterType != FileMeta::RasterType::eTerrain)
+				throw std::runtime_error("if opts.isTerrain, rasterType should be eTerrain");
+			else
+				throw std::runtime_error("if not opts.isTerrain, rasterType should not be eTerrain");
 
 			for (int i=0; i<16; i++)
 				haveLevel(i);

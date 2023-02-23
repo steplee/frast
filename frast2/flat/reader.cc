@@ -4,6 +4,8 @@
 #include <opencv2/imgproc.hpp>
 #include <iostream>
 
+#include "frast2/errors.h"
+
 namespace {
 	using namespace frast;
 
@@ -102,6 +104,7 @@ namespace frast {
 
 	std::vector<std::array<double,4>> FlatReader::computeRegionsOnDeepestLevel() {
 		int lvl = determineDeepeseLevel();
+		// This should never happen. File must be corrupted.
 		if (lvl < 0 or lvl > 30) throw std::runtime_error("invalid level from determineDeepeseLevel()");
 
 		uint64_t* keys = env.getKeys(lvl);
@@ -143,10 +146,21 @@ namespace frast {
 		return decodeValue(out, val, channels, isTerrain());
 	}
 
+	// FIXME: This will fail if we have differing levels in different places in one large file.
+	// For example if you merge a dataset at level 15 and another at level 17 into the same file,
+	// sampling from the area with level 15 *may choose* level 17 and not read any good tiles.
+	// Then you end up with black pixels, even though there is data at a higher level.
+	// To fix this, either:
+	//		1) Upscale data so that we always have the same base level after merging datasets.
+	//		2) Have this function search upwards from the chosen level *at the chosen spot* to see if there are tiles
+	// NOTE: This is a not an issue if you do not merge mixed resolution datasets (which I do not right now)
 	int FlatReader::find_level_for_mpp(float res) {
 		// First find the level that best matches the mpp.
 		// Then search upward until we find a level that actually exists.
 		// If no search level exists, search downward.
+		//
+		// If we still have none, throw an exception.
+		//
 
 			/*constexpr double WebMercatorCellSizes[MAX_LVLS] = {
 				40075016.685578495, 20037508.342789248, 10018754.171394624, 5009377.085697312,	2504688.542848656,
@@ -178,8 +192,7 @@ namespace frast {
 			}
 		}
 
-		std::string msg = fmt::format("failed to find level for res {} (best was {}, but no no levels found up or down)", res);
-		throw std::runtime_error(msg);
+		throw NoValidLevelError(res, lvl);
 	}
 
 
@@ -284,8 +297,7 @@ namespace frast {
 		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
 		if (n_tiles > 256) {
-			std::string msg = fmt::format("[rasterIo] refusing to sample {} tiles ({} x {}) try a smaller patch.", n_tiles,iwm_w,iwm_h);
-			throw std::runtime_error(msg);
+			throw SampleTooLargeError{iwm_w, iwm_h};
 		}
 
 		cv::Mat sampledImg = getTlbr(lvl, iwmTlbr, c);
@@ -372,9 +384,9 @@ namespace frast {
 
 		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
+		// WARNING: This allows a maximum size of e.g. 4096^2 pixels.
 		if (n_tiles > 256) {
-			std::string msg = fmt::format("[rasterIo] refusing to sample {} tiles ({} x {}) try a smaller patch.", n_tiles,iwm_w,iwm_h);
-			throw std::runtime_error(msg);
+			throw SampleTooLargeError{iwm_w, iwm_h};
 		}
 
 		// FIXME: Cache this image allocation as well.

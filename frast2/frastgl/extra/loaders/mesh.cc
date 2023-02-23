@@ -83,6 +83,7 @@ void MeshData::renderMesh(const RenderState& rs) {
 
 	for (int i=0; i<idx; i++) glEnableVertexAttribArray(i);
 
+
 	if (ibo) {
 		glDrawElements(mode, nInds, indsType, 0);
 	} else {
@@ -147,10 +148,18 @@ void MeshData::renderMesh(const RenderState& rs) {
 		glUniformMatrix4fv(0, 1, true, proj);
 		glUniformMatrix4fv(1, 1, true, mv);
 
+		if (haveColor) {
+			glUniform4fv(2, 1, color);
+		}
+
 
 		mesh.renderMesh(rs);
 	}
 
+	void Object::setColor(const float c[4]) {
+		haveColor = true;
+		for (int i=0; i<4; i++) color[i] = c[i];
+	}
 	void Object::setTransform(const double model_[16]) {
 		using namespace Eigen;
 		Map<Matrix<double,4,4,RowMajor>> M ( model );
