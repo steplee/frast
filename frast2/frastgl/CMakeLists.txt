@@ -93,8 +93,10 @@ add_executable(runRtr gt/rt/runRt.cc)
 target_link_libraries(runRtr frastgl)
 
 if (TESTS)
-	add_executable(runPingPongTest extra/pingPong/test.cc)
-	target_link_libraries(runPingPongTest frastgl)
+	add_executable(runPingPongTest1 extra/pingPong/test1.cc)
+	target_link_libraries(runPingPongTest1 frastgl)
+	add_executable(runPingPongTest2 extra/pingPong/test2.cc)
+	target_link_libraries(runPingPongTest2 frastgl)
 endif()
 
 
