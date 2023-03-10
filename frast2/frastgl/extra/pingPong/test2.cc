@@ -1,13 +1,13 @@
 #include "frast2/frastgl/core/app.h"
-#include "frast2/frastgl/extra/pingPong/pingPong.hpp"
+#include "frast2/frastgl/extra/pingPong/pingPong2.hpp"
 
 using namespace frast;
 
-class Test_PingPong_App : public App, public PingPongHarness<Test_PingPong_App> {
+class Test_PingPong_App : public App, public PingPongHarness2<Test_PingPong_App> {
 
 	public:
 
-	Test_PingPong_App(const AppConfig& cfg) : App(cfg), PingPongHarness(cfg.w, cfg.h, 4) {
+	Test_PingPong_App(const AppConfig& cfg) : App(cfg), PingPongHarness2(cfg.w, cfg.h, 4) {
 	}
 
 
@@ -19,11 +19,22 @@ class Test_PingPong_App : public App, public PingPongHarness<Test_PingPong_App> 
 	}
 
 	float t = 0.f;
+	int frame = 0;
 
 	inline void do_frame() {
+		frame++;
+
+		bool use_effect = frame % 120 >= 30;
+
 		window.beginFrame();
 
-		glBindFramebuffer(GL_FRAMEBUFFER, pingPongGetSceneFbo());
+		glBlendFunc(GL_ONE, GL_ZERO);
+		glEnable(GL_DEPTH_TEST);
+
+		if (use_effect)
+			glBindFramebuffer(GL_FRAMEBUFFER, pingPongGetSceneFbo());
+		else
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glMatrixMode(GL_MODELVIEW);
@@ -64,13 +75,14 @@ class Test_PingPong_App : public App, public PingPongHarness<Test_PingPong_App> 
 		glEnd();
 
 
-		pingPongRender(0);
+		if (use_effect)
+			pingPongRender(0);
 
 		window.endFrame();
 	}
 
 	private:
-	friend class PingPongHarness<Test_PingPong_App>;
+	friend class PingPongHarness2<Test_PingPong_App>;
 
 	const std::string pingPongDownShader_vsrc = R"(#version 440
 		in layout(location=0) vec2 a_pos;
@@ -140,6 +152,7 @@ class Test_PingPong_App : public App, public PingPongHarness<Test_PingPong_App> 
 		})";
 
 	// These can be empty, then the impl will render the last 'up' directly to \fboFinal
+	/*
 	const std::string pingPongFinalMerge_vsrc = R"(#version 440
 		in layout(location=0) vec2 a_pos;
 		in layout(location=1) vec2 a_uv;
@@ -165,6 +178,9 @@ class Test_PingPong_App : public App, public PingPongHarness<Test_PingPong_App> 
 
 			o_color = c;
 		})";
+		*/
+	const std::string pingPongFinalMerge_vsrc = "";
+	const std::string pingPongFinalMerge_fsrc = "";
 
 };
 
@@ -182,3 +198,4 @@ int main() {
 
 	return 0;
 }
+
