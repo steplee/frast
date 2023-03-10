@@ -843,6 +843,8 @@ void GtRenderer<GtTypes,Derived>::initDebugPipeline(TheDescriptorPool& dpool, Si
 template <class GtTypes, class Derived>
 void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 
+	glDisable(GL_DEPTH_TEST);
+
 	static constexpr uint16_t inds[24] = {
 		0,1, 1,2, 2,3, 3,0,
 		4,5, 5,6, 6,7, 7,4,
@@ -918,6 +920,8 @@ void GtRenderer<GtTypes,Derived>::renderDbg(RenderState& rs) {
 
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_COLOR_ARRAY);
+
+	glEnable(GL_DEPTH_TEST);
 
 }
 

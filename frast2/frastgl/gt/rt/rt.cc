@@ -234,8 +234,9 @@ bool RtTile::upload(RtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) 
 
 void RtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int meshIdx) {
 	// fmt::print(" - rendering casted\n");
-	
-	assert(false);
+
+	glUniformMatrix4fv(3, 1, false, this->model.data());
+	glUniform4fv(4, 1, &this->uvInfos[meshIdx*4]);
 
 	glBindTexture(GL_TEXTURE_2D, td.tex);
 	glBindBuffer(GL_ARRAY_BUFFER, td.verts);
@@ -245,7 +246,7 @@ void RtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int 
 	// glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*6, (void*)(4*4));
 	glVertexAttribPointer(0, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), 0);
 	glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(RtPackedVertex), (void*)(4));
-	glVertexAttribPointer(1, 3, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), (void*)(8));
+	glVertexAttribPointer(2, 3, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), (void*)(8));
 
 	glDrawElements(GL_TRIANGLE_STRIP, td.residentInds, GL_UNSIGNED_SHORT, 0);
 }
@@ -254,7 +255,6 @@ void RtTile::doRender(GtTileData& td, int meshIdx) {
 
 	// NOTE: To avoid excessive state switches and line noise: assume correct shader is already bound (as well as uniforms)
 
-	// FIXME: Uniforms (model, uvScaleOff)
 	glUniformMatrix4fv(3, 1, false, this->model.data());
 	glUniform4fv(4, 1, &this->uvInfos[meshIdx*4]);
 
@@ -270,6 +270,7 @@ void RtTile::doRender(GtTileData& td, int meshIdx) {
 
 	// fmt::print("(rendering {} inds)\n", td.residentInds);
 	glDrawElements(GL_TRIANGLE_STRIP, td.residentInds, GL_UNSIGNED_SHORT, 0);
+
 }
 
 
@@ -339,7 +340,29 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 
 		glActiveTexture(GL_TEXTURE0);
 	} else {
-		assert(false);
+		// Castable shader.
+		glUseProgram(castableShader.prog);
+
+		// glUniformMatrix4fv(0, 1, true, mvpf); // mvp
+		glUniformMatrix4fv(0, 1, true, new_mvp.data()); // mvp
+		glUniform4fv(1, 1, anchor.data()); // anchor
+
+		glUniform1i(2, 0); // sampler2d
+		// glUniformMatrix4fv(2, 1, true, mvpf); // model: different for each tile
+		// glUniformMatrix4fv(3, 1, true, mvpf); // uvScaleOff: different for each tile
+
+		// Caster tex
+		glUniform1i(5, 1);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, casterStuff.tex);
+		// Regular tex
+		glUniform1i(2, 0); // sampler2d
+		glActiveTexture(GL_TEXTURE0);
+		// <tex different each tile>
+
+		glUniform1ui(6, casterStuff.casterMask); // mask
+		glUniformMatrix4fv(7, 1, true, casterStuff.cpuCasterBuffer.casterMatrix1);
+		glUniformMatrix4fv(8, 1, true, casterStuff.cpuCasterBuffer.casterMatrix2);
 	}
 
 	for (auto root : roots) {
@@ -393,6 +416,7 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+
 	if (GT_DEBUG and debugMode) renderDbg(rs);
 }
 
@@ -406,6 +430,7 @@ void RtRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {
 	if (this->cfg.allowCaster) {
 		do_init_caster_stuff();
 		castableShader = std::move(Shader{rt_tile_casted_vsrc, rt_tile_casted_fsrc});
+		fmt::print(" - castableShader :: {}\n", castableShader.prog);
 	}
 
 }

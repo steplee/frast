@@ -281,7 +281,6 @@ namespace frast {
 		float res = meter_w * (tileSize / static_cast<float>(w));
 
 		uint32_t lvl = find_level_for_mpp(res);
-
 		uint32_t iwmTlbr[4];
 		double sampledWmTlbr[4];
 
@@ -297,7 +296,7 @@ namespace frast {
 		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
 		if (n_tiles > 256) {
-			throw SampleTooLargeError{iwm_w, iwm_h};
+			throw SampleTooLargeError{static_cast<uint32_t>(iwm_w), static_cast<uint32_t>(iwm_h)};
 		}
 
 		cv::Mat sampledImg = getTlbr(lvl, iwmTlbr, c);
@@ -386,7 +385,7 @@ namespace frast {
 
 		// WARNING: This allows a maximum size of e.g. 4096^2 pixels.
 		if (n_tiles > 256) {
-			throw SampleTooLargeError{iwm_w, iwm_h};
+			throw SampleTooLargeError{static_cast<uint32_t>(iwm_w), static_cast<uint32_t>(iwm_h)};
 		}
 
 		// FIXME: Cache this image allocation as well.

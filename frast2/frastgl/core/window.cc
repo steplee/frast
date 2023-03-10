@@ -75,7 +75,7 @@ MyGlfwWindow::MyGlfwWindow() : Window() {
 }
 
 void MyGlfwWindow::beginFrame() {
-	glfwPollEvents();
+	if (not headless_) glfwPollEvents();
 	glViewport(0,0, windowWidth, windowHeight);
 }
 void MyGlfwWindow::endFrame() {
@@ -86,12 +86,14 @@ MyGlfwWindow::~MyGlfwWindow() {
 	destroyWindow();
 }
 void MyGlfwWindow::destroyWindow() {
+	__window_mtx.lock();
 	ioUsers.clear();
     if (glfwWindow) {
 		glfwMakeContextCurrent(glfwWindow);
 		glfwDestroyWindow(glfwWindow);
 	}
     glfwWindow = nullptr;
+	__window_mtx.unlock();
 }
 bool MyGlfwWindow::pollWindowEvents() {
     glfwPollEvents();
@@ -104,6 +106,7 @@ void MyGlfwWindow::_reshapeFunc(GLFWwindow* glfwWindow, int w, int h) {
 }
 void MyGlfwWindow::_keyboardFunc(GLFWwindow* glfwWindow, int key, int scancode, int action, int mods) {
     MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
+	if (!theWindow) return;
 	bool stop = theWindow->handleKey(key, scancode, action, mods);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;
@@ -112,6 +115,7 @@ void MyGlfwWindow::_keyboardFunc(GLFWwindow* glfwWindow, int key, int scancode, 
 }
 void MyGlfwWindow::_clickFunc(GLFWwindow* glfwWindow, int button, int action, int mods) {
     MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
+	if (!theWindow) return;
 	bool stop = theWindow->handleMousePress(button, action, mods);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;
@@ -120,6 +124,7 @@ void MyGlfwWindow::_clickFunc(GLFWwindow* glfwWindow, int button, int action, in
 }
 void MyGlfwWindow::_motionFunc(GLFWwindow* glfwWindow, double xpos, double ypos) {
     MyGlfwWindow* theWindow = reinterpret_cast<MyGlfwWindow *>(glfwGetWindowUserPointer(glfwWindow));
+	if (!theWindow) return;
 	bool stop = theWindow->handleMouseMotion(xpos,ypos);
 	for (auto l : theWindow->ioUsers) {
 		if (stop) break;

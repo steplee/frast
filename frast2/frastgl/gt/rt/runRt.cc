@@ -80,7 +80,7 @@ class TestApp : public BaseClass_App {
 
 			rtr = std::make_unique<RtRenderer>(cfg);
 			rtr->init(this->cfg);
-			// setExampleCasterData();
+			setExampleCasterData();
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
 
@@ -99,9 +99,9 @@ class TestApp : public BaseClass_App {
 				P.row(3) << 0,0,0,1;
 				frustum1->setPose(P.data());
 
-				// RowMatrix4f casterMatrixFromFrustum;
-				// frustum1->getCasterMatrix(casterMatrixFromFrustum.data());
-				// rtr->cwd.setMatrix2(casterMatrixFromFrustum.data());
+				RowMatrix4f casterMatrixFromFrustum;
+				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());
+				rtr->cwd.setMatrix2(casterMatrixFromFrustum.data());
 			}
 
 

@@ -136,7 +136,7 @@ namespace frast {
 			}
 
 			if (opts.readonly and fileIsNew_) {
-				throw std::runtime_error("If opts.readonly is true, file must already exist!");
+				throw std::runtime_error(fmt::format("If opts.readonly is true, file '{}' must already exist! ", path));
 			}
 
 			auto flags = opts.readonly ? O_RDONLY : O_RDWR;
