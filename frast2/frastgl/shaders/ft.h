@@ -130,9 +130,7 @@ void main() {
 	float d1 = max(dd1.x , dd1.y);
 	if (d1 < .49999) {
 		vec4 c = texture(u_texCast1, uv_c1) * color1;
-		// vec4 c = vec4(fract(uv_c1.x),0.,0.,1.);
-		// vec4 c = vec4(uv_c1.x,0.,0.,1.);
-		// c *= 3.0 * clamp(2.0 - 4. * (d1), 0., 1.);
+		c *= 3.0 * clamp(16.0 - 32. * (d1), 0., 1.);
 		outColor += c;
 	}
 
@@ -142,7 +140,7 @@ void main() {
 	/* if (v_caster_uv.zw != vec2(0.)) { */
 	if (d2 < .49999) {
 		vec4 c = texture(u_texCast1, uv_c2) * color2;
-		c *= 3.0 * clamp(2.0 - 4. * (d2), 0., 1.);
+		c *= 3.0 * clamp(16.0 - 32. * (d2), 0., 1.);
 		outColor += c;
 	}
 

@@ -116,7 +116,7 @@ class TestApp : public BaseClass_App {
 
 			textSet = std::make_unique<TextSet>();
 			// textSet->setText(0, "HelloWorld");
-			float pp[3] = {0.172643 ,-0.767278  ,0.650622};
+			float pp[3] = {0.174643 ,-0.770278  ,0.637622};
 			float color[4] = {1,1,0,1};
 			textSet->setTextPointingNormalToEarth(0, "HelloWorld", pp, .01f, color);
 
@@ -137,6 +137,17 @@ class TestApp : public BaseClass_App {
 				RowMatrix4f casterMatrixFromFrustum;
 				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());
 				ftr->cwd.setMatrix2(casterMatrixFromFrustum.data());
+
+				// Ellipsoid
+				auto ellps = frustum1->getOrCreateEllipsoid();
+				float yellow[4] = {1.f, 1.f, .1f, .5f};
+				ellps->setColor(yellow);
+				RowMatrix4f Pf = P.cast<float>();
+				// Pf.topLeftCorner<3,3>() *= 100 / 6e6;
+				ellps->setModel(Pf.data());
+				auto square = [](float a){return a*a;};
+				RowMatrix3f cov = RowMatrix3f::Identity() * square(1000/6e6);
+				ellps->setModelFromInvViewAndCov(Pf.data(), cov.data());
 			}
 
 
@@ -175,7 +186,7 @@ class TestApp : public BaseClass_App {
 			CameraSpec spec(cfg.w, cfg.h, 45.0 * M_PI/180);
 			SphericalEarthMovingCamera cam(spec);
 
-			Eigen::Vector3d pos0 { 0.136273, -1.03348, 0.552593 };
+			Eigen::Vector3d pos0 { 0.174643 ,-0.770278  ,0.637622};
 			Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
 			R0.row(2) = -pos0.normalized();
 			R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
@@ -235,7 +246,7 @@ class TestApp : public BaseClass_App {
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+0] =
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+1] =
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+2] = c;
-				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+3] = 200;
+				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+3] = 100;
 			}
 			ftr->cwd.setImage(tstImg);
 			// ftr->cwd.setColor1(color1);

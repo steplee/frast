@@ -73,6 +73,7 @@ add_library(frastgl
 	extra/caster/castable.cc
 	extra/earth/earth.cc
 	extra/frustum/frustum.cc
+	extra/ellipsoid/ellipsoid.cc
 	extra/textSet/textSet.cc
 	extra/loaders/mesh.cc
 	extra/loaders/obj.cc

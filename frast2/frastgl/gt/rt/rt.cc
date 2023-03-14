@@ -266,7 +266,7 @@ void RtTile::doRender(GtTileData& td, int meshIdx) {
 	// glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*6, (void*)(4*4));
 	glVertexAttribPointer(0, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), 0);
 	glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(RtPackedVertex), (void*)(4));
-	glVertexAttribPointer(2, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), (void*)(8));
+	glVertexAttribPointer(2, 3, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(RtPackedVertex), (void*)(8));
 
 	// fmt::print("(rendering {} inds)\n", td.residentInds);
 	glDrawElements(GL_TRIANGLE_STRIP, td.residentInds, GL_UNSIGNED_SHORT, 0);
@@ -297,10 +297,12 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 	Vector3d offset;
 	rs.copyEye(offset.data());
 	rs.computeMvp(mvpd);
-	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = offset;
+	Vector4f anchor;
+	anchor.head<3>() = offset.cast<float>();
+	anchor(3) = 0;
+	RowMatrix4d shift_(RowMatrix4d::Identity()); shift_.topRightCorner<3,1>() = anchor.head<3>().cast<double>();
 	Eigen::Map<const RowMatrix4d> mvp_ { mvpd };
 	RowMatrix4f new_mvp = (mvp_ * shift_).cast<float>();
-	Vector3f anchor = offset.cast<float>();
 
 	// WARNING: This is tricky!
 	if (rs.camera and rs.camera->flipY_) glFrontFace(GL_CW);

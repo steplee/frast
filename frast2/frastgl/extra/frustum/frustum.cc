@@ -125,6 +125,17 @@ void Frustum::render(const RenderState& rs) {
 	glDrawElements(GL_LINES, 24, GL_UNSIGNED_SHORT, inds);
 
 	glDisableClientState(GL_VERTEX_ARRAY);
+
+
+	if (ellps != nullptr) {
+		ellps->render(rs);
+	}
+}
+
+Ellipsoid* Frustum::getOrCreateEllipsoid() {
+	if (ellps == nullptr) ellps = std::make_unique<Ellipsoid>();
+	return ellps.get();
+
 }
 
 }
