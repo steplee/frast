@@ -38,7 +38,18 @@ Frustum::Frustum() {
 
 }
 
-void Frustum::resetTrail() { trailIndex = 0; }
+Frustum::~Frustum() {
+	if (trailVbo) {
+		if (trailData) {
+			glBindBuffer(GL_ARRAY_BUFFER, trailVbo);
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		}
+		glDeleteBuffers(1, &trailVbo);
+	}
+}
+
+void Frustum::resetTrail() { trailIndex = 0; haveWaitingNextPos = false; }
 
 void Frustum::setColor(const float c[4]) {
 	for (int i=0; i<4; i++) color[i] = c[i];
@@ -70,31 +81,52 @@ void Frustum::setPose(const double* viewInv_, bool pushTrail) {
 	v.row(3) << 0,0,0,1;
 
 	if (pushTrail) {
+		haveWaitingNextPos = true;
+		waitingNextPos[0] = viewInv[4*0+3];
+		waitingNextPos[1] = viewInv[4*1+3];
+		waitingNextPos[2] = viewInv[4*2+3];
 
-		// Decimate the trail.
-		if (trailIndex == trailLength) {
-			float *tmp = (float*) malloc(trailSize/2);
-			for (int i=0; i<trailLength/2; i++) {
-				tmp[i*3+0] = trailData[i*3*2+0];
-				tmp[i*3+1] = trailData[i*3*2+1];
-				tmp[i*3+2] = trailData[i*3*2+2];
-			}
-			memcpy(trailData, tmp, trailSize/2);
-			free(tmp);
-			trailIndex = trailIndex / 2;
-		}
-
-		trailData[trailIndex*3+0] = viewInv[4*0+3];
-		trailData[trailIndex*3+1] = viewInv[4*1+3];
-		trailData[trailIndex*3+2] = viewInv[4*2+3];
-		trailIndex++;
-		if (trailIndex > 1) {
-			glBindBuffer(GL_ARRAY_BUFFER, trailVbo);
-			glCheck(glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, (trailIndex-1)*3*4)); // FIXME: Only do used range.
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-		}
 	}
 
+}
+
+void Frustum::maybeUpdateTrail() {
+	if (!haveWaitingNextPos) return;
+	haveWaitingNextPos = false;
+
+	// FIXME: Lock a spinlock.
+	float p[3];
+	{
+		p[0] = waitingNextPos[0];
+		p[1] = waitingNextPos[1];
+		p[2] = waitingNextPos[2];
+	}
+
+	// Decimate the trail.
+	if (trailIndex == trailLength) {
+		float *tmp = (float*) malloc(trailSize/2);
+		for (int i=0; i<trailLength/2; i++) {
+			// Box filter
+			int j = i * 2;
+			int k = i * 2 + (i>0);
+			tmp[i*3+0] = (trailData[j*3+0] + trailData[k*3+0]) * .5f;
+			tmp[i*3+1] = (trailData[j*3+1] + trailData[k*3+1]) * .5f;
+			tmp[i*3+2] = (trailData[j*3+2] + trailData[k*3+2]) * .5f;
+		}
+		memcpy(trailData, tmp, trailSize/2);
+		free(tmp);
+		trailIndex = trailIndex / 2;
+	}
+
+	trailData[trailIndex*3+0] = p[0];
+	trailData[trailIndex*3+1] = p[1];
+	trailData[trailIndex*3+2] = p[2];
+	trailIndex++;
+	if (trailIndex > 1) {
+		glBindBuffer(GL_ARRAY_BUFFER, trailVbo);
+		glCheck(glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, (trailIndex-1)*3*4)); // FIXME: Only do used range.
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
 }
 
 void Frustum::getCasterMatrix(float* out) const {
@@ -163,8 +195,7 @@ void Frustum::render(const RenderState& rs) {
 	glCheck(glDrawElements(GL_LINES, 24, GL_UNSIGNED_SHORT, inds));
 
 
-	fmt::print("trailVbo {}\n", trailVbo);
-	for (int i=0; i<5; i++) fmt::print("trail[{}] {} {} {}\n", i, trailData[i*3+0], trailData[i*3+1], trailData[i*3+2]);
+	maybeUpdateTrail();
 
 	if (trailIndex > 1) {
 		glMatrixMode(GL_PROJECTION);

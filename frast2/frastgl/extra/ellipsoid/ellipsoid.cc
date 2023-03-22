@@ -96,10 +96,6 @@ namespace frast {
 		}
 
 		void Ellipsoid::render(const RenderState& rs0) {
-			// GLboolean enable_cull;
-			// glGetBooleanv(GL_CULL_FACE, &enable_cull);
-			// glEnable(GL_CULL_FACE);
-
 			BlendGuard bf(true, GL_SRC_ALPHA, GL_ONE);
 
 			glUseProgram(ellpsShader.prog);

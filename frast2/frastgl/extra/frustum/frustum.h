@@ -18,6 +18,7 @@ class Frustum {
 	public:
 
 		Frustum();
+		~Frustum();
 
 		void render(const RenderState& rs);
 
@@ -38,6 +39,8 @@ class Frustum {
 		void getCasterMatrix(float* out) const;
 		void getModelMatrix(double* out) const;
 
+		// Should only be called on render thread. Exposed with that restriction.
+		void maybeUpdateTrail();
 
 	protected:
 		// CameraSpec spec;
@@ -52,11 +55,15 @@ class Frustum {
 
 		GLuint trailVbo;
 		// GLuint trailBackupVbo;
-		static constexpr int trailLength = 4096;
-		static constexpr int trailSize       = 3*4*4096;
+		// static constexpr int trailLength = 4096;
+		static constexpr int trailLength = 2048;
+		static constexpr int trailSize       = 3*4*trailLength;
 		// float trailData[trailSize];
-		float *trailData; // the map of the vbo
-		int trailIndex;
+		float *trailData{}; // the map of the vbo
+		int trailIndex=0;
+
+		float waitingNextPos[3];
+		bool haveWaitingNextPos;
 
 };
 

@@ -92,10 +92,12 @@ class TestApp : public BaseClass_App {
 				glCheck("uav render");
 			}
 
-
+			glEnable(GL_BLEND);
 			glLineWidth(2);
 			frustum1->render(rs);
 			glCheck("frustum1 render");
+
+
 			textSet->render(rs);
 			glCheck("textSet render");
 
@@ -144,6 +146,7 @@ class TestApp : public BaseClass_App {
 					P.row(3) << 0,0,0,1;
 					frustum1->setPose(P.data(), true);
 					pos0 += Vector3d{1,0,1} * 100 / 6e6;
+					frustum1->maybeUpdateTrail();
 				}
 
 				RowMatrix4f casterMatrixFromFrustum;

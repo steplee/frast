@@ -54,6 +54,9 @@ namespace frast {
 				glCheck(glEnable(GL_TEXTURE_2D));
 				glCheck(glBindTexture(GL_TEXTURE_2D, tex));
 
+				// glEnable(GL_BLEND);
+				// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 				/*
 				static int32_t verts[MAX_LEN*2];
 				glVertexPointer(2, GL_INT, 0, verts);
