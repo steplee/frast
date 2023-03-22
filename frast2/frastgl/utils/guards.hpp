@@ -1,5 +1,7 @@
 #pragma once
 
+#include "check.hpp"
+
 namespace frast {
 
 struct BlendGuard {
@@ -10,11 +12,12 @@ struct BlendGuard {
 		bool wasEnabled = glIsEnabled(GL_BLEND);
 		if (wasEnabled) {
 			glGetIntegerv(GL_BLEND_SRC_RGB, &oldSrc);
+			glCheck("B");
 			glGetIntegerv(GL_BLEND_DST_RGB, &oldDst);
 		}
 		if (enable) {
 			glEnable(GL_BLEND);
-			glBlendFunc(src,dst);
+			glCheck(glBlendFunc(src,dst));
 		} else {
 			glDisable(GL_BLEND);
 		}

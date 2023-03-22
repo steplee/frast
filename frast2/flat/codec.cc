@@ -14,7 +14,6 @@ namespace {
 		assert(option == 0);
 		return false;
 	}
-
 }
 
 namespace frast {

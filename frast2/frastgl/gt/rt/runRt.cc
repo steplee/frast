@@ -97,7 +97,7 @@ class TestApp : public BaseClass_App {
 				P.topLeftCorner<3,3>() = R0;
 				P.topRightCorner<3,1>() = pos0;
 				P.row(3) << 0,0,0,1;
-				frustum1->setPose(P.data());
+				frustum1->setPose(P.data(), false);
 
 				RowMatrix4f casterMatrixFromFrustum;
 				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());

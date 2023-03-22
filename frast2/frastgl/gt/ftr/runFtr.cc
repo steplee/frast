@@ -42,6 +42,7 @@ class TestApp : public BaseClass_App {
 
 		virtual void render(RenderState& rs) override {
 			window.beginFrame();
+			glCheck("beginFrame");
 
 			if (moveCaster) {
 				Eigen::Map<const RowMatrix4d> view { rs.view() };
@@ -53,6 +54,7 @@ class TestApp : public BaseClass_App {
 			// fmt::print(" - render\n");
 			glClearColor(0,0,.01,1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glCheck("clear");
 
 			glEnable(GL_DEPTH_TEST);
 			glDepthFunc(GL_LESS);
@@ -63,9 +65,12 @@ class TestApp : public BaseClass_App {
 
 			glLineWidth(1);
 			ftr->defaultUpdate(rs.camera);
+			glCheck("ftr update");
 			ftr->render(rs);
+			glCheck("ftr render");
 
 			earthEllps->render(rs);
+			glCheck("earthEllps render");
 
 			if (uav) {
 				double time = this->time * .05 * M_PI*2;
@@ -84,16 +89,20 @@ class TestApp : public BaseClass_App {
 				uav->setTransform(M.data());
 
 				uav->renderRecursive(rs);
+				glCheck("uav render");
 			}
 
 
 			glLineWidth(2);
 			frustum1->render(rs);
+			glCheck("frustum1 render");
 			textSet->render(rs);
+			glCheck("textSet render");
 
 			// if constexpr (std::is_same_v<BaseClass_App, ImguiApp>) ImguiApp::renderUi(rs);
 
 			window.endFrame();
+			glCheck("endFrame");
 			
 		}
 
@@ -129,10 +138,13 @@ class TestApp : public BaseClass_App {
 				R0.transposeInPlace();
 				frustum1 = std::make_unique<Frustum>();
 				RowMatrix4d P;
-				P.topLeftCorner<3,3>() = R0;
-				P.topRightCorner<3,1>() = pos0;
-				P.row(3) << 0,0,0,1;
-				frustum1->setPose(P.data());
+				for (int i=0; i<20; i++) {
+					P.topLeftCorner<3,3>() = R0;
+					P.topRightCorner<3,1>() = pos0;
+					P.row(3) << 0,0,0,1;
+					frustum1->setPose(P.data(), true);
+					pos0 += Vector3d{1,0,1} * 100 / 6e6;
+				}
 
 				RowMatrix4f casterMatrixFromFrustum;
 				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());

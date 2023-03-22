@@ -24,8 +24,10 @@ class Frustum {
 		// void setSpec(const CameraSpec& s);
 		void setProj(const CameraSpec& spec);
 		void setProj(const double* projInv);
-		void setPose(const double* viewInv);
+		void setPose(const double* viewInv, bool pushTrail);
 		void setColor(const float c[4]);
+
+		void resetTrail();
 
 		Ellipsoid* getOrCreateEllipsoid();
 
@@ -47,6 +49,14 @@ class Frustum {
 		double proj[16];
 
 		std::unique_ptr<Ellipsoid> ellps{};
+
+		GLuint trailVbo;
+		// GLuint trailBackupVbo;
+		static constexpr int trailLength = 4096;
+		static constexpr int trailSize       = 3*4*4096;
+		// float trailData[trailSize];
+		float *trailData; // the map of the vbo
+		int trailIndex;
 
 };
 

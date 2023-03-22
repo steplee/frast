@@ -3,6 +3,7 @@
 
 #include "frast2/frastgl/core/render_state.h"
 #include "frast2/frastgl/utils/eigen.h"
+#include "frast2/frastgl/utils/check.hpp"
 #include <fmt/core.h>
 
 #include "font.hpp"
@@ -49,9 +50,9 @@ namespace frast {
 			void TextSet::render(const RenderState& rs) {
 				glUseProgram(shader.prog);
 				// glEnableClientState(GL_VERTEX_ARRAY);
-				glActiveTexture(GL_TEXTURE0);
-				glEnable(GL_TEXTURE);
-				glBindTexture(GL_TEXTURE_2D, tex);
+				glCheck(glActiveTexture(GL_TEXTURE0));
+				glCheck(glEnable(GL_TEXTURE_2D));
+				glCheck(glBindTexture(GL_TEXTURE_2D, tex));
 
 				/*
 				static int32_t verts[MAX_LEN*2];
@@ -108,11 +109,11 @@ namespace frast {
 				for (int i=0; i<16; i++) uboHost.mat[i] = mvp(i);
 				*/
 
-				glDisable(GL_CULL_FACE);
+				glCheck(glDisable(GL_CULL_FACE));
 
-				glBindBuffer(GL_UNIFORM_BUFFER, ubo);
-				glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(uboHost), &uboHost);
-				glBindBufferRange(GL_UNIFORM_BUFFER, 0, ubo, 0, sizeof(uboHost));
+				glCheck(glBindBuffer(GL_UNIFORM_BUFFER, ubo));
+				glCheck(glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(uboHost), &uboHost));
+				glCheck(glBindBufferRange(GL_UNIFORM_BUFFER, 0, ubo, 0, sizeof(uboHost)));
 				for (int i=0; i<MAX_SETS; i++) {
 					uint32_t len = txtLens[i];
 					if (len > 0) {
@@ -126,7 +127,7 @@ namespace frast {
 				glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 				glBindTexture(GL_TEXTURE_2D, 0);
-				glDisable(GL_TEXTURE);
+				glDisable(GL_TEXTURE_2D);
 				// glDisableClientState(GL_VERTEX_ARRAY);
 				glUseProgram(0);
 			}

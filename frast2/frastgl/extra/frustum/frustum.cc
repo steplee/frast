@@ -4,6 +4,7 @@
 #include "frast2/frastgl/core/shader.h"
 #include "frast2/frastgl/shaders/earth.h"
 #include "frast2/frastgl/utils/eigen.h"
+#include "frast2/frastgl/utils/check.hpp"
 
 #include <fmt/ostream.h>
 
@@ -26,7 +27,18 @@ Frustum::Frustum() {
 	for (int i=0; i<16; i++) viewInv[i] = (i % 5) == 0;
 	for (int i=0; i<16; i++) view[i] = (i % 5) == 0;
 
+	trailVbo=0;
+	glGenBuffers(1, &trailVbo);
+	glCheck(glBindBuffer(GL_ARRAY_BUFFER, trailVbo));
+	glCheck(glBufferStorage(GL_ARRAY_BUFFER, trailSize, nullptr, GL_MAP_READ_BIT|GL_MAP_WRITE_BIT|GL_MAP_PERSISTENT_BIT));
+	trailData = (float*) glMapBufferRange(GL_ARRAY_BUFFER, 0, trailSize, GL_MAP_FLUSH_EXPLICIT_BIT|GL_MAP_WRITE_BIT|GL_MAP_WRITE_BIT|GL_MAP_PERSISTENT_BIT);
+	glCheck("after mapBufferRange");
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	trailIndex = 0;
+
 }
+
+void Frustum::resetTrail() { trailIndex = 0; }
 
 void Frustum::setColor(const float c[4]) {
 	for (int i=0; i<4; i++) color[i] = c[i];
@@ -48,7 +60,7 @@ void Frustum::setProj(const double* proj__) {
 	Map<RowMatrix4d> frustumProjInv_(projInv);
 	frustumProjInv_ = frustumProj_.inverse();
 }
-void Frustum::setPose(const double* viewInv_) {
+void Frustum::setPose(const double* viewInv_, bool pushTrail) {
 	memcpy(viewInv, viewInv_, 16*8);
 
 	Map<const RowMatrix4d> vi(viewInv);
@@ -56,6 +68,33 @@ void Frustum::setPose(const double* viewInv_) {
 	v.topLeftCorner<3,3>() = vi.topLeftCorner<3,3>().transpose();
 	v.topRightCorner<3,1>() = -v.topLeftCorner<3,3>()*vi.topRightCorner<3,1>();
 	v.row(3) << 0,0,0,1;
+
+	if (pushTrail) {
+
+		// Decimate the trail.
+		if (trailIndex == trailLength) {
+			float *tmp = (float*) malloc(trailSize/2);
+			for (int i=0; i<trailLength/2; i++) {
+				tmp[i*3+0] = trailData[i*3*2+0];
+				tmp[i*3+1] = trailData[i*3*2+1];
+				tmp[i*3+2] = trailData[i*3*2+2];
+			}
+			memcpy(trailData, tmp, trailSize/2);
+			free(tmp);
+			trailIndex = trailIndex / 2;
+		}
+
+		trailData[trailIndex*3+0] = viewInv[4*0+3];
+		trailData[trailIndex*3+1] = viewInv[4*1+3];
+		trailData[trailIndex*3+2] = viewInv[4*2+3];
+		trailIndex++;
+		if (trailIndex > 1) {
+			glBindBuffer(GL_ARRAY_BUFFER, trailVbo);
+			glCheck(glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, (trailIndex-1)*3*4)); // FIXME: Only do used range.
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		}
+	}
+
 }
 
 void Frustum::getCasterMatrix(float* out) const {
@@ -95,6 +134,9 @@ void Frustum::render(const RenderState& rs) {
 	glVertexPointer(3,	GL_FLOAT, 0, verts);
 	glColor4fv(color);
 
+	RowMatrix4d mvp;
+	rs.computeMvp(mvp.data());
+
 	// compute model matrix, which is like a projection matrix.
 	if (1) {
 		glMatrixMode(GL_PROJECTION);
@@ -103,8 +145,6 @@ void Frustum::render(const RenderState& rs) {
 
 		// const double *mvp = rs.mvp();
 		// Map<const RowMatrix4d> mvp_(mvp);
-		RowMatrix4d mvp;
-		rs.computeMvp(mvp.data());
 		Map<const RowMatrix4d> frustumViewInv_(viewInv);
 
 		// double proj[16];
@@ -113,8 +153,6 @@ void Frustum::render(const RenderState& rs) {
 
 		Map<const RowMatrix4d> frustumProj_(projInv);
 
-
-
 		float mvpf_column[16];
 		Map<Matrix4f> mvpf_column_(mvpf_column);
 		mvpf_column_ = (mvp * frustumViewInv_ * frustumProj_).cast<float>();
@@ -122,9 +160,27 @@ void Frustum::render(const RenderState& rs) {
 		glLoadMatrixf(mvpf_column);
 	}
 
-	glDrawElements(GL_LINES, 24, GL_UNSIGNED_SHORT, inds);
+	glCheck(glDrawElements(GL_LINES, 24, GL_UNSIGNED_SHORT, inds));
 
+
+	fmt::print("trailVbo {}\n", trailVbo);
+	for (int i=0; i<5; i++) fmt::print("trail[{}] {} {} {}\n", i, trailData[i*3+0], trailData[i*3+1], trailData[i*3+2]);
+
+	if (trailIndex > 1) {
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		glMatrixMode(GL_MODELVIEW);
+		RowMatrix4f mvpf_column = (mvp).transpose().cast<float>();
+		glLoadMatrixf(mvpf_column.data());
+
+		glUseProgram(0);
+		(glBindBuffer(GL_ARRAY_BUFFER, trailVbo));
+		(glVertexPointer(3,	GL_FLOAT, 0, 0));
+		(glDrawArrays(GL_LINE_STRIP, 0, trailIndex));
+		(glBindBuffer(GL_ARRAY_BUFFER, 0));
+	}
 	glDisableClientState(GL_VERTEX_ARRAY);
+
 
 
 	if (ellps != nullptr) {

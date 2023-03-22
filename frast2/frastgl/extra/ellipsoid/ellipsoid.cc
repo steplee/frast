@@ -6,6 +6,7 @@
 
 #include "frast2/frastgl/utils/eigen.h"
 #include "frast2/frastgl/utils/guards.hpp"
+#include "frast2/frastgl/utils/check.hpp"
 #include <Eigen/SVD>
 
 
@@ -99,7 +100,7 @@ namespace frast {
 			// glGetBooleanv(GL_CULL_FACE, &enable_cull);
 			// glEnable(GL_CULL_FACE);
 
-			BlendGuard bf(true, GL_ADD, GL_ADD);
+			BlendGuard bf(true, GL_SRC_ALPHA, GL_ONE);
 
 			glUseProgram(ellpsShader.prog);
 
@@ -123,7 +124,7 @@ namespace frast {
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*4, (void*)verts.data());
 			glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3*4, (void*)verts.data());
 
-			glDrawElements(GL_TRIANGLES, inds.size(), GL_UNSIGNED_SHORT, inds.data());
+			glCheck(glDrawElements(GL_TRIANGLES, inds.size(), GL_UNSIGNED_SHORT, inds.data()));
 
 			glDisableVertexAttribArray(0);
 			glDisableVertexAttribArray(1);
