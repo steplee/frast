@@ -29,8 +29,8 @@ int main(int argc, char** argv) {
 
 	ArgParser parser(argc, argv);
 	auto color = parser.getChoice2("-c", "--color", "rgb", "gray", "terrain").value();
-	std::string inpPath = parser.get2<std::string>("-i", "--input").value();
-	std::string outPath = parser.get2<std::string>("-o", "--output").value();
+	auto        inpPaths = parser.get2<std::vector<std::string>>("-i", "--input").value();
+	std::string outPath  = parser.get2<std::string>("-o", "--output").value();
 	int level = parser.get2<int>("-l", "--level").value();
 
 	auto threads_ = parser.get<int>("--threads");
@@ -63,20 +63,29 @@ int main(int argc, char** argv) {
 		throw std::runtime_error("unsupported 'color' option");
 	}
 
-	ccfg.srcPaths = {inpPath};
+	ccfg.srcPaths = inpPaths;
 	ccfg.baseLevel = level;
 	ccfg.addo = true;
 
 
 	// Run initial job: convert gdal -> frast2
 	{
-		WriterMaster wm(outPath, envOpts, threads);
-		wm.start(ccfg);
 
-		while (not wm.didWriterLoopExit())
-			sleep(1);
-		fmt::print(" - main detected base level finished, stopping.\n");
-		wm.stop();
+		if (ccfg.srcPaths.size() == 1) {
+			WriterMasterGdal wm(outPath, envOpts, threads);
+			wm.start(ccfg);
+
+			while (not wm.didWriterLoopExit()) sleep(1);
+			fmt::print(" - main detected base level finished, stopping.\n");
+			wm.stop();
+		} else {
+			WriterMasterGdalMany wm(outPath, envOpts, threads);
+			wm.start(ccfg);
+
+			while (not wm.didWriterLoopExit()) sleep(1);
+			fmt::print(" - main detected base level finished, stopping.\n");
+			wm.stop();
+		}
 	}
 
 	// Run addo job: convert frast2 -> frast2

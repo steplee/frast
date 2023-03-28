@@ -6,14 +6,14 @@
 
 namespace frast {
 
-WriterMaster::WriterMaster(const std::string& outPath, const EnvOptions& opts, int threads)
+WriterMasterGdal::WriterMasterGdal(const std::string& outPath, const EnvOptions& opts, int threads)
 	: ThreadPool(threads),
 	  env(outPath, opts), envOpts(opts) {
 
 
 }
 
-void WriterMaster::start(const ConvertConfig& cfg_) {
+void WriterMasterGdal::start(const ConvertConfig& cfg_) {
 	cfg = cfg_;
 
 	if (envOpts.isTerrain) assert(cfg.channels == 1);
@@ -26,12 +26,13 @@ void WriterMaster::start(const ConvertConfig& cfg_) {
 
 	curLevel = cfg.baseLevel;
 	masterData = create_gdal_stuff(-1);
-	writerThread = std::thread(&WriterMaster::writerLoop, this);
+	set_level_tlbr_from_main_thread(masterData);
+	writerThread = std::thread(&WriterMasterGdal::writerLoop, this);
 
 	ThreadPool::start();
 }
 
-WriterMaster::~WriterMaster() {
+WriterMasterGdal::~WriterMasterGdal() {
 	// Note: we have a different mtx and cv for the writerThread, so this may be UB...
 	// (but it appears to work)
 	stop();
@@ -46,23 +47,10 @@ WriterMaster::~WriterMaster() {
 
 
 
-void WriterMaster::writerLoop() {
+void WriterMasterGdal::writerLoop() {
 	bool haveMoreWork = true;
 
-
-	// auto dset = static_cast<MyGdalDataset*>(masterData);
-	// uint64_t lvlTlbr[4];
-	// dset->getTlbrForLevel(lvlTlbr, curLevel);
-	// uint64_t w = lvlTlbr[2] - lvlTlbr[0];
-	// uint64_t h = lvlTlbr[3] - lvlTlbr[1];
-
-
-
 	while (haveMoreWork and !doStop_) {
-
-		// TODO: This appears to work: now work on actual business code.
-
-		// sleep(1);
 
 		// Gather next batch of keys from tiff...
 		std::vector<uint64_t> currKeys = yieldNextKeys();
@@ -83,49 +71,12 @@ void WriterMaster::writerLoop() {
 		}
 	}
 
-	/*
-	if (cfg.addo) {
-
-		uint64_t w=1,h=1;
-		int level = args.baseLevel;
-
-		while (level > 0 and (w > 0 or h > 0)) {
-
-			level--;
-			getNumTilesForLevel(w,h,level);
-
-			haveMoreWork = true;
-			while (haveMoreWork and !doStop_) {
-
-				std::vector<uint64_t> currKeys = yieldNextKeysAddo();
-				lastNumEnqueued = currKeys.size();
-				haveMoreWork = lastNumEnqueued > 0;
-				fmt::print(fmt::fg(fmt::color::green), " - Enqueing {} items ready.\n", lastNumEnqueued);
-
-				// Enqueue them
-				for (auto key : currKeys) enqueue(key);
-
-				// Wait until workers complete. We need an exact match.
-				{
-					std::unique_lock<std::mutex> lck(writerMtx);
-					writerCv.wait(lck, [&] { return doStop_ or processedData.size() == currKeys.size(); });
-					fmt::print(fmt::fg(fmt::color::green), " - All {} items ready.\n", processedData.size());
-
-					handleProcessedData(processedData);
-				}
-			}
-
-		}
-	}
-	*/
-
-
 	fmt::print(" - writerLoop exiting.\n");
 	writerLoopExited = true;
 }
 
 
-void WriterMaster::handleProcessedData(std::vector<ProcessedData>& processedData) {
+void WriterMasterGdal::handleProcessedData(std::vector<ProcessedData>& processedData) {
 	// Write all of that data.
 	// TODO: do this on another thread than the one that queues data?
 	std::sort(processedData.begin(), processedData.end());

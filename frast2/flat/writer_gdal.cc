@@ -20,27 +20,32 @@ namespace {
 
 namespace frast {
 
-void* WriterMaster::createWorkerData(int workerId) {
+void WriterMasterGdal::set_level_tlbr_from_main_thread(void* dset) {
+	((MyGdalDataset*)dset)->getTlbrForLevel(levelTlbr, curLevel);
+	levelTlbrStored = curLevel;
+}
+
+void* WriterMasterGdal::createWorkerData(int workerId) {
 	// return nullptr;
 	return create_gdal_stuff(workerId);
 }
-void WriterMaster::destroyWorkerData(int workerId, void *ptr) {
+void WriterMasterGdal::destroyWorkerData(int workerId, void *ptr) {
 	auto dset = static_cast<MyGdalDataset*>(ptr);
 	delete dset;	
 }
 
-void WriterMaster::destroy_master_data() {
+void WriterMasterGdal::destroy_master_data() {
 	auto dset = static_cast<MyGdalDataset*>(masterData);
 	delete dset;	
 }
 
-void* WriterMaster::create_gdal_stuff(int worker_id) {
+void* WriterMasterGdal::create_gdal_stuff(int worker_id) {
 	// return new MyGdalDataset("/data/naip/mocoNaip/whole.wm.tif", envOpts.isTerrain);
 	return new MyGdalDataset(cfg.srcPaths[0], envOpts.isTerrain);
 }
 
 
-void WriterMaster::process(int workerId, const Key& key) {
+void WriterMasterGdal::process(int workerId, const Key& key) {
 	// fmt::print(" - worker {} proc key {}\n", workerId, key);
 
 	// auto dset = static_cast<MyGdalDataset*>(gdalDset);
@@ -63,6 +68,8 @@ void WriterMaster::process(int workerId, const Key& key) {
 
 	if (!img.empty() and !image_is_black(img)) {
 		// Encode.
+		// `encodeValue` malloc()s. But our `processedData` queue is not lossy,
+		// and the main thread will call free. So there is no leaks possible.
 		Value v = encodeValue(img, isTerrain());
 		val = v.value;
 		valueLength = v.len;
@@ -80,7 +87,7 @@ void WriterMaster::process(int workerId, const Key& key) {
 
 }
 
-void WriterMaster::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
+void WriterMasterGdal::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	auto dset = static_cast<MyGdalDataset*>(masterData);
 	uint64_t lvlTlbr[4];
 	dset->getTlbrForLevel(lvlTlbr, curLevel);
@@ -88,21 +95,26 @@ void WriterMaster::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	h = lvlTlbr[3] - lvlTlbr[1];
 }
 
-std::vector<uint64_t> WriterMaster::yieldNextKeys() {
+std::vector<uint64_t> WriterMasterGdal::yieldNextKeys() {
 	std::vector<uint64_t> out;
 
 	auto dset = static_cast<MyGdalDataset*>(masterData);
-	uint64_t lvlTlbr[4];
-	dset->getTlbrForLevel(lvlTlbr, curLevel);
-	uint64_t w = lvlTlbr[2] - lvlTlbr[0];
-	uint64_t h = lvlTlbr[3] - lvlTlbr[1];
+	/*
+	if (levelTlbrStored != curLevel) {
+		dset->getTlbrForLevel(levelTlbr, curLevel);
+		levelTlbrStored = curLevel;
+	}
+	*/
+	assert(levelTlbrStored == curLevel);
+	uint64_t w = levelTlbr[2] - levelTlbr[0];
+	uint64_t h = levelTlbr[3] - levelTlbr[1];
 
 	for (int n=0; n<256; n++) {
 
 		uint64_t yy = curIndex / w;
 		uint64_t xx = curIndex - (yy * w); // avoid %
-		uint64_t y = (yy) + lvlTlbr[1];
-		uint64_t x = (xx) + lvlTlbr[0];
+		uint64_t y = (yy) + levelTlbr[1];
+		uint64_t x = (xx) + levelTlbr[0];
 
 		if (xx == 0 and yy % 8 == 0) {
 			fmt::print(" - yielding ({} {} / {} {}) ({:.1f}% done)\n",
@@ -110,7 +122,7 @@ std::vector<uint64_t> WriterMaster::yieldNextKeys() {
 		}
 
 		// if (y >= lvlTblr[1])
-		if (y > lvlTlbr[3]) {
+		if (y > levelTlbr[3]) {
 			fmt::print(fmt::fg(fmt::color::magenta), " - [yieldNextKeys()] Reached beyond top row, stopping.\n");
 			break;
 		}

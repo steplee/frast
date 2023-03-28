@@ -7,7 +7,7 @@
 
 namespace frast {
 
-// class MyGdalDataset;
+	class FlatReader;
 
 struct WriteCfg {
 	int tileSize = 256;
@@ -33,12 +33,11 @@ struct ProcessedData {
 	inline bool operator<(const ProcessedData& o) const { return key < o.key; }
 };
 
-class WriterMaster : public ThreadPool {
+// Writer component that uses a single input GDAL file (probably a vrt)
+class WriterMasterGdal : public ThreadPool {
 	public:
-		WriterMaster(const std::string& outPath, const EnvOptions& opts, int threads=FRAST_WRITER_THREADS);
-		virtual ~WriterMaster();
-
-		// inline const WriteCfg& getCfg() const { return cfg; }
+		WriterMasterGdal(const std::string& outPath, const EnvOptions& opts, int threads=FRAST_WRITER_THREADS);
+		virtual ~WriterMasterGdal();
 
 		void start(const ConvertConfig& cfg);
 
@@ -52,7 +51,6 @@ class WriterMaster : public ThreadPool {
 
 	private:
 		FlatEnvironment env;
-		// WriteCfg cfg;
 		ConvertConfig cfg;
 		EnvOptions envOpts;
 
@@ -63,9 +61,7 @@ class WriterMaster : public ThreadPool {
 		void writerLoop();
 		std::atomic_bool writerLoopExited = false;
 
-
 		int lastNumEnqueued = 0;
-
 	private:
 		// A stateful generator called repeatedly in writerLoop()
 		std::vector<uint64_t> yieldNextKeys();
@@ -78,10 +74,62 @@ class WriterMaster : public ThreadPool {
 		void destroy_master_data();
 		int curLevel=-1, curIndex=0;
 
-
-	protected:
+		// This data is set on the *main thread* in start(), then kept constant for the remainder of the lifetime.
+		// It could be used from children, which is ok.
+		// (Although it's only needed for yieldNextKeys() in the writer thread)
+		uint64_t levelTlbr[4];
+		uint32_t levelTlbrStored=-1;
+		void set_level_tlbr_from_main_thread(void* dset);
 };
 
+// Writer component that uses a single input GDAL file (probably a vrt)
+class WriterMasterGdalMany : public ThreadPool {
+	public:
+		WriterMasterGdalMany(const std::string& outPath, const EnvOptions& opts, int threads=FRAST_WRITER_THREADS);
+		virtual ~WriterMasterGdalMany();
+
+		void start(const ConvertConfig& cfg);
+
+		inline bool didWriterLoopExit() { return writerLoopExited.load(); }
+		inline bool isTerrain() const { return env.isTerrain(); }
+
+	public:
+		virtual void process(int workerId, const Key& key) override;
+		virtual void* createWorkerData(int workerId) override;
+		virtual void destroyWorkerData(int workerId, void* ptr) override;
+
+	private:
+		FlatEnvironment env;
+		ConvertConfig cfg;
+		EnvOptions envOpts;
+
+		std::vector<ProcessedData> processedData;
+		std::mutex writerMtx;
+		std::condition_variable writerCv;
+		std::thread writerThread;
+		void writerLoop();
+		std::atomic_bool writerLoopExited = false;
+
+		int lastNumEnqueued = 0;
+	private:
+		// A stateful generator called repeatedly in writerLoop()
+		std::vector<uint64_t> yieldNextKeys();
+		void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
+		void handleProcessedData(std::vector<ProcessedData>& processedData);
+
+		// Things that are private to writer_gdal.cc (the actual conversion code)
+		void* masterData = nullptr;
+		void* create_gdal_stuff(int workerId);
+		void destroy_master_data();
+		int curLevel=-1, curIndex=0;
+
+		// This data is set on the *main thread* in start(), then kept constant for the remainder of the lifetime.
+		// It could be used from children, which is ok.
+		// (Although it's only needed for yieldNextKeys() in the writer thread)
+		uint64_t levelTlbr[4];
+		uint32_t levelTlbrStored=-1;
+		void set_level_tlbr_from_main_thread(void* dset);
+};
 
 class WriterMasterAddo : public ThreadPool {
 	public:
@@ -111,7 +159,6 @@ class WriterMasterAddo : public ThreadPool {
 		std::atomic_bool writerLoopExited = false;
 
 		int lastNumEnqueued = 0;
-
 	private:
 		// A stateful generator called repeatedly in writerLoop()
 		std::vector<uint64_t> yieldNextKeys();
@@ -125,7 +172,12 @@ class WriterMasterAddo : public ThreadPool {
 		int curLevel=-1, curIndex=0;
 		std::string path_;
 
-	protected:
+		// This data is set on the *main thread* in start(), then kept constant for the remainder of the lifetime.
+		// It could be used from children, which is ok.
+		// (Although it's only needed for yieldNextKeys() in the writer thread)
+		uint32_t mainLvl;
+		uint32_t mainTlbr[4];
+		void set_main_tlbr_from_main_thread(FlatReader* reader);
 };
 
 }

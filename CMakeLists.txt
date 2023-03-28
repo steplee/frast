@@ -111,11 +111,13 @@ add_library(frast2
 	frast2/tpool/tpool.cc
 
 	frast2/flat/flat_env.cc
+	frast2/flat/reader.cc
+	frast2/flat/codec.cc
+
 	frast2/flat/writer.cc
 	frast2/flat/writer_gdal.cc
 	frast2/flat/writer_addo.cc
-	frast2/flat/reader.cc
-	frast2/flat/codec.cc
+	frast2/flat/writer_gdal_many.cc
 	)
 # target_link_libraries(frast2 fmt::fmt pthread)
 target_link_libraries(frast2 fmt::fmt pthread ${libsCv} ${libsZ})

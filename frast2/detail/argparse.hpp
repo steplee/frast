@@ -5,10 +5,21 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <stdexcept>
 
 namespace {
 
 using Str = std::string;
+
+inline bool is_a_number(const Str& s) {
+	try {
+		std::stod(s);
+		return true;
+	} catch(...) {
+		return false;
+	}
+}
+
 
 using namespace frast;
 
@@ -16,6 +27,15 @@ struct Tlbr {
 	double tl[2];
 	double br[2];
 };
+
+// ad-hoc (zero-config) cli argument parser.
+//
+// Call some variation of get<T>() to get assigned values.
+//
+// Note: Keys are not allowed to be numbers, because that would make
+// parsing lists of numbers impossible (cannot tell if "-f 1 -1 2" is a
+// three-length block assigned to key "f", or if the "-1" is starting a new key)
+//
 
 class ArgParser {
 	public:
@@ -37,6 +57,11 @@ class ArgParser {
 
 		template <class T>
 		inline std::optional<T> get(const Str& k) {
+
+			if (is_a_number(k)) {
+				throw std::runtime_error("ArgParser keys are NOT allowed to be numbers.");
+			}
+
 			Str kk = getKeyWithoutDashes(k);
 
 			if (map.find(kk) != map.end()) {
@@ -96,7 +121,7 @@ class ArgParser {
 
 
 	private:
-		std::unordered_map<Str, Str> map;
+		std::unordered_map<Str, std::vector<Str>> map;
 
 		inline void parse(int argc, char** argv) {
 			for (int i=0; i<argc; i++) {
@@ -114,29 +139,57 @@ class ArgParser {
 					std::string v = arg.substr(f+1);
 
 					if (map.find(k) != map.end()) throw std::runtime_error("duplicate key");
-					map[k] = v;
+					map[k] = {v};
 				} else {
 					assert(i<argc-1);
-					Str val{argv[++i]};
+
+					std::vector<Str> vals;
+
+					// Properly parse numbers.
+					while (i+1 < argc and (argv[i+1][0] != '-' or is_a_number(argv[i+1]))) {
+						Str val{argv[++i]};
+						vals.push_back(val);
+						// if (i+1<argc) fmt::print(" - next up {}\n", argv[i+1]);
+					}
 
 					if (map.find(arg) != map.end()) throw std::runtime_error("duplicate key");
-					map[arg] = val;
+					map[arg] = vals;
 				}
 			}
 
-			for (auto kv : map) fmt::print(" - {} : {}\n", kv.first,kv.second);
+			// for (auto kv : map) fmt::print(" - {} : {}\n", kv.first,kv.second);
 		}
 
 		template <class T>
-		inline T scanAs(const Str& s) {
+		inline T scanAs(const std::vector<Str>& ss) {
+			if constexpr(std::is_same_v<std::vector<std::string>,T>) {
+				// Scan space-seperated strings.
+				return ss;
+			}
+
 			if constexpr(std::is_same_v<Tlbr,T>) {
+				// Scan space sperated tlbr.
 				Tlbr tlbr;
+				/*
 				auto result = sscanf(s.c_str(), "%lf %lf %lf %lf", tlbr.tl, tlbr.tl+1, tlbr.br, tlbr.br+1);
 				assert(result==4);
+				*/
+				assert(ss.size() == 4);
+				tlbr.tl[0] = std::stod(ss[0]);
+				tlbr.tl[1] = std::stod(ss[1]);
+				tlbr.br[0] = std::stod(ss[2]);
+				tlbr.br[1] = std::stod(ss[3]);
 				if (tlbr.tl[0] > tlbr.br[0]) std::swap(tlbr.tl[0], tlbr.br[0]);
 				if (tlbr.tl[1] > tlbr.br[1]) std::swap(tlbr.tl[1], tlbr.br[1]);
 				return tlbr;
 			}
+
+			// All of these are scalars.
+			if (ss.size() != 1) {
+				throw std::runtime_error(fmt::format("You asked ArgParser to scan a scalar value, but the parsed size of the value-set was {}",ss.size()));
+			}
+			const Str& s = ss[0];
+
 			if constexpr(std::is_same_v<bool,T>) {
 				return not (s == "0" or s == "off" or s == "no" or s == "n" or s == "N" or s == "" or s == "false" or s == "False");
 			}

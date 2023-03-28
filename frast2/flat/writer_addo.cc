@@ -40,6 +40,10 @@ void WriterMasterAddo::destroy_master_data() {
 }
 
 
+void WriterMasterAddo::set_main_tlbr_from_main_thread(FlatReader* reader) {
+	mainLvl = reader->determineTlbr(mainTlbr);
+}
+
 void WriterMasterAddo::start(const ConvertConfig& cfg_) {
 	cfg = cfg_;
 
@@ -50,6 +54,7 @@ void WriterMasterAddo::start(const ConvertConfig& cfg_) {
 
 	curLevel = cfg.baseLevel;
 	masterData = create_reader_stuff(-1);
+	set_main_tlbr_from_main_thread((FlatReader*)masterData);
 	writerThread = std::thread(&WriterMasterAddo::writerLoop, this);
 
 	ThreadPool::start();
@@ -71,9 +76,7 @@ WriterMasterAddo::~WriterMasterAddo() {
 void WriterMasterAddo::writerLoop() {
 	bool haveMoreWork = true;
 
-
 	curLevel = cfg.baseLevel - 1;
-
 
 	usleep(55'000);
 
@@ -82,20 +85,6 @@ void WriterMasterAddo::writerLoop() {
 		haveMoreWork = true;
 		bool began = false;
 		curIndex = 0;
-
-		// When we create a new level, we have to re-mmmap the file.
-		/*
-		fmt::print(" - will refresh master data\n");
-		if (masterData)
-			static_cast<FlatReader*>(masterData)->refreshMemMap();
-		getThreadPoolMutex().lock();
-		for (int i=0; i<getThreadCount(); i++) {
-			fmt::print(" - will refresh {}\n", i);
-			if (getWorkerData(i))
-				static_cast<FlatReader*>(getWorkerData(i))->refreshMemMap();
-		}
-		getThreadPoolMutex().unlock();
-		*/
 
 		while (haveMoreWork and !doStop_) {
 
@@ -196,10 +185,10 @@ void WriterMasterAddo::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	std::vector<uint64_t> out;
 
-	auto reader = static_cast<FlatReader*>(masterData);
+	// March Update: I cache the call to `reader->determineTlbr` saved to `mainTlbr`,
+	// because that is potentially slow.
+	// I still recompute lvlTlbr each time, because it's just integer ops.
 	uint32_t lvlTlbr[4];
-	uint32_t mainTlbr[4];
-	auto mainLvl = reader->determineTlbr(mainTlbr); // FIXME: remove this call: it is slow!
 
 	int64_t zoom = mainLvl - curLevel;
 	assert(zoom > 0);
@@ -221,9 +210,7 @@ std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	}
 
 
-	// lvlTlbr[2] = (mainTlbr[2]) / (1 << zoom);
-	// lvlTlbr[3] = (mainTlbr[3]) / (1 << zoom);
-	fmt::print(" - level {}, tlbr {} {} -> {} {} (w0h0 {} {})\n", curLevel, lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3], w0,h0);
+	// fmt::print(" - level {}, tlbr {} {} -> {} {} (w0h0 {} {})\n", curLevel, lvlTlbr[0], lvlTlbr[1], lvlTlbr[2], lvlTlbr[3], w0,h0);
 
 	uint64_t w = lvlTlbr[2] - lvlTlbr[0];
 	uint64_t h = lvlTlbr[3] - lvlTlbr[1];
@@ -301,10 +288,6 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		int tw = imga.cols;
 		cv::Mat img(th*2, tw*2, imga.type());
 
-		// imga.copyTo(img(cv::Rect{0,0,tw,th}));
-		// imgb.copyTo(img(cv::Rect{0,th,tw,th}));
-		// imgc.copyTo(img(cv::Rect{tw,0,tw,th}));
-		// imgd.copyTo(img(cv::Rect{tw,th,tw,th}));
 		imga.copyTo(img(cv::Rect{0,th,tw,th}));
 		imgb.copyTo(img(cv::Rect{0,0,tw,th}));
 		imgc.copyTo(img(cv::Rect{tw,th,tw,th}));
