@@ -139,15 +139,13 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		wmTlbr[1], wmTlbr[1], wmTlbr[3], wmTlbr[3] };
     wm2prj->Transform(4, corners_, corners_+4, nullptr);
 	Map<Matrix<double,4,2>> corners { corners_ };
-	// for (int i=0; i<4; i++) std::swap(corners(i,0), corners(i,1));
 	corners = (corners * prj2pix.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + prj2pix.col(2).array().transpose();
 
 	AlignedBox2d aabb { corners.row(0).transpose() };
 	aabb.extend(corners.row(1).transpose());
 	aabb.extend(corners.row(2).transpose());
 	aabb.extend(corners.row(3).transpose());
-	// fmt::print(" - pix aabb: {} {}\n", aabb.min().transpose(), aabb.max().transpose());
-	std::cout << " - pix aabb:" <<  aabb.min().transpose() << " " <<  aabb.max().transpose() << "\n";
+	// std::cout << " - pix aabb:" <<  aabb.min().transpose() << " " <<  aabb.max().transpose() << "\n";
 
 
 	// Vector4d tlbr_pix { aabb.min()(0), aabb.min()(1), aabb.max()(0)+1, aabb.max()(1)+1 };
@@ -169,9 +167,6 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		br_pix(0), br_pix(1),
 		tl_pix(0), br_pix(1);
 	corners_nat = (corners_nat * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
-
-	std::cout << " - corners_nat:\n" << corners_nat << "\n";
-	// for (int i=0; i<4; i++) std::swap(corners_nat(i,0), corners_nat(i,1));
 
     prj2wm->Transform(4, corners_nat.data(), corners_nat.data()+4, nullptr);
 
