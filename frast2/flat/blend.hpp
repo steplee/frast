@@ -6,6 +6,16 @@
 
 namespace {
 
+	inline int get_max_channels(const std::vector<cv::Mat>& imgs) {
+		// return std::transform_reduce(imgs.begin(),imgs.end(), 0, [](int a, int b) { return std::max(a,b); }, [](const cv::Mat& i) { return i.channels(); });
+		int c = 0;
+		for (const auto& img : imgs) {
+			int cc = img.channels();
+			if (cc > c) c = cc;
+		}
+		return c;
+	}
+
 	// FIXME:
 	// This is a vitally important function.
 	// It currently takes the weighted arithmetic mean of all pixels in the input images, where the weight
@@ -27,8 +37,7 @@ namespace {
 		if (imgs.size() == 0) return {};
 		if (imgs.size() == 1) return imgs[0];
 
-		// int c = std::transform_reduce(imgs.begin(),imgs.end(), 0, std::max<int>, [](const cv::Mat& i) { return i.channels(); });
-		int in_c = std::transform_reduce(imgs.begin(),imgs.end(), 0, [](int a, int b) { return std::max(a,b); }, [](const cv::Mat& i) { return i.channels(); });
+		int in_c = get_max_channels(imgs);
 		int h = imgs[0].rows, w = imgs[0].cols;
 		assert(in_c == 1 or in_c == 3); // Only 1 or 3 channels supported
 
@@ -256,7 +265,7 @@ namespace {
 		if (imgs.size() == 1) return imgs[0];
 
 		// int c = std::transform_reduce(imgs.begin(),imgs.end(), 0, std::max<int>, [](const cv::Mat& i) { return i.channels(); });
-		int in_c = std::transform_reduce(imgs.begin(),imgs.end(), 0, [](int a, int b) { return std::max(a,b); }, [](const cv::Mat& i) { return i.channels(); });
+		int in_c = get_max_channels(imgs);
 		int h = imgs[0].rows, w = imgs[0].cols;
 		assert(in_c == 1 or in_c == 3); // Only 1 or 3 channels supported
 
@@ -268,9 +277,25 @@ namespace {
 
 		int32_t* img_a32_data = (int32_t*)img_a32.data;
 
+		int erosion_size = 1;
+		cv::Mat element = cv::getStructuringElement( cv::MORPH_RECT,
+					cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
+					cv::Point( erosion_size, erosion_size ) );
+
+		int npyr = 2;
+
+		/*
 		for (auto& img : imgs) {
 			int this_c = img.channels();
 			int hh=img.rows, ww=img.cols;
+
+			cv::Mat blurredImg;
+			cv::Mat blurredWeight;
+			blurredImg = img.clone();
+			for (int i=0; i<npyr; i++) cv::pyrDown(blurredImg, blurredImg);
+			for (int i=0; i<npyr; i++) cv::pyrUp(blurredImg, blurredImg);
+
+			cv::Mat weightImg0(hh,ww,CV_8UC1);
 			for (int y=0; y<hh; y++) {
 				for (int x=0; x<ww; x++) {
 					int32_t v = 0;
@@ -278,29 +303,160 @@ namespace {
 					else             v = ((int32_t)img.data[y*ww*3+x*3+0])
 									   + ((int32_t)img.data[y*ww*3+x*3+1])
 									   + ((int32_t)img.data[y*ww*3+x*3+2]);
-
-					int32_t weight = std::min(v*10,255*4);
-					int32_t old_weight = img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)];
-					weight = std::min(std::max(weight,0),255*4);
-
-					if (tmp_c == 4 and this_c == 3)
-						for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+i])*weight;
-					else if (tmp_c == 4 and this_c == 1)
-						for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
-					else if (tmp_c == 2 and this_c == 3)
-						img_a32_data[y*w*tmp_c+x*tmp_c+0] += (
-							((int32_t)img.data[y*w*this_c+x*this_c+0]) +
-							((int32_t)img.data[y*w*this_c+x*this_c+1]) +
-							((int32_t)img.data[y*w*this_c+x*this_c+2]) )*weight/3;
-					else if (tmp_c == 2 and this_c == 1)
-						img_a32_data[y*w*tmp_c+x*tmp_c+0] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
-					else assert(false);
-
-					img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)] += weight;
+					uint8_t weight8 = std::min(v*10,255);
+					weightImg0.data[y*ww+x] = weight8;
 				}
 			}
 
+			blurredWeight = weightImg0.clone();
+			for (int i=0; i<npyr; i++) cv::pyrDown(blurredWeight, blurredWeight);
+			for (int i=0; i<npyr; i++) cv::pyrUp(blurredWeight, blurredWeight);
+
+			cv::erode( weightImg0, weightImg0, element );
+			cv::erode( weightImg0, weightImg0, element );
+
+
+			for (int y=0; y<hh; y++) {
+				for (int x=0; x<ww; x++) {
+
+					// Pass 0
+					{
+						int32_t weight = ((int32_t)weightImg0.data[y*ww+x]) * 5;
+
+						int32_t old_weight = img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)];
+						weight = weight - old_weight;
+						weight = std::max(std::min(weight,5*255), 0);
+
+						if (tmp_c == 4 and this_c == 3)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+i])*weight;
+						else if (tmp_c == 4 and this_c == 1)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
+						else if (tmp_c == 2 and this_c == 3)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += (
+								((int32_t)img.data[y*w*this_c+x*this_c+0]) +
+								((int32_t)img.data[y*w*this_c+x*this_c+1]) +
+								((int32_t)img.data[y*w*this_c+x*this_c+2]) )*weight/3;
+						else if (tmp_c == 2 and this_c == 1)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
+						else assert(false);
+
+						img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)] += weight;
+					}
+
+					// Pass 1
+					{
+						int32_t weight = ((int32_t)blurredWeight.data[y*ww+x]) * 1;
+
+						int32_t old_weight = img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)];
+						weight = weight - old_weight;
+						weight = std::max(std::min(weight,5*255), 0);
+
+						if (tmp_c == 4 and this_c == 3)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+i])*weight;
+						else if (tmp_c == 4 and this_c == 1)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+0])*weight;
+						else if (tmp_c == 2 and this_c == 3)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += (
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+0]) +
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+1]) +
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+2]) )*weight/3;
+						else if (tmp_c == 2 and this_c == 1)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+0])*weight;
+						else assert(false);
+
+						img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)] += weight;
+					}
+				}
+			}
 		}
+		*/
+
+		for (auto& img : imgs) {
+			int this_c = img.channels();
+			int hh=img.rows, ww=img.cols;
+
+			cv::Mat blurredImg;
+			cv::Mat blurredWeight;
+			blurredImg = img.clone();
+			for (int i=0; i<npyr; i++) cv::pyrDown(blurredImg, blurredImg);
+			for (int i=0; i<npyr; i++) cv::pyrUp(blurredImg, blurredImg);
+
+			cv::Mat weightImg0(hh,ww,CV_8UC1);
+			for (int y=0; y<hh; y++) {
+				for (int x=0; x<ww; x++) {
+					int32_t v = 0;
+					if (this_c == 1) v = ((int32_t)img.data[y*ww+x])*3;
+					else             v = ((int32_t)img.data[y*ww*3+x*3+0])
+									   + ((int32_t)img.data[y*ww*3+x*3+1])
+									   + ((int32_t)img.data[y*ww*3+x*3+2]);
+					uint8_t weight8 = std::min(v*10,255);
+					weightImg0.data[y*ww+x] = weight8;
+				}
+			}
+
+			blurredWeight = weightImg0.clone();
+			for (int i=0; i<npyr; i++) cv::pyrDown(blurredWeight, blurredWeight);
+			for (int i=0; i<npyr; i++) cv::pyrUp(blurredWeight, blurredWeight);
+
+			cv::erode( weightImg0, weightImg0, element );
+			cv::erode( weightImg0, weightImg0, element );
+
+
+			for (int y=0; y<hh; y++) {
+				for (int x=0; x<ww; x++) {
+
+					// Pass 0
+					{
+						int32_t weight = ((int32_t)weightImg0.data[y*ww+x]) * 5;
+
+						int32_t old_weight = img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)];
+						weight = weight - old_weight;
+						weight = std::max(std::min(weight,5*255), 0);
+
+						if (tmp_c == 4 and this_c == 3)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+i])*weight;
+						else if (tmp_c == 4 and this_c == 1)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
+						else if (tmp_c == 2 and this_c == 3)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += (
+								((int32_t)img.data[y*w*this_c+x*this_c+0]) +
+								((int32_t)img.data[y*w*this_c+x*this_c+1]) +
+								((int32_t)img.data[y*w*this_c+x*this_c+2]) )*weight/3;
+						else if (tmp_c == 2 and this_c == 1)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += ((int32_t)img.data[y*ww*this_c+x*this_c+0])*weight;
+						else assert(false);
+
+						img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)] += weight;
+					}
+
+					// Pass 1
+					{
+						int32_t weight = ((int32_t)blurredWeight.data[y*ww+x]) * 1;
+
+						int32_t old_weight = img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)];
+						weight = weight - old_weight;
+						weight = std::max(std::min(weight,5*255), 0);
+
+						if (tmp_c == 4 and this_c == 3)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+i])*weight;
+						else if (tmp_c == 4 and this_c == 1)
+							for (int i=0; i<tmp_c-1; i++) img_a32_data[y*w*tmp_c+x*tmp_c+i] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+0])*weight;
+						else if (tmp_c == 2 and this_c == 3)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += (
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+0]) +
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+1]) +
+								((int32_t)blurredImg.data[y*w*this_c+x*this_c+2]) )*weight/3;
+						else if (tmp_c == 2 and this_c == 1)
+							img_a32_data[y*w*tmp_c+x*tmp_c+0] += ((int32_t)blurredImg.data[y*ww*this_c+x*this_c+0])*weight;
+						else assert(false);
+
+						img_a32_data[y*w*tmp_c+x*tmp_c+(tmp_c-1)] += weight;
+					}
+				}
+			}
+		}
+
+
 
 		// Blend.
 		for (int y=0; y<h; y++) {
