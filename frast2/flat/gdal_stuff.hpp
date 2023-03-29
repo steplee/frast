@@ -139,6 +139,7 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		wmTlbr[1], wmTlbr[1], wmTlbr[3], wmTlbr[3] };
     wm2prj->Transform(4, corners_, corners_+4, nullptr);
 	Map<Matrix<double,4,2>> corners { corners_ };
+	// for (int i=0; i<4; i++) std::swap(corners(i,0), corners(i,1));
 	corners = (corners * prj2pix.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + prj2pix.col(2).array().transpose();
 
 	AlignedBox2d aabb { corners.row(0).transpose() };
@@ -146,6 +147,7 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 	aabb.extend(corners.row(2).transpose());
 	aabb.extend(corners.row(3).transpose());
 	// fmt::print(" - pix aabb: {} {}\n", aabb.min().transpose(), aabb.max().transpose());
+	std::cout << " - pix aabb:" <<  aabb.min().transpose() << " " <<  aabb.max().transpose() << "\n";
 
 
 	// Vector4d tlbr_pix { aabb.min()(0), aabb.min()(1), aabb.max()(0)+1, aabb.max()(1)+1 };
@@ -167,11 +169,16 @@ cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
 		br_pix(0), br_pix(1),
 		tl_pix(0), br_pix(1);
 	corners_nat = (corners_nat * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
+
+	std::cout << " - corners_nat:\n" << corners_nat << "\n";
+	// for (int i=0; i<4; i++) std::swap(corners_nat(i,0), corners_nat(i,1));
+
     prj2wm->Transform(4, corners_nat.data(), corners_nat.data()+4, nullptr);
 
 	const Matrix<double,4,2> &sampWm = corners_nat; // We're re-purposing the buffer
 	Vector2d sampledWmTl { sampWm.col(0).minCoeff(), sampWm.col(1).minCoeff() };
 	Vector2d sampledWmBr { sampWm.col(0).maxCoeff(), sampWm.col(1).maxCoeff() };
+	// std::cout << " - sampWm:\n" << sampWm << "\n";
 
 	float H[9];
 	float iw = sw - 1.f;
@@ -381,6 +388,16 @@ MyGdalDataset::MyGdalDataset(const std::string& path, bool isTerrain) : isTerrai
     char*               pp = const_cast<char*>(dset->GetProjectionRef());
     sr_prj.importFromWkt(&pp);
     sr_3857.importFromEPSG(3857);
+
+	// WARNING:
+	// NOTE:
+	// Using WGS84 coordinates and not calling the below function
+	// will result in bad things in GDAL 3+.
+	// GDAL 3 uses <long,lat> order, but I assume <lat,long>.
+	// This forces <lat,long> order!
+	sr_prj.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+	sr_3857.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
     wm2prj  = OGRCreateCoordinateTransformation(&sr_3857, &sr_prj);
     prj2wm  = OGRCreateCoordinateTransformation(&sr_prj, &sr_3857);
 
