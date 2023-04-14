@@ -7,6 +7,7 @@
 
 #include "frast2/detail/argparse.hpp"
 
+using namespace frast;
 
 int main(int argc, char** argv) {
 

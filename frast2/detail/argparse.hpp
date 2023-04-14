@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdexcept>
 
+namespace frast {
 namespace {
 
 using Str = std::string;
@@ -20,8 +21,6 @@ inline bool is_a_number(const Str& s) {
 	}
 }
 
-
-using namespace frast;
 
 struct Tlbr {
 	double tl[2];
@@ -167,6 +166,22 @@ class ArgParser {
 				return ss;
 			}
 
+			if constexpr(std::is_same_v<std::vector<float>,T>) {
+				std::vector<float> out;
+				for (const auto& s : ss) out.push_back(std::stof(s));
+				return out;
+			}
+			if constexpr(std::is_same_v<std::vector<double>,T>) {
+				std::vector<double> out;
+				for (const auto& s : ss) out.push_back(std::stod(s));
+				return out;
+			}
+			if constexpr(std::is_same_v<std::vector<int>,T>) {
+				std::vector<int> out;
+				for (const auto& s : ss) out.push_back(std::stoi(s));
+				return out;
+			}
+
 			if constexpr(std::is_same_v<Tlbr,T>) {
 				// Scan space sperated tlbr.
 				Tlbr tlbr;
@@ -213,4 +228,5 @@ class ArgParser {
 
 };
 
+}
 }

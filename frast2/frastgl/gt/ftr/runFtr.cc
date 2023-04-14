@@ -161,7 +161,7 @@ class TestApp : public BaseClass_App {
 				// Pf.topLeftCorner<3,3>() *= 100 / 6e6;
 				ellps->setModel(Pf.data());
 				auto square = [](float a){return a*a;};
-				RowMatrix3f cov = RowMatrix3f::Identity() * square(1000/6e6);
+				RowMatrix3f cov = RowMatrix3f::Identity() * square(100/6e6);
 				ellps->setModelFromInvViewAndCov(Pf.data(), cov.data());
 			}
 

@@ -14,6 +14,8 @@ namespace frast {
 
 Frustum::Frustum() {
 
+	haveWaitingNextPos = false;
+
 	CameraSpec spec = CameraSpec(512,512, 45 * M_PI / 180);
 	// spec.near = 25. / 6,378'137.0;
 	// spec.far = 1000. / 6,378'137.0;
@@ -94,7 +96,7 @@ void Frustum::maybeUpdateTrail() {
 	if (!haveWaitingNextPos) return;
 	haveWaitingNextPos = false;
 
-	// FIXME: Lock a spinlock.
+	// NOT thread safe.
 	float p[3];
 	{
 		p[0] = waitingNextPos[0];
