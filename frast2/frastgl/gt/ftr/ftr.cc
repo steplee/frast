@@ -124,6 +124,9 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 		glUniformMatrix4fv(4, 1, true, casterStuff.cpuCasterBuffer.casterMatrix1);
 		glUniformMatrix4fv(5, 1, true, casterStuff.cpuCasterBuffer.casterMatrix2);
 
+		glUniform4fv(6, 1, casterStuff.cpuCasterBuffer.color1);
+		glUniform4fv(7, 1, casterStuff.cpuCasterBuffer.color2);
+
 		// Eigen::Map<RowMatrix4f> m(casterStuff.cpuCasterBuffer.casterMatrix1);
 		// fmt::print(" - caster matrix:\n{} mask {}\n", m, casterStuff.casterMask);
 	}

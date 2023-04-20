@@ -250,8 +250,8 @@ class TestApp : public BaseClass_App {
 		void setExampleCasterData() {
 			// ftr->setCasterInRenderThread
 
-			// float color1[4] = {.1f,0.f,.1f,.6f};
-			// float color2[4] = {.0f,.5f,.2f,.6f};
+			float color1[4] = {.1f,0.f,.1f,.6f};
+			float color2[4] = {.0f,.5f,.2f,.6f};
 
 			// Image tstImg { 512,512,Image::Format::RGBA };
 			cv::Mat tstImg(512,512,CV_8UC4);
@@ -264,8 +264,8 @@ class TestApp : public BaseClass_App {
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+3] = 100;
 			}
 			ftr->cwd.setImage(tstImg);
-			// ftr->cwd.setColor1(color1);
-			// ftr->cwd.setColor2(color2);
+			ftr->cwd.setColor1(color1);
+			ftr->cwd.setColor2(color2);
 			ftr->cwd.setMask(0b11);
 			// ftr->cwd.setMask(0b0);
 		}

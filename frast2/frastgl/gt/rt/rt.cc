@@ -365,6 +365,9 @@ template<> void GtRenderer<RtTypes, RtTypes::Renderer>::render(RenderState& rs) 
 		glUniform1ui(6, casterStuff.casterMask); // mask
 		glUniformMatrix4fv(7, 1, true, casterStuff.cpuCasterBuffer.casterMatrix1);
 		glUniformMatrix4fv(8, 1, true, casterStuff.cpuCasterBuffer.casterMatrix2);
+
+		glUniform4fv(9, 1, casterStuff.cpuCasterBuffer.color1);
+		glUniform4fv(10, 1, casterStuff.cpuCasterBuffer.color2);
 	}
 
 	for (auto root : roots) {

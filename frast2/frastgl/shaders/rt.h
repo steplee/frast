@@ -57,6 +57,8 @@ uniform layout(location=5) sampler2D u_texCast1;
 uniform layout(location=6) uint u_casterMask;
 uniform layout(location=7) mat4 u_casterMatrix1;
 uniform layout(location=8) mat4 u_casterMatrix2;
+uniform layout(location=9) vec4 u_casterColor1;
+uniform layout(location=10) vec4 u_casterColor2;
 
 in layout(location=0) vec4 a_pos;
 in layout(location=1) vec2 a_uv;
@@ -109,6 +111,8 @@ uniform layout(location=5) sampler2D u_texCast1;
 uniform layout(location=6) uint u_casterMask;
 uniform layout(location=7) mat4 u_casterMatrix1;
 uniform layout(location=8) mat4 u_casterMatrix2;
+uniform layout(location=9) vec4 u_casterColor1;
+uniform layout(location=10) vec4 u_casterColor2;
 
 in vec2 v_uv;
 in vec4 v_caster_uv;
@@ -121,8 +125,8 @@ void main() {
 
 	outColor = vec4(texture(u_tex, v_uv).rgb,1.);
 
-	const vec4 color1 = vec4(0.,1.,0.,1.);
-	const vec4 color2 = vec4(0.,0.,1.,1.);
+	// const vec4 color1 = vec4(0.,1.,0.,1.);
+	// const vec4 color2 = vec4(0.,0.,1.,1.);
 
 	//
 	// Caster stuff
@@ -132,7 +136,7 @@ void main() {
 	vec2 dd1 = abs(uv_c1 - .5);
 	float d1 = max(dd1.x , dd1.y);
 	if (d1 < .49999) {
-		vec4 c = texture(u_texCast1, uv_c1) * color1;
+		vec4 c = texture(u_texCast1, uv_c1) * u_casterColor1;
 		// vec4 c = vec4(fract(uv_c1.x),0.,0.,1.);
 		// vec4 c = vec4(uv_c1.x,0.,0.,1.);
 		// c *= 3.0 * clamp(2.0 - 4. * (d1), 0., 1.);
@@ -144,7 +148,7 @@ void main() {
 	float d2 = max(dd2.x , dd2.y);
 	/* if (v_caster_uv.zw != vec2(0.)) { */
 	if (d2 < .49999) {
-		vec4 c = texture(u_texCast1, uv_c2) * color2;
+		vec4 c = texture(u_texCast1, uv_c2) * u_casterColor2;
 		c *= 3.0 * clamp(2.0 - 4. * (d2), 0., 1.);
 		outColor += c;
 	}
