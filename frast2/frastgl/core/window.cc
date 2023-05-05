@@ -25,8 +25,10 @@ void MyGlfwWindow::setupWindow() {
 	__window_mtx.lock();
     if (!__didInit) {
 		glfwSetErrorCallback(glfw_error_callback);
+		fmt::print(" - Initializing GLFW.\n");
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW." << std::endl;
+			__window_mtx.unlock();
             glfwTerminate();
         }
 	}
@@ -34,17 +36,23 @@ void MyGlfwWindow::setupWindow() {
 	bool egl = false;
     if (egl) glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
     if (headless_) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+	else glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
 	// glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+	if (title.length() == 0) {
+		title = fmt::format("IRN_Window_{}", windowCnt);
+	}
+	fmt::print(" - creating glfw window '{}'\n", title);
+	windowCnt++;
 
     glfwWindow = glfwCreateWindow(windowWidth, windowHeight, title.c_str(), NULL, NULL);
     if (glfwWindow == NULL) {
         std::cerr << "Failed to open GLFW window: " << title << " " << windowWidth << "," << windowHeight << std::endl;
+		__window_mtx.unlock();
         glfwTerminate();
     }
 
-	windowCnt++;
 	__didInit = true;
-	__window_mtx.unlock();
 
     glfwMakeContextCurrent(glfwWindow);
 	int ww, hh;
@@ -63,15 +71,16 @@ void MyGlfwWindow::setupWindow() {
     glfwSetCursorPosCallback(glfwWindow, &_motionFunc);
 
     glfwSetWindowUserPointer(glfwWindow, reinterpret_cast<void *>(this));
+	__window_mtx.unlock();
 }
 
 MyGlfwWindow::MyGlfwWindow(int w, int h, bool headless) : Window(w,h) {
 	headless_ = headless;
 	// assert(headless == false and "not supported yet");
-	title = "noName";
+	title = "";
 }
 MyGlfwWindow::MyGlfwWindow() : Window() {
-	title = "noName";
+	title = "";
 }
 
 void MyGlfwWindow::beginFrame() {

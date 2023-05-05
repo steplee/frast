@@ -15,8 +15,8 @@ namespace frast {
 struct __attribute__((packed)) CasterBuffer {
 	float casterMatrix1[16];
 	float casterMatrix2[16];
-	float color1[4];
-	float color2[4];
+	float color1[4] = {1,0,0,1};
+	float color2[4] = {0,0,1,1};
 	uint32_t casterMask;
 };
 
