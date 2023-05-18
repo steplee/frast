@@ -66,6 +66,7 @@ endif()
 add_library(frastgl
 	STATIC
 	core/render_state.cc
+	core/cameras.cc
 	core/window.cc
 	core/app.cc
 	core/shader.cc

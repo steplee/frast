@@ -129,7 +129,8 @@ class TestApp : public BaseClass_App {
 			init();
 
 			CameraSpec spec(cfg.w, cfg.h, 45.0 * M_PI/180);
-			SphericalEarthMovingCamera cam(spec);
+			// SphericalEarthMovingCamera cam(spec);
+			GlobeCamera cam(spec);
 
 			Eigen::Vector3d pos0 { 0.136273, -1.03348, 0.552593 };
 			Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
