@@ -295,7 +295,7 @@ namespace frast {
 
 		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
-		if (n_tiles > 256) {
+		if (n_tiles > maxRasterIoTiles) {
 			throw SampleTooLargeError{static_cast<uint32_t>(iwm_w), static_cast<uint32_t>(iwm_h)};
 		}
 
@@ -384,7 +384,7 @@ namespace frast {
 		// fmt::print(" - chosen would have width {} for asked width {}\n", iwm_w*256, w);
 
 		// WARNING: This allows a maximum size of e.g. 4096^2 pixels.
-		if (n_tiles > 256) {
+		if (n_tiles > maxRasterIoTiles) {
 			throw SampleTooLargeError{static_cast<uint32_t>(iwm_w), static_cast<uint32_t>(iwm_h)};
 		}
 

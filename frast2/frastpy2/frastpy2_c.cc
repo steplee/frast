@@ -175,6 +175,7 @@ PYBIND11_MODULE(frastpy2_c, m) {
 	py::class_<FlatReaderCached>(m, "FlatReaderCached")
 		.def(py::init<const std::string&, const EnvOptions&>())
 
+		.def("setMaxRasterIoTiles", [](FlatReaderCached& dset, int n) { dset.setMaxRasterIoTiles(n); })
 		.def("iterTiles", [](FlatReaderCached& dset, int lvl, int chans) { return new DatasetReaderIterator(&dset, lvl, chans); })
 		.def("iterCoords", [](FlatReaderCached& dset, int lvl) { return new DatasetReaderIteratorNoImages(&dset, lvl); })
 

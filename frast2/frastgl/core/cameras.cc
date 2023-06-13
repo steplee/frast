@@ -648,8 +648,8 @@ void GlobeCamera::step(double dt) {
 				* AngleAxisd(         0*dt, Vector3d::UnitY())).toRotationMatrix() * Ltp;
 	*/
 	// quat = quat * (AngleAxisd(-dquat_[0]*dt, Vector3d::UnitZ()));
-	quat = (AngleAxisd(.5*dquat_[0]*dt, Vector3d::UnitZ())) * quat;
-	quat = quat * (AngleAxisd(.5*dquat_[1]*dt, Vector3d::UnitX()));
+	quat = (AngleAxisd(dquat_[0]*dt, Vector3d::UnitZ())) * quat;
+	quat = quat * (AngleAxisd(dquat_[1]*dt, Vector3d::UnitX()));
 
 	// Make X axis normal to world
 	/*

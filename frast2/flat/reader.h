@@ -42,6 +42,7 @@ namespace frast {
 
 
 			inline bool isTerrain() const { return env.isTerrain(); }
+			inline void setMaxRasterIoTiles(int n) { maxRasterIoTiles = n; }
 
 		protected:
 
@@ -51,6 +52,8 @@ namespace frast {
 			int determineDeepeseLevel();
 
 			int find_level_for_mpp(float res);
+
+			int maxRasterIoTiles = 256;
 	};
 
 	class FlatReaderCached : public FlatReader {
