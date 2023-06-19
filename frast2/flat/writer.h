@@ -18,6 +18,7 @@ struct ConvertConfig {
 	int baseLevel;
 	bool addo = false;
 	int channels=3;
+	double tlbr[4]={0};
 };
 
 struct ProcessedData {

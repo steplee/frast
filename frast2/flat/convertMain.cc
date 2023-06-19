@@ -67,6 +67,17 @@ int main(int argc, char** argv) {
 	ccfg.baseLevel = level;
 	ccfg.addo = true;
 
+	auto optTlbr = parser.get2<std::vector<double>>("-t", "--tlbr");
+	if (optTlbr.has_value()) {
+		auto tlbr = optTlbr.value();
+		assert(tlbr.size() == 4 && "--tlbr arg must have four doubles");
+		// for (int i=0; i<4; i++) ccfg.tlbr[i] = tlbr[i];
+		ccfg.tlbr[0] = std::min(tlbr[0],tlbr[2]);
+		ccfg.tlbr[1] = std::min(tlbr[1],tlbr[3]);
+		ccfg.tlbr[2] = std::max(tlbr[0],tlbr[2]);
+		ccfg.tlbr[3] = std::max(tlbr[1],tlbr[3]);
+	}
+
 
 	// Run initial job: convert gdal -> frast2
 	{
