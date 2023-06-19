@@ -1,4 +1,5 @@
 #include "writer.h"
+#include "reader.h"
 #include "gdal_stuff.hpp"
 
 #include "codec.h"
@@ -144,7 +145,21 @@ void WriterMasterGdalMany::start(const ConvertConfig& cfg_) {
 
 	curLevel = cfg.baseLevel;
 	masterData = create_gdal_stuff(-1);
+
 	set_level_tlbr_from_main_thread(masterData);
+	if (cfg_.tlbr[0] == 0 and cfg_.tlbr[2] == 0) {
+	} else {
+		uint32_t iwm[4];
+		uint64_t old[4] = {levelTlbr[0], levelTlbr[1], levelTlbr[2], levelTlbr[3]};
+		dwm_to_iwm(iwm, cfg_.tlbr, cfg.baseLevel);
+		for (int i=0; i<4; i++) levelTlbr[i] = iwm[i];
+		fmt::print(" - overriding tlbr from [{} {} => {} {}]\n", old[0],old[1], old[2], old[3]);
+		fmt::print(" -                   to [{} {} => {} {}]\n", levelTlbr[0],levelTlbr[1], levelTlbr[2], levelTlbr[3]);
+		double nnew = (levelTlbr[3]-levelTlbr[1])*(levelTlbr[2]-levelTlbr[0]);
+		double nold = (old[3]-old[1])*(old[2]-old[0]);
+		fmt::print(" -                   {:.4f}% kept tiles\n", 100. * (nnew/nold));
+	}
+
 	writerThread = std::thread(&WriterMasterGdalMany::writerLoop, this);
 
 	ThreadPool::start();
