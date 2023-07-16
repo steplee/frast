@@ -32,6 +32,7 @@ namespace frast {
 
 			if (use_stb(option)) {
 				assert(false);
+				throw std::runtime_error("bad");
 				/*
 				std::vector<uint8_t> buf;
 				my_write_jpg_stb(buf, img);
@@ -66,6 +67,7 @@ namespace frast {
 
 			if (use_stb(option)) {
 				assert(false);
+				throw std::runtime_error("bad");
 				/*
 				int w,h,c;
 				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);
@@ -100,6 +102,7 @@ namespace frast {
 
 			if (use_stb(option)) {
 				assert(false);
+				throw std::runtime_error("bad");
 				/*
 				int w,h,c;
 				uint8_t* mem = my_load_from_memory((uint8_t*)val.value, val.len, &w,&h,&c, channels);

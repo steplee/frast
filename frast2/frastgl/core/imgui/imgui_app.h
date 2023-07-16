@@ -10,6 +10,7 @@ class ImguiApp : public App {
 	public:
 
 		ImguiApp(const AppConfig& cfg);
+		virtual ~ImguiApp();
 
 		// virtual void render(RenderState& rs) =0;
 		// virtual void doInit() =0;

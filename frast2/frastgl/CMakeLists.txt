@@ -49,9 +49,34 @@ if (ENABLE_IMGUI)
 	set(frast_imgui_sources
 		${CMAKE_CURRENT_SOURCE_DIR}/core/imgui/imgui_app.cc
 		)
+
+	# Implot.
+	FetchContent_Declare(
+		dep_implot
+		GIT_REPOSITORY https://github.com/epezent/implot.git
+		GIT_TAG cc5e1da
+		GIT_SHALLOW 1
+	)
+	FetchContent_MakeAvailable(dep_implot)
+	foreach(fi implot.cpp implot_demo.cpp implot.h implot_internal.h implot_items.cpp)
+		file(COPY ${dep_implot_SOURCE_DIR}/${fi} DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated)
+	endforeach()
+
+	set(implot_sources
+		${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated/implot.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated/implot.h
+		${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated/implot_internal.h
+		${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated/implot_items.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/core/implot/generated/implot_demo.cpp)
+	set(frast_implot_sources
+		# ${CMAKE_CURRENT_SOURCE_DIR}/core/imgui/imgui_app.cc
+		)
+
 else()
 	set(imgui_sources "")
 	set(frast_imgui_sources "")
+	set(implot_sources "")
+	set(frast_implot_sources "")
 endif()
 
 
@@ -85,9 +110,15 @@ add_library(frastgl
 	gt/rt/protos/rocktree.pb.cc
 
 	${imgui_sources} ${frast_imgui_sources}
+	${implot_sources} ${frast_implot_sources}
 )
 
+target_include_directories(frastgl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/core/imgui/generated)
+
+# find_library(protobuf_lib libprotobuf.so PATHS /usr/lib64 REQUIREd)
 target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW protobuf)
+# target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW ${protobuf_lib})
+# target_link_libraries(frastgl frast2 fmt::fmt ${libsCv} glfw GL GLEW /usr/lib/x86_64-linux-gnu/libprotobuf.so)
 
 add_executable(runFtr gt/ftr/runFtr.cc)
 target_link_libraries(runFtr frastgl)
@@ -99,6 +130,12 @@ if (TESTS)
 	target_link_libraries(runPingPongTest1 frastgl)
 	add_executable(runPingPongTest2 extra/pingPong/test2.cc)
 	target_link_libraries(runPingPongTest2 frastgl)
+
+	if (ENABLE_IMGUI)
+		add_executable(runImplotDemo core/implot/demo.cc)
+		target_include_directories(runImplotDemo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/core/imgui/generated)
+		target_link_libraries(runImplotDemo frastgl)
+	endif()
 endif()
 
 

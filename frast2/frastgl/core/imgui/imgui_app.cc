@@ -3,12 +3,20 @@
 #include "generated/imgui_impl_glfw.h"
 #include "generated/imgui_impl_opengl3.h"
 
+#include "frast2/frastgl/core/implot/generated/implot.h"
+
 namespace frast {
 
 
 ImguiApp::ImguiApp(const AppConfig& cfg)
 	: App(cfg)
 {
+}
+
+ImguiApp::~ImguiApp() {
+	if (cfg.useImplot)
+		ImPlot::DestroyContext();
+	ImGui::DestroyContext();
 }
 
 void ImguiApp::init() {
@@ -29,6 +37,10 @@ void ImguiApp::initUi() {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window.glfwWindow, true);
     ImGui_ImplOpenGL3_Init("#version 440");
+
+	if (cfg.useImplot) {
+		ImPlot::CreateContext();
+	}
 }
 
 void ImguiApp::renderUi(const RenderState& rs) {

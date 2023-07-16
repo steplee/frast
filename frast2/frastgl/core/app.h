@@ -11,11 +11,13 @@ struct AppConfig {
 	std::string title;
 	int w=512, h=512;
 	bool headless = false;
+	bool useImplot = true;
 };
 
 class App : public UsesIO {
 	public:
 		App(const AppConfig& cfg);
+		inline virtual ~App() {};
 
 		void init();
 

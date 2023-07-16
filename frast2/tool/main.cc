@@ -3,6 +3,7 @@
 
 #include "frast2/flat/reader.h"
 
+#include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 
@@ -52,7 +53,8 @@ int main(int argc, char** argv) {
 		int64_t h = tlbr[3] - tlbr[1];
 		int64_t n_tile = w*h;
 		double log2_pixels = log2((double)n_tile * 256*256);
-		fmt::print(" - tile count ({}w x {}h) (2^{:.2f} pix)\n", w,h, log2_pixels);
+		fmt::print(" - deepest tile area count ({}w x {}h) (2^{:.2f} pix)\n", w,h, log2_pixels);
+		fmt::print(" - deepest tile actual count: {}", reader.levelSize(lvl));
 		fmt::print(" - meter [ wm    ] ({:.1Lf}m x {:.1Lf}m) ({:.2Lf}km²)\n", w*tileToM, h*tileToM, (w*tileToKm)*(h*tileToKm));
 		fmt::print(" - meter [~actual] ({:.1Lf}m x {:.1Lf}m) ({:.2Lf}km²)\n", scaleFactorInv*w*tileToM, scaleFactorInv*h*tileToM, (w*scaleFactorInv*tileToKm)*(h*scaleFactorInv*tileToKm));
 	}
@@ -86,6 +88,7 @@ int main(int argc, char** argv) {
 			if (val.value != nullptr) {
 				cv::Mat img = decodeValue(val, opts.isTerrain?1:3, opts.isTerrain);
 
+				cv::cvtColor(img,img,cv::COLOR_BGR2RGB);
 				cv::imshow("tile", img);
 				cv::waitKey(0);
 			}
@@ -111,6 +114,7 @@ int main(int argc, char** argv) {
 			img = reader.rasterIo(dwmTlbr, nw*edge/nh, edge, opts.isTerrain?1:3);
 		}
 
+		cv::cvtColor(img,img,cv::COLOR_BGR2RGB);
 		cv::imshow("sample", img);
 		cv::waitKey(0);
 	}
@@ -118,6 +122,7 @@ int main(int argc, char** argv) {
 	if (action == "rasterIo") {
 		int edge = parser.get<int>("--edge", 1440).value();
 		Tlbr tlbr = parser.get<Tlbr>("--tlbr").value();
+		std::string out = parser.get2<std::string>("--out", "-o", std::string{""}).value();
 
 
 		double dwmTlbr[4] = {tlbr.tl[0], tlbr.tl[1], tlbr.br[0], tlbr.br[1]};
@@ -131,7 +136,10 @@ int main(int argc, char** argv) {
 			img = reader.rasterIo(dwmTlbr, (nw*edge)/nh, edge, opts.isTerrain?1:3);
 		}
 
+		cv::cvtColor(img,img,cv::COLOR_BGR2RGB);
 		cv::imshow("sample", img);
+		if (out.length())
+			cv::imwrite(out, img);
 		cv::waitKey(0);
 	}
 

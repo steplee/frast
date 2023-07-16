@@ -87,6 +87,7 @@ void WriterMasterGdal::process(int workerId, const Key& key) {
 
 }
 
+/*
 void WriterMasterGdal::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	auto dset = static_cast<MyGdalDataset*>(masterData);
 	uint64_t lvlTlbr[4];
@@ -94,6 +95,7 @@ void WriterMasterGdal::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	w = lvlTlbr[2] - lvlTlbr[0];
 	h = lvlTlbr[3] - lvlTlbr[1];
 }
+*/
 
 std::vector<uint64_t> WriterMasterGdal::yieldNextKeys() {
 	std::vector<uint64_t> out;

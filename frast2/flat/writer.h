@@ -66,7 +66,7 @@ class WriterMasterGdal : public ThreadPool {
 	private:
 		// A stateful generator called repeatedly in writerLoop()
 		std::vector<uint64_t> yieldNextKeys();
-		void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
+		// void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
 		void handleProcessedData(std::vector<ProcessedData>& processedData);
 
 		// Things that are private to writer_gdal.cc (the actual conversion code)
@@ -115,7 +115,7 @@ class WriterMasterGdalMany : public ThreadPool {
 	private:
 		// A stateful generator called repeatedly in writerLoop()
 		std::vector<uint64_t> yieldNextKeys();
-		void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
+		// void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
 		void handleProcessedData(std::vector<ProcessedData>& processedData);
 
 		// Things that are private to writer_gdal.cc (the actual conversion code)
@@ -163,7 +163,7 @@ class WriterMasterAddo : public ThreadPool {
 	private:
 		// A stateful generator called repeatedly in writerLoop()
 		std::vector<uint64_t> yieldNextKeys();
-		void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
+		// void getNumTilesForLevel(uint64_t& outW, uint64_t& outH, int lvl);
 		void handleProcessedData(std::vector<ProcessedData>& processedData);
 
 		// Things that are private to writer_gdal.cc (the actual conversion code)

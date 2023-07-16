@@ -163,6 +163,7 @@ void WriterMasterAddo::handleProcessedData(std::vector<ProcessedData>& processed
 }
 
 
+/*
 void WriterMasterAddo::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	auto reader = static_cast<FlatReader*>(masterData);
 	uint32_t lvlTlbr[4];
@@ -181,6 +182,7 @@ void WriterMasterAddo::getNumTilesForLevel(uint64_t& w, uint64_t& h, int lvl) {
 	w = lvlTlbr[2] - lvlTlbr[0];
 	h = lvlTlbr[3] - lvlTlbr[1];
 }
+*/
 
 std::vector<uint64_t> WriterMasterAddo::yieldNextKeys() {
 	std::vector<uint64_t> out;
