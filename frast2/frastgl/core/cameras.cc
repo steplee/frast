@@ -496,10 +496,13 @@ void GlobeCamera::setRotMatrix(double* R) {
 	Map<const Matrix<double,3,3,RowMajor>> R0 ( R );
 
 	Matrix<double,3,3,RowMajor> RR = Ltp.transpose() * R0;
+	// Matrix<double,3,3,RowMajor> RR = R0;
 
 
 	Eigen::Quaterniond q { RR };
 	quat_[0] = q.x(); quat_[1] = q.y(); quat_[2] = q.z(); quat_[3] = q.w();
+	freeQuat_[0] = q.x(); freeQuat_[1] = q.y(); freeQuat_[2] = q.z(); freeQuat_[3] = q.w();
+	targetQuat_[0] = q.x(); targetQuat_[1] = q.y(); targetQuat_[2] = q.z(); targetQuat_[3] = q.w();
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 	viewInv.topLeftCorner<3,3>() = q.toRotationMatrix();
 
@@ -507,15 +510,23 @@ void GlobeCamera::setRotMatrix(double* R) {
 }
 void GlobeCamera::recompute_view() {
 
-	Map<Vector3d> pos ( pos_ );
+	Map<Vector3d> pos__ ( pos_ );
 	Map<Quaterniond> quat ( quat_ );
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 	Map<Matrix<double,4,4,RowMajor>> view ( view_ );
+	Map<Vector3d> targetPosOffset_ (targetPosOffset);
+
+	Vector3d pos = pos__;
+
+	if (0 != targetInvView.size()) {
+		pos += viewInv.topLeftCorner<3,3>() * targetPosOffset_;
+	}
 
 	RowMatrix3d Ltp = getLtp(pos);
 
 	viewInv.topRightCorner<3,1>() = pos;
-	viewInv.topLeftCorner<3,3>() = Ltp * quat.toRotationMatrix();
+	// viewInv.topLeftCorner<3,3>() = Ltp * quat.toRotationMatrix();
+	viewInv.topLeftCorner<3,3>() = quat.toRotationMatrix();
 	viewInv.row(3) << 0,0,0,1;
 
 	view.topLeftCorner<3,3>() = viewInv.topLeftCorner<3,3>().transpose();
@@ -543,15 +554,17 @@ bool GlobeCamera::handleKey(int key, int scancode, int action, int mods) {
 	bool isDown = action == GLFW_PRESS or action == GLFW_REPEAT;
 	if (isDown) {
 		Map<Matrix<double,3,1>> acc { acc_ };
+		Map<Matrix<double,3,1>> targetAcc { targetAcc_ };
 		Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 
 		Vector3d dacc { Vector3d::Zero() };
-		if (isDown and key == GLFW_KEY_A) dacc(0) += -1;
-		if (isDown and key == GLFW_KEY_D) dacc(0) +=  1;
-		if (isDown and key == GLFW_KEY_W) dacc(2) +=  1;
-		if (isDown and key == GLFW_KEY_S) dacc(2) += -1;
-		if (isDown and key == GLFW_KEY_F) dacc(1) +=  1;
-		if (isDown and key == GLFW_KEY_E) dacc(1) += -1;
+
+			if (isDown and key == GLFW_KEY_A) dacc(0) += -1;
+			if (isDown and key == GLFW_KEY_D) dacc(0) +=  1;
+			if (isDown and key == GLFW_KEY_W) dacc(2) +=  1;
+			if (isDown and key == GLFW_KEY_S) dacc(2) += -1;
+			if (isDown and key == GLFW_KEY_F) dacc(1) +=  1;
+			if (isDown and key == GLFW_KEY_E) dacc(1) += -1;
 
 		if (isDown and key == GLFW_KEY_I) {
 			Map<Matrix<double,3,1>> vel { vel_ };
@@ -569,12 +582,15 @@ bool GlobeCamera::handleKey(int key, int scancode, int action, int mods) {
 
 		// Make accel happen local to frame
 		// acc += viewInv.topLeftCorner<3,3>() * dacc;
-		acc += dacc;
+		if (0 == targetInvView.size())
+			acc += dacc;
+		else
+			targetAcc += dacc;
 	}
 	return false;
 }
 
-void GlobeCamera::reset_local_zplus() {
+void GlobeCamera::reset_local_zplus(double *theQuat) {
 
 	// FIXME:
 	// The camera controls are locally consistent: the camera never rolls.
@@ -584,32 +600,49 @@ void GlobeCamera::reset_local_zplus() {
 	// My idea was to just reform the matrix based on looking at the current Z+ and with up as LTP-Z+.
 	// Did not work.
 
-	Map<Quaterniond> quat ( quat_ );
+	Map<Quaterniond> quat ( theQuat );
+
 	Map<Vector3d> pos  ( pos_ );
 	Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 	RowMatrix3d R = viewInv.topLeftCorner<3,3>();
 
-	RowMatrix3d localR = getLtp(pos).transpose() * R;
+	RowMatrix3d ltp = getLtp(pos);
+	RowMatrix3d localR = ltp.transpose() * R;
+	// RowMatrix3d localR = R;
 
 
-	if (std::abs(localR(2,0)) > 4e-16) {
-		std::cout << " - running reset XZ on matrix:\n" << localR << "\n";
+	if (std::abs(localR(2,0)) > 4e-6 and std::abs(localR(2,2)) < .99) {
+		// std::cout << " - running reset XZ on matrix:\n" << localR << "\n";
 		quat = lookAtR(
 				(localR).col(2),
 				// Vector3d::UnitZ());
 				-Vector3d::UnitZ());
+
 		recompute_view();
 	}
 
 
 }
 
+// FIXME: This code is shit.
 void GlobeCamera::step(double dt) {
 	// fmt::print(" - [GlobeCamera::step] dt {}\n", dt);
+	using namespace Eigen;
 	Map<Matrix<double,3,1>> vel { vel_ };
 	Map<Matrix<double,3,1>> acc { acc_ };
+	Map<Matrix<double,3,1>> targetAcc { targetAcc_ };
+	Map<Matrix<double,3,1>> targetDquat { targetDquat_ };
+	Map<Vector3d> targetPosOffset_ (targetPosOffset);
+	Map<Quaterniond> targetOriOffset_ (targetOriOffset);
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
-	Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+
+	Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+
+	// Quaterniond dquat1{Quaterniond::Identity()};
+	AngleAxisd dquatFollow = AngleAxisd{0, Vector3d::UnitX()};
+
+	Map<Vector3d> pos { pos_ };
+	RowMatrix3d Ltp = getLtp(pos);
 
 	static int __updates = 0;
 	__updates++;
@@ -618,59 +651,110 @@ void GlobeCamera::step(double dt) {
 	// double d = r - 1.0;
 	double d = r - .9966;
 
-	//constexpr float SPEED = 5.f;
-	// double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
 	drag_ = 15.;
 	double SPEED = .0000000001 + 25.f * std::max(d, 3e-4);
 
-	// Vector3d pos = viewInv.topRightCorner<3,1>();
-	Map<Vector3d> pos { pos_ };
-	// viewInv.topRightCorner<3,1>() += vel * dt + acc * dt * dt * .5 * SPEED;
-	pos += viewInv.topLeftCorner<3,3>() * (vel * dt + acc * dt * dt * .5 * SPEED);
 
-	vel += acc * dt * SPEED;
+	Quaterniond rotLeftSide = Quaterniond(AngleAxisd(dquat_[0]*dt, Vector3d::UnitZ()));
+	Quaterniond rotRghtSide = Quaterniond(AngleAxisd(dquat_[1]*dt, Vector3d::UnitX()));
+	Vector3d err = Vector3d::Zero();
+
+	if (targetInvView.size() == 0) {
+		quat = Quaterniond { freeQuat_[3], freeQuat_[0], freeQuat_[1], freeQuat_[2] };
+
+		quat = rotLeftSide * quat * rotRghtSide;
+		// quat = rotLeftSide * rotRghtSide * quat;
+		// quat = quat * rotLeftSide * rotRghtSide;
+		
+		for (int i=0; i<4; i++) freeQuat_[i] = quat.coeffs()(i);
+		quat = Ltp * quat;
+
+	} else {
+		quat = Quaterniond { targetQuat_[3], targetQuat_[0], targetQuat_[1], targetQuat_[2] };
+
+		// quat = rotLeftSide * quat;// * rotRghtSide;
+
+		Map<Matrix<double,4,4,RowMajor>> T(targetInvView.data());
+		Vector3d tp = T.topRightCorner<3,1>();
+		Matrix3d TR = T.topLeftCorner<3,3>();
+
+		Vector3d tp2 = tp;// + targetPosOffset_;
+		err = (tp2 - pos);
+		acc.setZero();
+		acc += 95 * viewInv.topLeftCorner<3,3>().transpose() * err / SPEED;
+
+		Quaterniond quatOff { targetOriOffset[3], targetOriOffset[0], targetOriOffset[1], targetOriOffset[2] };
+		quatOff = rotLeftSide * quatOff * rotRghtSide;
+		for (int i=0; i<4; i++) targetOriOffset[i] = quatOff.coeffs()(i);
+
+		Quaterniond a = Quaterniond{Ltp.transpose() * TR};
+		dquatFollow = AngleAxisd { (quat).inverse() * a };
+		dquatFollow.angle() *= .9 * dt;
+
+
+		Quaterniond quatSaved = quat * Quaterniond{dquatFollow};
+		quat = Ltp * quatSaved * quatOff;
+		for (int i=0; i<4; i++) targetQuat_[i] = quatSaved.coeffs()(i);
+	}
+
+
+	// vel.setZero();
 	vel -= vel * (drag_ * dt);
-	//if (vel.squaredNorm() < 1e-18) vel.setZero();
+	if (vel.squaredNorm() < 1e-18) vel.setZero();
+
+	if (0 == targetInvView.size()) {
+		vel += acc * dt * SPEED;
+		pos += viewInv.topLeftCorner<3,3>() * (vel * dt + acc * dt * dt * .5 * SPEED);
+	} else {
+		vel += acc * dt * SPEED;
+		// targetPosOffset_ += viewInv.topLeftCorner<3,3>() * (targetAcc * dt * .1 * .5 * SPEED);
+		targetPosOffset_ += (targetAcc * dt * .1 * .5 * SPEED);
+		pos += viewInv.topLeftCorner<3,3>() * (vel * dt + acc * dt * dt * .5 * SPEED);
+		// pos += err * dt;
+		targetAcc.setZero();
+	}
 	acc.setZero();
 
-	RowMatrix3d Ltp = getLtp(pos);
-
-	Vector3d n = pos.normalized();
-	/*
-	quat = quat * AngleAxisd(-dquat_[0]*dt, Vector3d::UnitY())
-				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX())
-				* AngleAxisd(         0*dt, Vector3d::UnitZ());
-	*/
-
-	/*
-	quat = quat * Ltp.transpose() * (AngleAxisd(-dquat_[0]*dt, Vector3d::UnitZ())
-				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX())
-				* AngleAxisd(         0*dt, Vector3d::UnitY())).toRotationMatrix() * Ltp;
-	*/
-	// quat = quat * (AngleAxisd(-dquat_[0]*dt, Vector3d::UnitZ()));
-	quat = (AngleAxisd(dquat_[0]*dt, Vector3d::UnitZ())) * quat;
-	quat = quat * (AngleAxisd(dquat_[1]*dt, Vector3d::UnitX()));
-
-	// Make X axis normal to world
-	/*
-	if (pos.norm() < 1.2) {
-		float speed = std::min(std::max(.1f - ((float)pos.norm() - 1.2f), 0.f), .1f);
-		auto R = quat.toRotationMatrix();
-		double angle = R.col(0).dot(n);
-		quat = quat * AngleAxisd(angle*speed, n.normalized());
-	}
-	*/
-
-
+	quat = quat.normalized();
 	for (int i=0; i<4; i++) quat_[i] = quat.coeffs()(i);
 	dquat_[0] = dquat_[1] = dquat_[2] = 0;
 
-	quat = quat.normalized();
-	// viewInv.topLeftCorner<3,3>() = quat.toRotationMatrix();
 
 	maybe_set_near_far();
 	recompute_view();
-	reset_local_zplus();
+	if (targetInvView.size() == 0) {
+		reset_local_zplus(freeQuat_);
+	} else {
+		Quaterniond tmp = targetOriOffset_;
+		// reset_local_zplus(tmp.coeffs().data());
+		// tmp =  tmp;
+
+		Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+		RowMatrix3d RR = tmp.toRotationMatrix();
+
+		if (std::abs(RR(2,0)) > 4e-16) {
+			// fmt::print(" - reset targetOriOffset roll.\n");
+			// std::cout << " RR :\n" << RR << "\n";
+			tmp = lookAtR(
+					(RR).col(2),
+					Vector3d::UnitZ());
+					// -Vector3d::UnitZ());
+		}
+
+		// targetOriOffset_ = tmp;
+
+	}
+	// reset_local_zplus(targetInvView.size() == 0 ? freeQuat_ : targetOriOffset);
+}
+
+void GlobeCamera::setTarget(const double* T) {
+	for (int i=0; i<3; i++) savedFreePos[i] = pos_[i];
+	if (targetInvView.size() == 0) targetInvView.resize(16);
+	memcpy(targetInvView.data(), T, 8*16);
+}
+void GlobeCamera::clearTarget() {
+	targetInvView.clear();
+	for (int i=0; i<3; i++) pos_[i] = savedFreePos[i];
 }
 
 GlobeCamera::GlobeCamera(const CameraSpec& spec) : Camera(spec) {
@@ -684,7 +768,13 @@ GlobeCamera::GlobeCamera(const CameraSpec& spec) : Camera(spec) {
 	viewInv.setIdentity();
 	view.setIdentity();
 	recompute_view();
+
+	Map<Vector3d> targetPosOffset_ (targetPosOffset);
+	Map<Vector4d> targetOriOffset_ (targetOriOffset);
+	targetPosOffset_ << 0,0, 100/6e6;
+	targetOriOffset_ << 0,0,0,1;
 }
+
 GlobeCamera::GlobeCamera() {
 	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
 	Map<Matrix<double,4,4,RowMajor>> view ( view_ );
@@ -696,6 +786,11 @@ GlobeCamera::GlobeCamera() {
 	viewInv.setIdentity();
 	view.setIdentity();
 	recompute_view();
+
+	Map<Vector3d> targetPosOffset_ (targetPosOffset);
+	Map<Vector4d> targetOriOffset_ (targetOriOffset);
+	targetPosOffset_ << 0,0, 100;
+	targetOriOffset_ << 0,0,0,1;
 }
 
 

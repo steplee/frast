@@ -18,6 +18,7 @@ using namespace frast;
 // No need for this to not use the main thread -- except that is an example for future applications.
 //
 
+
 using BaseClass_App = App;
 // using BaseClass_App = ImguiApp;
 
@@ -199,16 +200,37 @@ class TestApp : public BaseClass_App {
 			init();
 
 			CameraSpec spec(cfg.w, cfg.h, 45.0 * M_PI/180);
-			SphericalEarthMovingCamera cam(spec);
+			GlobeCamera cam(spec);
+			// SphericalEarthMovingCamera cam(spec);
+
+			{
+			Eigen::Vector3d pos0 { 0.174643 ,-0.770278  ,0.637622};
+			Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
+			R0.row(2) = -pos0.normalized();
+			R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+			R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()+.95*Eigen::Vector3d::UnitX()).normalized();
+			R0.row(1) =  R0.row(2).cross(R0.row(0)).normalized();
+			R0.transposeInPlace();
+			cam.setPosition(pos0.data());
+			cam.setRotMatrix(R0.data());
+			}
+
+			double T[16];
+			double T0[16];
+			memcpy(T0, cam.viewInv(), 8*16);
+			memcpy(T , cam.viewInv(), 8*16);
 
 			Eigen::Vector3d pos0 { 0.174643 ,-0.770278  ,0.637622};
 			Eigen::Matrix<double,3,3,Eigen::RowMajor> R0;
 			R0.row(2) = -pos0.normalized();
 			R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
+			R0.row(0) =  R0.row(2).cross(Eigen::Vector3d::UnitZ()).normalized();
 			R0.row(1) =  R0.row(2).cross(R0.row(0)).normalized();
 			R0.transposeInPlace();
 			cam.setPosition(pos0.data());
 			cam.setRotMatrix(R0.data());
+
+
 
 			window.addIoUser(&cam);
 
@@ -224,6 +246,10 @@ class TestApp : public BaseClass_App {
 				float dt = std::chrono::duration_cast<std::chrono::microseconds>(now_time - last_time).count() * 1e-6;
 				time += dt;
 				last_time = now_time;
+
+				T[0*4+3] = T0[0*4+3] + 1000/6e6 + 0*sin(time) * 11/6e6;
+				T[2*4+3] = T0[2*4+3] + 0*cos(time) * 10/6e6;
+				cam.setTarget(T);
 
 				cam.step(dt);
 				RenderState rs(&cam);

@@ -154,22 +154,36 @@ struct GlobeCamera : public Camera {
 	virtual bool handleMousePress(int button, int action, int mods) override;
 	virtual bool handleMouseMotion(double x, double y) override;
 
+	// a 4x4 pose matrix
+	void setTarget(const double* T);
+	void clearTarget();
+
 	protected:
 		void maybe_set_near_far();
 		void recompute_view();
-		void reset_local_zplus();
+		void reset_local_zplus(double *quat);
 
 		double pos_[3] = {0};
 
 		double drag_ = 2.9;
 		alignas(16) double vel_[3] = {0};
 		alignas(16) double acc_[3] = {0};
-		alignas(16) double quat_[4];
 		alignas(16) double dquat_[3] = {0};
+		alignas(16) double freeQuat_[4];
+		alignas(16) double targetQuat_[4];
+		alignas(16) double quat_[4];
+
+		alignas(16) double targetAcc_[3] = {0};
+		alignas(16) double targetDquat_[3] = {0};
 		bool leftMouseDown = false, rightMouseDown = false;
 		double lastX=0, lastY=0;
 
 		double last_proj_r2 = 0;
+
+		double savedFreePos[3];
+		double targetPosOffset[3];
+		double targetOriOffset[4];
+		std::vector<double> targetInvView;
 
 };
 
