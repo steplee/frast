@@ -748,7 +748,7 @@ void GlobeCamera::step(double dt) {
 }
 
 void GlobeCamera::setTarget(const double* T) {
-	for (int i=0; i<3; i++) savedFreePos[i] = pos_[i];
+	if (targetInvView.size() == 0) for (int i=0; i<3; i++) savedFreePos[i] = pos_[i];
 	if (targetInvView.size() == 0) targetInvView.resize(16);
 	memcpy(targetInvView.data(), T, 8*16);
 }
@@ -771,7 +771,7 @@ GlobeCamera::GlobeCamera(const CameraSpec& spec) : Camera(spec) {
 
 	Map<Vector3d> targetPosOffset_ (targetPosOffset);
 	Map<Vector4d> targetOriOffset_ (targetOriOffset);
-	targetPosOffset_ << 0,0, 100/6e6;
+	targetPosOffset_ << 0,0, -1000/6e6;
 	targetOriOffset_ << 0,0,0,1;
 }
 
