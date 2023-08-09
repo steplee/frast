@@ -247,9 +247,9 @@ class TestApp : public BaseClass_App {
 				time += dt;
 				last_time = now_time;
 
-				T[0*4+3] = T0[0*4+3] + 1000/6e6 + 0*sin(time) * 11/6e6;
-				T[2*4+3] = T0[2*4+3] + 0*cos(time) * 10/6e6;
-				cam.setTarget(T);
+				// T[0*4+3] = T0[0*4+3] + 1000/6e6 + 0*sin(time) * 11/6e6;
+				// T[2*4+3] = T0[2*4+3] + 0*cos(time) * 10/6e6;
+				// cam.setTarget(T);
 
 				cam.step(dt);
 				RenderState rs(&cam);
