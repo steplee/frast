@@ -132,9 +132,10 @@ frast = shared_library('frast',
   install: true
   )
 
-frast_incs = include_directories('frast2',
-                'frast2/frastgl/core/imgui/generated',
-                'frast2/frastgl/core/implot/generated')
+frast_incs = include_directories(
+  '.',
+  'frast2/frastgl/core/imgui/generated',
+  'frast2/frastgl/core/implot/generated')
 
 frast_dep = declare_dependency(
   link_with: [frast],
