@@ -8,4 +8,4 @@ frastVk/frastVk/rt/protos/rocktree.pb.cc
 rocktree.pb.h
 rocktree.pb.cc
 subprojects/*/
-generated/
+# generated/

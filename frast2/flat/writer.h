@@ -18,6 +18,7 @@ struct ConvertConfig {
 	int baseLevel;
 	bool addo = false;
 	int channels=3;
+	int addoInterp=1; // opencv value: https://docs.opencv.org/3.4/da/d54/group__imgproc__transform.html
 	double tlbr[4]={0};
 };
 

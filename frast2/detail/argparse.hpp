@@ -76,6 +76,22 @@ class ArgParser {
 			return def;
 		}
 
+		template <class T>
+		inline T getOrDie(const Str& k) {
+
+			if (is_a_number(k)) {
+				throw std::runtime_error("ArgParser keys are NOT allowed to be numbers.");
+			}
+
+			Str kk = getKeyWithoutDashes(k);
+
+			if (map.find(kk) != map.end()) {
+				return scanAs<T>(map[kk]);
+			}
+
+			throw std::runtime_error(std::string{"need to provide arg: "} + k);
+		}
+
 		template <class ...Choices>
 		inline std::optional<std::string> getChoice(const Str& k, Choices... choices_) {
 
@@ -88,8 +104,7 @@ class ArgParser {
 				if (v == c) return c;
 			}
 
-			throw std::runtime_error("invalid choice");
-			// return {};
+			throw std::runtime_error(std::string{"invalid choice for arg: "} + k);
 		}
 
 		template <class T>
@@ -104,6 +119,13 @@ class ArgParser {
 			if (a.has_value()) return a;
 			return get<T>(k2, def);
 		}
+		template <class T>
+		inline T get2OrDie(const Str& k1, const Str& k2) {
+			auto a = get<T>(k1);
+			if (a.has_value()) return a.value();
+			return getOrDie<T>(k2);
+		}
+		
 		template <class ...Choices>
 		inline std::optional<std::string> getChoice2(const Str& k1, const Str& k2, Choices... choices_) {
 			auto a = getChoice(k1, choices_...);

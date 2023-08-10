@@ -1,6 +1,8 @@
 #include "writer.h"
 #include "frast2/detail/argparse.hpp"
 
+#include <opencv2/imgproc.hpp>
+
 using namespace frast;
 
 int main(int argc, char** argv) {
@@ -28,10 +30,21 @@ int main(int argc, char** argv) {
 	*/
 
 	ArgParser parser(argc, argv);
-	auto color = parser.getChoice2("-c", "--color", "rgb", "gray", "terrain").value();
-	auto        inpPaths = parser.get2<std::vector<std::string>>("-i", "--input").value();
-	std::string outPath  = parser.get2<std::string>("-o", "--output").value();
-	int level = parser.get2<int>("-l", "--level").value();
+	auto color = parser.getChoice2("-c", "--color", "rgb", "gray", "terrain");
+	auto        inpPaths = parser.get2OrDie<std::vector<std::string>>("-i", "--input");
+	std::string outPath  = parser.get2OrDie<std::string>("-o", "--output");
+	int level = parser.get2OrDie<int>("-l", "--level");
+
+	// Value for addo decimation interpolation (see cv::resize())
+	std::string interp   = parser.get<std::string>("--interpolation", "bilinear").value();
+	int interpValue = cv::INTER_LINEAR;
+	if (interp == "bilinear") interpValue = cv::INTER_LINEAR;
+	else if (interp == "area"    ) interpValue = cv::INTER_AREA;
+	else if (interp == "cubic"   ) interpValue = cv::INTER_CUBIC;
+	else if (interp == "custom"  ) interpValue = 901;
+	else {
+		throw std::runtime_error("bad interpolation value");
+	}
 
 	auto threads_ = parser.get<int>("--threads");
 	int threads = FRAST_WRITER_THREADS;
@@ -51,6 +64,7 @@ int main(int argc, char** argv) {
 
 	EnvOptions envOpts;
 	ConvertConfig ccfg;
+	ccfg.addoInterp = interpValue;
 
 	if (color == "terrain") {
 		envOpts.isTerrain = true;

@@ -83,6 +83,10 @@ namespace frast {
 		for (int i=0; i<4; i++) tlbr[i] = 0;
 		if (lvl == -1) return lvl;
 
+		return determineTlbrOnLevel(tlbr, lvl);
+	}
+
+	int64_t FlatReader::determineTlbrOnLevel(uint32_t tlbr[4], int lvl) {
 		tlbr[0] = std::numeric_limits<uint32_t>::max();
 		tlbr[1] = std::numeric_limits<uint32_t>::max();
 		tlbr[2] = std::numeric_limits<uint32_t>::min();

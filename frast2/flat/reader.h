@@ -26,6 +26,7 @@ namespace frast {
 			static constexpr int logTileSize=8;
 
 			int64_t determineTlbr(uint32_t tlbr[4]);
+			int64_t determineTlbrOnLevel(uint32_t tlbr[4], int lvl);
 			std::vector<std::array<double,4>> computeRegionsOnDeepestLevel();
 
 

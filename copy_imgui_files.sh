@@ -2,8 +2,8 @@ echo " - Copying files"
 
 mkdir subprojects || true;
 cd subprojects
-git clone https://github.com/ocornut/imgui --single-branch --depth --branch v1.89.8 || true;
-git clone https://github.com/epezent/implot --single-branch --depth --branch v0.15 || true;
+git clone https://github.com/ocornut/imgui --single-branch --depth 1 --branch v1.89.8 || true;
+git clone https://github.com/epezent/implot --single-branch --depth 1 --branch v0.15 || true;
 cd ../
 
 mkdir frast2/frastgl/core/imgui/generated || true;

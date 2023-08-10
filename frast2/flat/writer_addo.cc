@@ -265,6 +265,20 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 	void* value = nullptr;
 	uint64_t valueLength = 0;
 
+	// WARNING: Terrible API:
+	// NOTE:
+	// If user asked for custom interpolation (lanczos),
+	// Use area for any depths < 14.
+	// Otherwise it gets aliased and noisy at lower depths.
+	//
+	int interp = cfg.addoInterp;
+	int depth = cfg.baseLevel - above.z();
+	// if (above.z < 14 and interp >= 900) {
+	if (depth >= 4 and interp >= 900) {
+		interp = cv::INTER_AREA;
+	}
+	fmt::print(" - level={}, depth={}, using interp={}\n", above.z(), depth, interp);
+
 	if (imga.empty() and imgb.empty() and imgc.empty() and imgd.empty()) {
 		// All empty...
 		value = nullptr;
@@ -295,13 +309,66 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 		imgc.copyTo(img(cv::Rect{tw,th,tw,th}));
 		imgd.copyTo(img(cv::Rect{tw,0,tw,th}));
 
-		// Half-scale it
-		cv::resize(img,img, imga.size());
+		if (interp < 900) {
+			// Half-scale it
+			cv::resize(img,img, imga.size(), 0, 0, interp);
 
-		// Encode.
-		Value v = encodeValue(img, isTerrain());
-		value = v.value;
-		valueLength = v.len;
+			// Encode.
+			Value v = encodeValue(img, isTerrain());
+			value = v.value;
+			valueLength = v.len;
+		} else {
+
+			cv::Mat oimg = imga;
+
+			// import numpy as np, re
+			// p = np.stack(np.meshgrid(*(np.linspace(-1,1,6,True),)*2),-1)
+			// d = np.linalg.norm(p, axis=-1) *1.9  ; w=np.sinc(d) * np.sinc(d/1.3); w
+			// re.sub(' +',',',str(w.reshape(-1))).replace('\n','')
+			//
+			// Balanced. Looks pretty much like area, so I'd not recommend.
+			//
+			// float K[] = { 0.00317,-0.01347,0.00683,0.00683,-0.01347,0.00317,-0.01347,0.03257,-0.01271,-0.01271,0.03257,-0.01347,0.00683,-0.01271,0.43628,0.43628,-0.01271,0.00683,0.00683,-0.01271,0.43628,0.43628,-0.01271,0.00683, -0.01347,0.03257,-0.01271,-0.01271,0.03257,-0.01347,0.00317,-0.01347,0.00683,0.00683,-0.01347,0.00317 };
+
+			//
+			// Looks pretty nice for overview levels 1-3 from top, but gets super aliased after that. Don't use for that reason
+			//
+			// d = np.linalg.norm(p, axis=-1) *1.6  ; w=np.sinc(d) * np.sinc(d/2.5); w
+			// float K[] = { 0.01068,-0.02128,-0.07728,-0.07728,-0.02128,0.01068,-0.02128,-0.12278,-0.00886,-0.00886,-0.12278,-0.02128,-0.07728,-0.00886,0.65868,0.65868,-0.00886,-0.07728,-0.07728,-0.00886,0.65868,0.65868,-0.00886,-0.07728,-0.02128,-0.12278,-0.00886,-0.00886,-0.12278,-0.02128,0.01068,-0.02128,-0.07728,-0.07728,-0.02128,0.01068 };
+
+			float K[] = { -0.02685111,-0.00632553,0.00166139,0.00166139,-0.00632553,-0.02685111,-0.00632553,-0.03568254,-0.0542254,-0.0542254,-0.03568254,-0.00632553,0.00166139,-0.0542254,0.54590778,0.54590778,-0.0542254,0.00166139,0.00166139,-0.0542254,0.54590778,0.54590778,-0.0542254,0.00166139,-0.00632553,-0.03568254,-0.0542254,-0.0542254,-0.03568254,-0.00632553,-0.02685111,-0.00632553,0.00166139,0.00166139,-0.00632553,-0.02685111};
+
+// #error "come up with good lanczos coefficients."
+			static_assert(sizeof(K)/4 == 36);
+
+			int IW = 2*tw;
+			int IH = 2*th;
+			int OW = 1*tw;
+			int OH = 1*th;
+			for (int oy=0; oy<OH; oy++)
+			for (int ox=0; ox<OH; ox++) {
+				float rgba[4] = {0};
+				for (int dy=0; dy<6; dy++)
+				for (int dx=0; dx<6; dx++) {
+					int iy = oy*2 + dy - 2;
+					int ix = ox*2 + dx - 2;
+					if (iy >= 0 and ix >= 0 and iy < IH and ix < IW) {
+						rgba[0] += ((float)img.data[iy*IW*3+ix*3+0]) * K[dy*6+dx];
+						rgba[1] += ((float)img.data[iy*IW*3+ix*3+1]) * K[dy*6+dx];
+						rgba[2] += ((float)img.data[iy*IW*3+ix*3+2]) * K[dy*6+dx];
+						rgba[3] += K[dy*6+dx];
+					}
+					oimg.data[oy*OW*3+ox*3+0] = (uint8_t) std::min(std::max(0.f, (rgba[0] / rgba[3])), 255.f);
+					oimg.data[oy*OW*3+ox*3+1] = (uint8_t) std::min(std::max(0.f, (rgba[1] / rgba[3])), 255.f);
+					oimg.data[oy*OW*3+ox*3+2] = (uint8_t) std::min(std::max(0.f, (rgba[2] / rgba[3])), 255.f);
+
+				}
+			}
+
+			Value v = encodeValue(oimg, isTerrain());
+			value = v.value;
+			valueLength = v.len;
+		}
 	}
 
 

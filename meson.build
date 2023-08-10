@@ -2,7 +2,7 @@ project('irn', ['cpp'],
     default_options : [
       'cpp_std=c++17',
       'buildtype=debugoptimized',
-      'optimization=2',
+      # 'optimization=2',
       ]
     )
 
@@ -51,7 +51,26 @@ fmt_dep = declare_dependency(
   include_directories: include_directories('/usr/local/include',
         '/usr/local/terrapixel/include'))
 
-opencv_dep = dependency('opencv4')
+# If we appear to have a custom opencv4 build specifically for terrapixel stuff (located
+# in '/usr/local/terrapixel/') then use it, otherwise use meson to find the system's
+# installation (pkgconfig or cmake)
+if fs.is_dir('/usr/local/terrapixel/include/opencv4')
+  opencv_root = '/usr/local/terrapixel/'
+  opencv_inc_dir = opencv_root / 'include' / 'opencv4'
+  opencv_lib_dir = opencv_root / 'lib'
+  opencv_dep = declare_dependency(
+    include_directories: include_directories(opencv_inc_dir),
+    dependencies: [
+      meson.get_compiler('cpp').find_library('opencv_core', dirs: opencv_lib_dir),
+      meson.get_compiler('cpp').find_library('opencv_highgui', dirs: opencv_lib_dir),
+      meson.get_compiler('cpp').find_library('opencv_imgproc', dirs: opencv_lib_dir),
+      meson.get_compiler('cpp').find_library('opencv_imgcodecs', dirs: opencv_lib_dir),
+    ])
+else
+  # NOTE: This might pick the debug version, which I do not want.
+  opencv_dep = dependency('opencv4')
+endif
+
 gdal_dep = declare_dependency(dependencies: [
       meson.get_compiler('cpp').find_library('gdal')
       ])
@@ -72,11 +91,13 @@ glfw_dep = glfw.dependency('glfw')
 # imgui  = subproject('imgui', required: false)
 # implot = subproject('implot', required: false)
 
-#fs.copyfile('subprojects/imgui/imgui.cpp', 'frast2/frastgl/core/imgui/generated/')
+# Actually: these are checked into repo tree and should be updated manually.
+'''
 copy_imgui_files = custom_target('copy_imgui_files',
   output: 'copy_imgui_files',
   # output: 'frast2/frastgl/core/imgui/generated/imgui.cpp',
   command: ['bash', '-c', 'cd @0@ && bash copy_imgui_files.sh'.format(meson.source_root())])
+'''
 
 # ----------------------------------------------
 #               Libraries
@@ -95,7 +116,8 @@ frast = shared_library('frast',
     ),
   include_directories: include_directories('frast2'),
   dependencies: [eigen_dep, fmt_dep, threads_dep, opencv_dep, gdal_dep, z_dep],
-  cpp_args: frast_flags
+  cpp_args: frast_flags,
+  install: true
   )
 
 frast_dep = declare_dependency(
@@ -126,6 +148,8 @@ frastgl = shared_library('frastgl',
     'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
     'frast2/frastgl/gt/gt.cc',
 
+    'frast2/frastgl/core/imgui/imgui_app.cc',
+
     'frast2/frastgl/core/imgui/generated/imgui.cpp',
     'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
     'frast2/frastgl/core/imgui/generated/imgui_draw.cpp',
@@ -140,12 +164,15 @@ frastgl = shared_library('frastgl',
   include_directories: include_directories('frast2'),
   # link_with: [copy_imgui_files],
   dependencies: [frast_dep, gl_dep, glfw_dep, protobuf_dep],
-  cpp_args: frast_flags)
+  cpp_args: frast_flags,
+  install: true)
 
 frastgl_dep = declare_dependency(
   # include_directories: include_directories('frast2'),
   link_with: [frastgl],
   dependencies: [frast_dep, glfw_dep, gl_dep, protobuf_dep])
+
+install_subdir('frast2', install_dir: 'include', exclude_files: ['*.cc', '*.cpp', '*.py', '*.pyc'])
 
 # ----------------------------------------------
 #               Applications
@@ -158,7 +185,7 @@ frastTool = executable('frastTool',
   install: true
   )
 
-frastWriter = executable('frastWriter',
+frastFlatWriter = executable('frastFlatWriter',
   files('frast2/flat/convertMain.cc'),
   dependencies: [frast_dep],
   cpp_args: frast_flags,
