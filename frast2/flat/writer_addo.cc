@@ -276,8 +276,15 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 	// if (above.z < 14 and interp >= 900) {
 	if (depth >= 4 and interp >= 900) {
 		interp = cv::INTER_AREA;
+		static bool didWarnAboutSwitch = false; // race condition but whatever
+		if (!didWarnAboutSwitch) {
+			fmt::print("*****************************************************\n");
+			fmt::print("You asked for lanczos, but depth {} was achieved ({} - {})\n", depth, cfg.baseLevel,above.z());
+			fmt::print("Switching to area interpolation\n");
+			fmt::print("*****************************************************\n");
+			didWarnAboutSwitch = true;
+		}
 	}
-	fmt::print(" - level={}, depth={}, using interp={}\n", above.z(), depth, interp);
 
 	if (imga.empty() and imgb.empty() and imgc.empty() and imgd.empty()) {
 		// All empty...
@@ -331,16 +338,19 @@ void WriterMasterAddo::process(int workerId, const Key& key) {
 			// float K[] = { 0.00317,-0.01347,0.00683,0.00683,-0.01347,0.00317,-0.01347,0.03257,-0.01271,-0.01271,0.03257,-0.01347,0.00683,-0.01271,0.43628,0.43628,-0.01271,0.00683,0.00683,-0.01271,0.43628,0.43628,-0.01271,0.00683, -0.01347,0.03257,-0.01271,-0.01271,0.03257,-0.01347,0.00317,-0.01347,0.00683,0.00683,-0.01347,0.00317 };
 
 			//
-			// Looks pretty nice for overview levels 1-3 from top, but gets super aliased after that. Don't use for that reason
+			// A little too sharp IMO.
 			//
 			// d = np.linalg.norm(p, axis=-1) *1.6  ; w=np.sinc(d) * np.sinc(d/2.5); w
 			// float K[] = { 0.01068,-0.02128,-0.07728,-0.07728,-0.02128,0.01068,-0.02128,-0.12278,-0.00886,-0.00886,-0.12278,-0.02128,-0.07728,-0.00886,0.65868,0.65868,-0.00886,-0.07728,-0.07728,-0.00886,0.65868,0.65868,-0.00886,-0.07728,-0.02128,-0.12278,-0.00886,-0.00886,-0.12278,-0.02128,0.01068,-0.02128,-0.07728,-0.07728,-0.02128,0.01068 };
 
+			// Balanced. Looks sharper than bilinear/area, and is better for a while. But after too many downscale iterations,
+			// it gets noisy/aliased.
+			//
+			// d = np.linalg.norm(p, axis=-1) *1.8  ; w=np.sinc(d) * np.sinc(d/1.8); w
 			float K[] = { -0.02685111,-0.00632553,0.00166139,0.00166139,-0.00632553,-0.02685111,-0.00632553,-0.03568254,-0.0542254,-0.0542254,-0.03568254,-0.00632553,0.00166139,-0.0542254,0.54590778,0.54590778,-0.0542254,0.00166139,0.00166139,-0.0542254,0.54590778,0.54590778,-0.0542254,0.00166139,-0.00632553,-0.03568254,-0.0542254,-0.0542254,-0.03568254,-0.00632553,-0.02685111,-0.00632553,0.00166139,0.00166139,-0.00632553,-0.02685111};
 
-// #error "come up with good lanczos coefficients."
-			static_assert(sizeof(K)/4 == 36);
 
+			static_assert(sizeof(K)/4 == 36);
 			int IW = 2*tw;
 			int IH = 2*th;
 			int OW = 1*tw;
