@@ -80,6 +80,7 @@ z_dep = declare_dependency(dependencies: [
 
 protobuf_dep = dependency('protobuf')
 
+'''
 glfw_dep = dependency('glfw')
 if glfw_dep.found()
 else
@@ -90,6 +91,13 @@ else
   glfw = cmake.subproject('glfw', options: glfw_opts)
   glfw_dep = glfw.dependency('glfw')
 endif
+'''
+glfw_opts = cmake.subproject_options()
+glfw_opts.add_cmake_defines({'GLFW_BUILD_EXAMPLES': false})
+glfw_opts.add_cmake_defines({'GLFW_BUILD_TESTS': false})
+glfw_opts.add_cmake_defines({'GLFW_INSTALL': false})
+glfw = cmake.subproject('glfw', options: glfw_opts)
+glfw_dep = glfw.dependency('glfw')
 
 # I use `subproject` to download the repos, then copy only the files I need.
 # imgui  = subproject('imgui', required: false)
