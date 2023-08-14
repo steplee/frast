@@ -71,9 +71,10 @@ else
   opencv_dep = dependency('opencv4')
 endif
 
-gdal_dep = declare_dependency(dependencies: [
-      meson.get_compiler('cpp').find_library('gdal')
-      ])
+# gdal_dep = declare_dependency(dependencies: [
+      # meson.get_compiler('cpp').find_library('gdal')
+      # ])
+gdal_dep = dependency('gdal', required: true)
 z_dep = declare_dependency(dependencies: [
       meson.get_compiler('cpp').find_library('z')
       ])
