@@ -29,6 +29,7 @@ frast_flags = ['-DFRAST_WRITER_THREADS=@0@'.format(get_option('writer_threads'))
 # eigen_dep = dependency('eigen')
 eigen_dep = declare_dependency(include_directories: ['/usr/include/eigen3'])
 threads_dep = dependency('threads')
+dl_dep = dependency('dl')
 
 python3 = import('python').find_installation('python3')
 python3_path = python3.path()
@@ -192,7 +193,7 @@ frastgl = shared_library('frastgl',
     rocktree_pb_cc,
   include_directories: include_directories('frast2'),
   # link_with: [copy_imgui_files],
-  dependencies: [frast_dep, gl_dep, glfw_dep, protobuf_dep],
+  dependencies: [frast_dep, gl_dep, glfw_dep, protobuf_dep, dl_dep],
   cpp_args: frast_flags,
   install: true)
 
