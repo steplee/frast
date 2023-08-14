@@ -51,6 +51,18 @@ fmt_dep = declare_dependency(
   include_directories: include_directories('/usr/local/include',
         '/usr/local/terrapixel/include'))
 
+
+
+# https://github.com/mesonbuild/meson/blob/master/test%20cases/frameworks/5%20protocol%20buffers/meson.build
+protoc = find_program('protoc', required : true)
+dep = dependency('protobuf', required : true)
+gen = generator(protoc, \
+  output    : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  # arguments : ['--proto_path=@CURRENT_SOURCE_DIR@', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/frast2/frastgl/gt/rt/protos/', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+rocktree_pb_cc = gen.process('frast2/frastgl/gt/rt/protos/rocktree.proto')
+    # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
+
 # If we appear to have a custom opencv4 build specifically for terrapixel stuff (located
 # in '/usr/local/terrapixel/') then use it, otherwise use meson to find the system's
 # installation (pkgconfig or cmake)
@@ -161,7 +173,7 @@ frastgl = shared_library('frastgl',
     'frast2/frastgl/extra/textSet/textSet.cc',
     'frast2/frastgl/gt/ftr/ftr.cc',
     'frast2/frastgl/gt/rt/rt.cc',
-    'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
+    # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
     'frast2/frastgl/gt/gt.cc',
 
     'frast2/frastgl/core/imgui/imgui_app.cc',
@@ -177,6 +189,7 @@ frastgl = shared_library('frastgl',
     'frast2/frastgl/core/implot/generated/implot_items.cpp',
     'frast2/frastgl/core/implot/generated/implot_demo.cpp',
     ),
+    rocktree_pb_cc,
   include_directories: include_directories('frast2'),
   # link_with: [copy_imgui_files],
   dependencies: [frast_dep, gl_dep, glfw_dep, protobuf_dep],

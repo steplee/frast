@@ -9,7 +9,8 @@
 // #include "frastVk/gt/rt/decode/rt_convert.hpp"
 #include "rt_convert.hpp"
 #include "stb_image.h"
-#include "../protos/rocktree.pb.h"
+// #include "../protos/rocktree.pb.h"
+#include "rocktree.pb.h"
 
 namespace rtpb = ::geo_globetrotter_proto_rocktree;
 
