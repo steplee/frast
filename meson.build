@@ -45,12 +45,15 @@ gl_dep = declare_dependency(
       meson.get_compiler('cpp').find_library('GL'),
       meson.get_compiler('cpp').find_library('GLEW'), ])
 
+fmt_dep = dependency('fmt', required: true)
+'''
 fmt_dep = declare_dependency(
   dependencies: [
       meson.get_compiler('cpp').find_library('fmt',
         dirs: ['/usr/local/lib', '/usr/local/terrapixel/lib']) ],
   include_directories: include_directories('/usr/local/include',
         '/usr/local/terrapixel/include'))
+'''
 
 
 
