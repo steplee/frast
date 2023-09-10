@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
 	fmt::print(" - opt={}\n", o);
 	fmt::print(" - action={}\n", action);
 	*/
-	auto action = parser.getChoice2("-a", "--action", "info", "showTiles", "showSample", "rasterIo", "dump").value();
+	auto action = parser.getChoice2("-a", "--action", "info", "showTiles", "showSample", "rasterIo", "dump", "takeTop").value();
 
 	std::string path = parser.get2OrDie<std::string>("-i", "--input");
 	bool isTerrain = parser.get2<bool>("-t", "--terrain", 0).value();
@@ -58,6 +58,43 @@ int main(int argc, char** argv) {
 		fmt::print(" - meter [ wm    ] ({:.1Lf}m x {:.1Lf}m) ({:.2Lf}km²)\n", w*tileToM, h*tileToM, (w*tileToKm)*(h*tileToKm));
 		fmt::print(" - meter [~actual] ({:.1Lf}m x {:.1Lf}m) ({:.2Lf}km²)\n", scaleFactorInv*w*tileToM, scaleFactorInv*h*tileToM, (w*scaleFactorInv*tileToKm)*(h*scaleFactorInv*tileToKm));
 	}
+
+	if (action == "takeTop") {
+    auto maxLvl_ = parser.get<int64_t>("--maxLevel");
+    if (!maxLvl_.has_value()) {
+      fmt::print("action `takeTop` requires specifiying `--maxLevel`\n");
+      return 1;
+    }
+    int maxLvl = maxLvl_.value();
+
+    std::vector<int64_t> levels;
+    for (int i=maxLvl; i>=0; i--) if (reader.env.haveLevel(i)) levels.push_back(i);
+
+
+    if (levels.size() == 0) {
+      fmt::print("warning: input had no levels above specified `maxLvl` {}\n", maxLvl);
+      return 1;
+    }
+
+	  EnvOptions newOpts;
+    newOpts.readonly = false;
+    newOpts.isTerrain = false;
+		FlatEnvironment newEnv(path + ".2", newOpts);
+
+    for (int i=0; i<levels.size(); i++) {
+      int lvl = levels[i];
+      fmt::print("copying level {}.\n", lvl);
+      auto& oldSpec = reader.env.meta()->levelSpecs[lvl];
+      newEnv.copyLevelFrom(
+          lvl,
+          (uint8_t*)reader.env.getBasePointer(),
+          oldSpec.keysOffset, oldSpec.keysLength,
+          oldSpec.k2vsOffset, oldSpec.keysLength,
+          oldSpec.valsOffset, oldSpec.valsLength,
+          i == levels.size() - 1);
+    }
+
+  }
 
 	if (action == "showTiles") {
 		int chosenLvl = parser.get2<int>("-l", "--level", -1).value();

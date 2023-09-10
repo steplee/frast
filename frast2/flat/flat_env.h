@@ -96,6 +96,7 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 
 	inline FileMeta* meta() { return reinterpret_cast<FileMeta*>(basePointer); }
 	inline const FileMeta* meta() const { return reinterpret_cast<FileMeta*>(basePointer); }
+  inline void* getBasePointer() { return basePointer; }
 
 	inline LevelSpec& getLevelSpec(int lvl) {
 		return meta()->levelSpecs[lvl];
@@ -132,6 +133,13 @@ class FlatEnvironment : public BaseEnvironment<FlatEnvironment> {
 		}
 	}
 	inline bool isTerrain() const { return meta()->rasterType == FileMeta::RasterType::eTerrain; }
+
+  bool copyLevelFrom(uint64_t lvl,
+    const uint8_t* start,
+    uint64_t keyOff, uint64_t keyLen,
+    uint64_t k2vOff, uint64_t k2vLen,
+    uint64_t valOff, uint64_t valLen,
+    bool finalLevel);
 
 	bool keyExists(uint64_t lvl, uint64_t key);
 	Value lookup(uint64_t lvl, uint64_t idx);

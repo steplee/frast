@@ -99,11 +99,73 @@ bool FlatEnvironment::endLevel(bool finalLevel) {
 		}
 	} else {
 		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} and rewinding currentEnd to {}\n", currentLvl, (uint64_t)spec.valsCapacity, currentEnd);
+    // FIXME: TEST THIS.
+    currentEnd = spec.valsOffset + spec.valsLength;
 	}
 
 
 	currentLvl = INVALID_LVL;
 	return false;
+}
+
+bool FlatEnvironment::copyLevelFrom(uint64_t lvl,
+    const uint8_t* start,
+    uint64_t keyOff, uint64_t keyLen,
+    uint64_t k2vOff, uint64_t k2vLen,
+    uint64_t valOff, uint64_t valLen,
+    bool finalLevel) {
+  currentLvl = lvl;
+	assert(meta()->levelSpecs[lvl].keysCapacity == 0 && "this level should be empty");
+	auto& spec = meta()->levelSpecs[lvl];
+
+  auto copy_chunk = [this](const void* src, uint64_t len) {
+    int64_t firstEnd = currentEnd;
+    currentEnd += len;
+	  while (currentEnd % BLOCK_SIZE != 0) currentEnd++;
+    int r = fallocate(fd_, 0, 0, currentEnd);
+    if (r != 0) throw std::runtime_error("fallocate() failed: " + std::string{strerror(errno)});
+
+    memcpy(reinterpret_cast<uint8_t*>(basePointer) + firstEnd, src, len);
+
+    return std::make_pair(firstEnd, len);
+  };
+
+  uint64_t off, len;
+  std::tie(off, len) = copy_chunk(start + keyOff, keyLen);
+  spec.keysOffset = off;
+  spec.keysLength = len;
+	spec.keysCapacity = len;
+  std::tie(off, len) = copy_chunk(start + k2vOff, k2vLen);
+  spec.k2vsOffset = off;
+  /*fmt::print("copy k2vs[0] = {}\n", reinterpret_cast<const uint64_t*>(start + k2vOff)[0]);
+  fmt::print("copy k2vs[1] = {}\n", reinterpret_cast<const uint64_t*>(start + k2vOff)[1]);
+  fmt::print("copy k2vs[2] = {}\n", reinterpret_cast<const uint64_t*>(start + k2vOff)[2]);
+  fmt::print("copy k2vs[0] = {}\n", getK2vs(lvl)[0]);
+  fmt::print("copy k2vs[1] = {}\n", getK2vs(lvl)[1]);
+  fmt::print("copy k2vs[2] = {}\n", getK2vs(lvl)[2]);
+  for (int i=0; i<keyLen/8; i++) {
+    fmt::print(" - {} :: {}, {}\n", i, getKeys(lvl)[i], getK2vs(lvl)[i]);
+  }*/
+  std::tie(off, len) = copy_chunk(start + valOff, valLen);
+  spec.valsOffset = off;
+  spec.valsLength = len;
+  spec.valsCapacity = len;
+	while (spec.valsCapacity % BLOCK_SIZE != 0) spec.valsCapacity++;
+
+
+	if (finalLevel) {
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} then truncating to {}\n", currentLvl, (uint64_t)spec.valsCapacity, currentEnd);
+		int r = ftruncate(fd_, currentEnd);
+		if (r != 0) {
+			throw std::runtime_error("ftruncate() failed: " + std::string{strerror(errno)});
+		}
+	} else {
+		fmt::print(" - [FlatEnv::endLevel] setting level {}'s vals capacity to {} and rewinding currentEnd to {}\n", currentLvl, (uint64_t)spec.valsCapacity, currentEnd);
+    currentEnd = spec.valsOffset + spec.valsLength;
+	}
+  currentLvl = INVALID_LVL;
+
+  return false;
 }
 
 
