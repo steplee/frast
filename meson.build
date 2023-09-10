@@ -180,7 +180,7 @@ frastgl = shared_library('frastgl',
     'frast2/frastgl/core/imgui/imgui_app.cc',
 
     'frast2/frastgl/core/imgui/generated/imgui.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
+    # 'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
     'frast2/frastgl/core/imgui/generated/imgui_draw.cpp',
     'frast2/frastgl/core/imgui/generated/imgui_tables.cpp',
     'frast2/frastgl/core/imgui/generated/imgui_widgets.cpp',
@@ -188,7 +188,7 @@ frastgl = shared_library('frastgl',
     'frast2/frastgl/core/imgui/generated/imgui_impl_opengl3.cpp',
     'frast2/frastgl/core/implot/generated/implot.cpp',
     'frast2/frastgl/core/implot/generated/implot_items.cpp',
-    'frast2/frastgl/core/implot/generated/implot_demo.cpp',
+    # 'frast2/frastgl/core/implot/generated/implot_demo.cpp',
     ),
     rocktree_pb_cc,
   include_directories: include_directories('frast2'),
@@ -229,3 +229,14 @@ runRtr = executable('runRt',
   files('frast2/frastgl/gt/rt/runRt.cc'),
   dependencies: [frastgl_dep],
   install: false)
+
+
+if get_option('imgui_demo').enabled()
+runRtr = executable('runImguiDemo',
+  files('frast2/frastgl/core/imgui/imgui_demo_app.cc',
+    'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
+    'frast2/frastgl/core/implot/generated/implot_demo.cpp',
+    ),
+  dependencies: [frastgl_dep],
+  install: false)
+endif

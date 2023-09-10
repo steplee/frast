@@ -25,8 +25,8 @@ void ImguiApp::init() {
 }
 
 void ImguiApp::prepareUi(const RenderState& rs) {
-	bool show_demo_window = true;
-    ImGui::ShowDemoWindow(&show_demo_window);
+	// bool show_demo_window = true;
+    // ImGui::ShowDemoWindow(&show_demo_window);
 }
 
 void ImguiApp::initUi() {

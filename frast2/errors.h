@@ -14,6 +14,15 @@ namespace frast {
 		{ }
 	};
 
+	// Thrown when rasterIo fails to pick a level.
+	struct InvalidLevelError : public std::runtime_error {
+		int32_t lvl;
+
+		inline InvalidLevelError(int32_t lvl_)
+			: lvl(lvl_), std::runtime_error(fmt::format("InvalidLevelError(lvl={})", lvl_))
+		{ }
+	};
+
 	// This is thrown when rasterIo determines it needs to sample too large than some specified
 	// constant number of tiles.
 	//

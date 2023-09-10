@@ -27,7 +27,8 @@ namespace {
 namespace frast {
 
 	void dwm_to_iwm(uint32_t iwmTlbr[4], const double wmTlbr[4], int lvl) {
-		assert(lvl >= 0 and lvl < 30);
+		// assert(lvl >= 0 and lvl < 30);
+		if (lvl < 0 or lvl >= 30) throw InvalidLevelError(lvl);
 
 		// iwmTlbr[0] = static_cast<uint32_t>((wmTlbr[0]+WebMercatorMapScale) / (2<<lvl));
 		iwmTlbr[0] = static_cast<uint32_t>(    ((wmTlbr[0]+WebMercatorMapScale) / (2*WebMercatorMapScale)) * (1<<lvl));
@@ -37,7 +38,8 @@ namespace frast {
 	}
 
 	void iwm_to_dwm(double dwmTlbr[4], const uint32_t iwmTlbr[4], int lvl) {
-		assert(lvl >= 0 and lvl < 30);
+		// assert(lvl >= 0 and lvl < 30);
+		if (lvl < 0 or lvl >= 30) throw InvalidLevelError(lvl);
 
 		// iwmTlbr[0] = static_cast<uint32_t>((wmTlbr[0]+WebMercatorMapScale) / (2<<lvl));
 		dwmTlbr[0] = (static_cast<double>(iwmTlbr[0]) / (1<<lvl) - .5) * (2*WebMercatorMapScale);
