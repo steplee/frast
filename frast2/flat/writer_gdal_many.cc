@@ -15,9 +15,12 @@
 // https://stackoverflow.com/questions/73748856/eigen3-with-libfmt-9-0
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#if FMT_VERSION == 80101
+#else
 template <typename T>
 struct fmt::formatter< T, std::enable_if_t< std::is_base_of<Eigen::DenseBase<T>, T>::value, char>> : ostream_formatter {};
 template <typename T> struct fmt::formatter<Eigen::WithFormat<T>> : ostream_formatter {};
+#endif
 
 namespace {
 	using namespace frast;
