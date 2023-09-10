@@ -31,6 +31,7 @@ eigen_dep = declare_dependency(include_directories: ['/usr/include/eigen3'])
 threads_dep = dependency('threads')
 dl_dep = dependency('dl')
 
+
 python3 = import('python').find_installation('python3')
 python3_path = python3.path()
 pybind11_config_ret = run_command(python3_path, ['-m', 'pybind11', '--includes'])
@@ -206,6 +207,14 @@ frastgl_dep = declare_dependency(
   dependencies: [frast_dep, glfw_dep, gl_dep, protobuf_dep])
 
 install_subdir('frast2', install_dir: 'include', exclude_files: ['*.cc', '*.cpp', '*.py', '*.pyc'])
+
+python3.extension_module('frastpy2_c',
+  files('frast2/frastpy2/frastpy2_c.cc'),
+  subdir: 'frastpy2',
+  install: true,
+  dependencies: [frastgl_dep],
+  link_with: [])
+install_subdir('frast2/frastpy2', install_dir: 'lib/python3/dist-packages/', exclude_files: ['*.cc', '*.cpp'])
 
 # ----------------------------------------------
 #               Applications
