@@ -3,8 +3,16 @@ project('frast', ['cpp'],
       'cpp_std=c++17',
       'buildtype=debugoptimized',
       # 'optimization=2',
+      # 'python.platlibdir=@0@'.format(get_option('prefix')) / 'lib/python3/dist-packages/',
+      # 'python.purelibdir=@0@'.format(get_option('prefix')) / 'lib/python3/dist-packages/',
+      # Mark invalid, require user to set them manually, because `get_option('prefix')` *DOES NOT* get the user configured prefix path :(
+      'python.platlibdir=invalid',
+      'python.purelibdir=invalid',
       ]
     )
+
+assert(get_option('python.platlibdir') != 'invalid', 'must set python.platlibdir')
+assert(get_option('python.purelibdir') != 'invalid', 'must set python.purelibdir')
 
 fs = import('fs')
 cmake = import('cmake')

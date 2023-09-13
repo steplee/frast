@@ -140,8 +140,7 @@ namespace frast {
 			}
 
 			void TextSet::setText(int i, const std::string& s) {
-				assert(s.length() < MAX_LEN);
-				txtLens[i] = s.length();
+				txtLens[i] = std::min((int)MAX_LEN, (int)s.length());
 				for (int j=0; j<txtLens[i]; j++)
 					uboHost.datas[i].chars[j] = _charIndices[s[j]];
 			}
