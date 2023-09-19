@@ -141,6 +141,148 @@ Camera::Camera() {
 
 }
 
+/* ===================================================
+ *
+ *
+ *               SimpleMovingCamera
+ *
+ *
+ * =================================================== */
+
+
+void SimpleMovingCamera::setPosition(double* t) {
+	viewInv_[0*4+3] = t[0];
+	viewInv_[1*4+3] = t[1];
+	viewInv_[2*4+3] = t[2];
+	recompute_view();
+}
+void SimpleMovingCamera::setRotMatrix(double* R) {
+	Map<const Matrix<double,3,3,RowMajor>> RR ( R );
+	Eigen::Quaterniond q { RR };
+	quat_[0] = q.x(); quat_[1] = q.y(); quat_[2] = q.z(); quat_[3] = q.w();
+	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+	viewInv.topLeftCorner<3,3>() = q.toRotationMatrix();
+
+	recompute_view();
+}
+void SimpleMovingCamera::recompute_view() {
+	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+	Map<Matrix<double,4,4,RowMajor>> view ( view_ );
+	view.topLeftCorner<3,3>() = viewInv.topLeftCorner<3,3>().transpose();
+	view.topRightCorner<3,1>() = -(viewInv.topLeftCorner<3,3>().transpose() * viewInv.topRightCorner<3,1>());
+}
+
+// IO.
+bool SimpleMovingCamera::handleMousePress(int button, int action, int mods) {
+	leftMouseDown = button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS;
+	rightMouseDown = button == GLFW_MOUSE_BUTTON_RIGHT and action == GLFW_PRESS;
+	return false;
+}
+bool SimpleMovingCamera::handleMouseMotion(double x, double y) {
+	Map<Matrix<double,3,1>> dquat { dquat_ };
+	if (leftMouseDown and (lastX !=0 or lastY !=0)) {
+		dquat(0) += (x - lastX) * .1f;
+		dquat(1) += (y - lastY) * .1f;
+	}
+	lastX = x;
+	lastY = y;
+	return false;
+}
+bool SimpleMovingCamera::handleKey(int key, int scancode, int action, int mods) {
+	bool isDown = action == GLFW_PRESS or action == GLFW_REPEAT;
+	if (isDown or action==GLFW_REPEAT) {
+		Map<Matrix<double,3,1>> acc { acc_ };
+		Map<const Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+
+		Vector3d dacc { Vector3d::Zero() };
+		if (isDown and key == GLFW_KEY_A) dacc(0) += -1;
+		if (isDown and key == GLFW_KEY_D) dacc(0) +=  1;
+		if (isDown and key == GLFW_KEY_W) dacc(2) +=  1;
+		if (isDown and key == GLFW_KEY_S) dacc(2) += -1;
+		if (isDown and key == GLFW_KEY_F) dacc(1) +=  1;
+		if (isDown and key == GLFW_KEY_E) dacc(1) += -1;
+
+		if (isDown and key == GLFW_KEY_I) {
+			Map<Matrix<double,3,1>> vel { vel_ };
+			Map<Matrix<double,3,1>> acc { acc_ };
+			Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+			Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+			std::cout << " [SimpleMovingCamera::step()]\n";
+			std::cout << "      - vel " << vel.transpose() << "\n";
+			std::cout << "      - acc " << acc.transpose() << "\n";
+			std::cout << "      - pos " << viewInv.topRightCorner<3,1>().transpose() << "\n";
+			std::cout << "      - z+  " << viewInv.block<3,1>(0,2).transpose() << "\n";
+			std::cout << "      - q   " << quat.coeffs().transpose() << "\n";
+		}
+
+		// Make accel happen local to frame
+		acc += viewInv.topLeftCorner<3,3>() * dacc;
+	}
+	return false;
+}
+void SimpleMovingCamera::step(double dt) {
+	Map<Matrix<double,3,1>> vel { vel_ };
+	Map<Matrix<double,3,1>> acc { acc_ };
+	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+	Eigen::Quaterniond quat { quat_[3], quat_[0], quat_[1], quat_[2] };
+
+	static int __updates = 0;
+	__updates++;
+
+	//constexpr float SPEED = 5.f;
+	// double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
+	double SPEED = minSpeed + speedMult;
+
+	viewInv.topRightCorner<3,1>() += vel * dt + acc * dt * dt * .5 * SPEED;
+
+	vel -= vel * std::min(drag_ * dt, .9999);
+	vel += acc * dt * SPEED;
+	//if (vel.squaredNorm() < 1e-18) vel.setZero();
+	acc.setZero();
+
+		// let dq1 = qexp([this.dy*qspeed,0,0]);
+		// let dq2 = qexp([0,this.dx*qspeed,0]);
+		// this.q = qmult(dq2, qmult(this.q, dq1));
+
+	/*
+	quat = quat * AngleAxisd(-dquat_[0]*dt, Vector3d::UnitY())
+				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX())
+				* AngleAxisd(         0*dt, Vector3d::UnitZ());
+	*/
+	quat = AngleAxisd(-dquat_[0]*dt, Vector3d::UnitX())
+		 * quat
+		 * AngleAxisd( dquat_[1]*dt, Vector3d::UnitY());
+	
+	for (int i=0; i<4; i++) quat_[i] = quat.coeffs()(i);
+	dquat_[0] = dquat_[1] = dquat_[2] = 0;
+
+	quat = quat.normalized();
+	viewInv.topLeftCorner<3,3>() = quat.toRotationMatrix();
+
+	recompute_view();
+}
+
+SimpleMovingCamera::SimpleMovingCamera(const CameraSpec& spec) : Camera(spec) {
+	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+	Map<Matrix<double,4,4,RowMajor>> view ( view_ );
+
+	quat_[0] = quat_[1] = quat_[2] = 0;
+	quat_[3] = 1;
+	viewInv.setIdentity();
+	view.setIdentity();
+	recompute_view();
+}
+SimpleMovingCamera::SimpleMovingCamera() {
+	Map<Matrix<double,4,4,RowMajor>> viewInv ( viewInv_ );
+	Map<Matrix<double,4,4,RowMajor>> view ( view_ );
+
+	quat_[0] = quat_[1] = quat_[2] = 0;
+	quat_[3] = 1;
+	viewInv.setIdentity();
+	view.setIdentity();
+	recompute_view();
+}
+
 
 
 /* ===================================================
@@ -232,7 +374,8 @@ void FlatEarthMovingCamera::step(double dt) {
 	__updates++;
 
 	//constexpr float SPEED = 5.f;
-	double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
+	// double SPEED = .00000000000001f + 5.f * std::fabs(viewInv(2,3));
+	double SPEED = minSpeed + speedMult * 5.f * std::fabs(viewInv(2,3));
 
 	viewInv.topRightCorner<3,1>() += vel * dt + acc * dt * dt * .5 * SPEED;
 

@@ -79,6 +79,37 @@ struct Camera : public UsesIO {
 		bool flipY_ = false;
 };
 
+struct SimpleMovingCamera : public Camera {
+		SimpleMovingCamera(const CameraSpec& spec);
+		SimpleMovingCamera();
+		inline virtual ~SimpleMovingCamera() {}
+
+	virtual void setPosition(double* t) override;
+	virtual void setRotMatrix(double* R) override;
+	
+
+	virtual void step(double dt) override;
+	// virtual void handleKey(uint8_t key, uint8_t mod, bool isDown) override;
+	// virtual void handleMousePress(uint8_t button, uint8_t mod, uint8_t x, uint8_t y, bool isPressing) override;
+	// virtual void handleMouseMotion(int x, int y, uint8_t mod) override;
+	virtual bool handleKey(int key, int scancode, int action, int mods) override;
+	virtual bool handleMousePress(int button, int action, int mods) override;
+	virtual bool handleMouseMotion(double x, double y) override;
+
+	float minSpeed=1e-8f, speedMult=1;
+	double drag_ = 1.9;
+
+	protected:
+		void recompute_view();
+
+		alignas(16) double vel_[3] = {0};
+		alignas(16) double acc_[3] = {0};
+		alignas(16) double quat_[4];
+		alignas(16) double dquat_[3] = {0};
+		bool leftMouseDown = false, rightMouseDown = false;
+		double lastX=0, lastY=0;
+};
+
 struct FlatEarthMovingCamera : public Camera {
 		FlatEarthMovingCamera(const CameraSpec& spec);
 		FlatEarthMovingCamera();
@@ -95,6 +126,8 @@ struct FlatEarthMovingCamera : public Camera {
 	virtual bool handleKey(int key, int scancode, int action, int mods) override;
 	virtual bool handleMousePress(int button, int action, int mods) override;
 	virtual bool handleMouseMotion(double x, double y) override;
+
+	float minSpeed=1e-8f, speedMult=1;
 
 	protected:
 		void recompute_view();
