@@ -249,9 +249,9 @@ void SimpleMovingCamera::step(double dt) {
 				* AngleAxisd( dquat_[1]*dt, Vector3d::UnitX())
 				* AngleAxisd(         0*dt, Vector3d::UnitZ());
 	*/
-	quat = AngleAxisd(-dquat_[0]*dt, Vector3d::UnitX())
+	quat = AngleAxisd( dquat_[0]*dt, Vector3d::UnitZ())
 		 * quat
-		 * AngleAxisd( dquat_[1]*dt, Vector3d::UnitY());
+		 * AngleAxisd( dquat_[1]*dt, Vector3d::UnitX());
 	
 	for (int i=0; i<4; i++) quat_[i] = quat.coeffs()(i);
 	dquat_[0] = dquat_[1] = dquat_[2] = 0;
