@@ -12,6 +12,7 @@
 
 #include <limits.h>
 #include <sstream>
+#include <fstream>
 #include "frast2/flat/gdal_stuff.hpp"
 
 using namespace frast;
