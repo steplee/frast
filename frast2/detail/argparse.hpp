@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include <stdexcept>
+#include <fmt/core.h>
 
 namespace frast {
 namespace {
@@ -104,7 +105,14 @@ class ArgParser {
 				if (v == c) return c;
 			}
 
-			throw std::runtime_error(std::string{"invalid choice for arg: "} + k);
+			std::string choicesStr = "[";
+			for (auto &c : choices) {
+				choicesStr += c;
+				if (c == choices.back()) choicesStr += "]";
+				else choicesStr += ", ";
+			}
+			std::string msg = fmt::format("invalid choice for arg '{}'. Expected one of {}", k, choicesStr);
+			throw std::runtime_error(msg);
 		}
 
 		template <class T>

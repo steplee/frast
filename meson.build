@@ -230,7 +230,7 @@ install_subdir('frast2/frastpy2', install_dir: 'lib/python3/dist-packages/', exc
 
 frastTool = executable('frastTool',
   files('frast2/tool/main.cc'),
-  dependencies: [frast_dep],
+  dependencies: [frast_dep, gdal_dep],
   cpp_args: frast_flags,
   install: true
   )

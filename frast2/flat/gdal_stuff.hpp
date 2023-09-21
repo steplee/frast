@@ -102,6 +102,9 @@ namespace {
 		Vector4d bboxPix(const Vector4d& bboxPix, cv::Mat& out);
 
 		void getTlbrForLevel(uint64_t tlbr[4], int lvl);
+
+		// Get the quad in wm corners that the entire datasets pans.
+		Eigen::Matrix<double,4,2> getWmCorners() const;
 	};
 
 void MyGdalDataset::getTlbrForLevel(uint64_t tlbr[4], int lvl) {
@@ -109,6 +112,20 @@ void MyGdalDataset::getTlbrForLevel(uint64_t tlbr[4], int lvl) {
 	tlbr[1] = static_cast<uint64_t>((tlbr_uwm[1]+1)*.5 * (1<<lvl));
 	tlbr[2] = 1+static_cast<uint64_t>((tlbr_uwm[2]+1)*.5 * (1<<lvl));
 	tlbr[3] = 1+static_cast<uint64_t>((tlbr_uwm[3]+1)*.5 * (1<<lvl));
+}
+
+Eigen::Matrix<double,4,2> MyGdalDataset::getWmCorners() const {
+	// Convert pix -> prj -> wm
+	Vector2d tl_pix {0,0};
+	Vector2d br_pix {w,h};
+	Matrix<double,4,2> corners; corners <<
+		tl_pix(0), tl_pix(1),
+		br_pix(0), tl_pix(1),
+		br_pix(0), br_pix(1),
+		tl_pix(0), br_pix(1);
+	corners = (corners * pix2prj.topLeftCorner<2,2>().transpose()).eval().array().rowwise() + pix2prj.col(2).array().transpose();
+    prj2wm->Transform(4, corners.data(), corners.data()+4, nullptr);
+	return corners;
 }
 
 cv::Mat MyGdalDataset::getWmTile(const double wmTlbr[4], int w, int h, int c) {
