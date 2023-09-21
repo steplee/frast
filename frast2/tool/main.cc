@@ -268,6 +268,8 @@ static void do_show_overlap_(ArgParser& parser) {
 		using Corners = Eigen::Matrix<double,4,2>;
 
 		std::vector<std::string> datasetPaths = parser.get2OrDie<std::vector<std::string>>("-i", "--input");
+		std::sort(datasetPaths.begin(),datasetPaths.end());
+
 		int N = datasetPaths.size();
 		std::vector<Corners> cornerss(N);
 		// std::vector<std::pair<int,int>> dsetSizes;
@@ -308,12 +310,16 @@ static void do_show_overlap_(ArgParser& parser) {
 		bool do_svg = true;
 
 		if (do_svg) {
+
+			// NOTE: The y is flipped so that North goes up, like a map (whereas a typical SVG has y+ going down)
+			//       You could use a transform to flip it, but then the text would be flipped too!
+
 			std::stringstream ss;
 			// ss << fmt::format("<svg version=\"1.1\" width=\"{}\" height=\"{}\" viewBox=\"{}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
 			ss << fmt::format("<svg version=\"1.1\" viewBox=\"{}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
 					// w,h,
 					// fmt::format("{:.1f} {:.1f} {:.1f} {:.1f}", wmTlbr(0), wmTlbr(1), wmTlbr(2), wmTlbr(3))
-					fmt::format("{:.1f} {:.1f} {:.1f} {:.1f}", wmTlbr(0), wmTlbr(1), ww, hh)
+					fmt::format("{:.1f} {:.1f} {:.1f} {:.1f}", wmTlbr(0), -wmTlbr(1)-hh, ww, hh)
 				);
 
 			// ss << " <style> path { mix-blend-mode: ; } </style> \n";
@@ -327,10 +333,10 @@ static void do_show_overlap_(ArgParser& parser) {
 
 			auto pushQuad = [&ss](const Corners& c, const Vector3i& color, float alpha) {
 				ss << fmt::format("<path d=\"M {} {} L {} {} L {} {} L {} {} Z\" fill=\"rgb({},{},{})\" fill-opacity=\"{}\"/>\n",
-						c(0,0), c(0,1),
-						c(1,0), c(1,1),
-						c(2,0), c(2,1),
-						c(3,0), c(3,1),
+						c(0,0), -c(0,1),
+						c(1,0), -c(1,1),
+						c(2,0), -c(2,1),
+						c(3,0), -c(3,1),
 						color(0), color(1), color(2),
 						alpha
 						);
@@ -338,7 +344,7 @@ static void do_show_overlap_(ArgParser& parser) {
 
 			ss << fmt::format("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" color=\"black\"/>\n",
 					(wmTlbr(0)),
-					(wmTlbr(1)),
+					(-wmTlbr(1)-hh),
 					ww,hh);
 
 			for (int i=0; i<N; i++) {
@@ -371,7 +377,7 @@ static void do_show_overlap_(ArgParser& parser) {
 				Vector2d txtPos = cornerss[i].row(0) * .9 + .1 * cornerss[i].row(2);
 				double dw = std::abs(cornerss[i](2,0) - cornerss[i](0,0));
 				ss << fmt::format(R"( <text x="{:.1f}" y="{:.1f}" class="small" fill="white" style="font-size: {}em">{}</text> )",
-						txtPos(0), txtPos(1),
+						txtPos(0), -txtPos(1),
 						.1 * (dw / datasetPaths[i].length()),
 						datasetPaths[i]
 				);
