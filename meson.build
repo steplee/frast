@@ -48,11 +48,6 @@ pybind11_dep = declare_dependency(
     include_directories: [pybind11_includes],
 )
 
-gl_dep = declare_dependency(
-  dependencies: [
-      meson.get_compiler('cpp').find_library('glfw3', dirs: '/usr/local/terrapixel/lib'),
-      meson.get_compiler('cpp').find_library('GL'),
-      meson.get_compiler('cpp').find_library('GLEW'), ])
 
 fmt_dep = dependency('fmt', required: true)
 '''
@@ -124,6 +119,13 @@ glfw_opts.add_cmake_defines({'GLFW_BUILD_TESTS': false})
 glfw_opts.add_cmake_defines({'GLFW_INSTALL': false})
 glfw = cmake.subproject('glfw', options: glfw_opts)
 glfw_dep = glfw.dependency('glfw')
+
+gl_dep = declare_dependency(
+  dependencies: [
+      # meson.get_compiler('cpp').find_library('glfw3', dirs: '/usr/local/terrapixel/lib'),
+      glfw_dep,
+      meson.get_compiler('cpp').find_library('GL'),
+      meson.get_compiler('cpp').find_library('GLEW'), ])
 
 # I use `subproject` to download the repos, then copy only the files I need.
 # imgui  = subproject('imgui', required: false)
