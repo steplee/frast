@@ -219,7 +219,8 @@ frastgl_dep = declare_dependency(
 install_subdir('frast2', install_dir: 'include', exclude_files: ['*.cc', '*.cpp', '*.py', '*.pyc'])
 
 python3.extension_module('frastpy2_c',
-  files('frast2/frastpy2/frastpy2_c.cc'),
+  # files('frast2/frastpy2/frastpy2_c.cc'),
+  files('frast2/frastpy2/frastpy2_c.cc', 'frast2/frastpy2/gt_app_wrapper.cc'),
   subdir: 'frastpy2',
   install: true,
   dependencies: [frastgl_dep],

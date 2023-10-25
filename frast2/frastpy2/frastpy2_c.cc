@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 
 #include "frast2/flat/reader.h"
+#include "gt_app_wrapper.h"
 
 namespace py = pybind11;
 
@@ -53,6 +54,26 @@ py::array create_py_image(cv::Mat& img) {
 	auto result = py::array(dtype, outShape, outStrides, (uint8_t*) img.data);
 	return result;
 }
+
+py::array create_py_image(const Image& img) {
+
+	auto dtype = img.isFloat ? py::dtype::of<float>() : py::dtype::of<uint8_t>();
+	auto elemSize = dtype.itemsize();
+
+	std::vector<ssize_t> outStrides {
+		elemSize*img.c * img.w,
+		elemSize*img.c,
+		elemSize*1 };
+
+	std::vector<ssize_t> outShape {
+		img.h,
+		img.w,
+		img.c };
+
+	auto result = py::array(dtype, outShape, outStrides, (uint8_t*) img.data.data());
+	return result;
+}
+
 
 }  // namespace
 
@@ -237,7 +258,66 @@ PYBIND11_MODULE(frastpy2_c, m) {
 
 				return create_py_image(mat);
 			})
-
-
 		;
+
+	py::class_<AppConfig>(m, "AppConfig")
+		.def(py::init<>())
+		.def_readwrite("title", &AppConfig::title)
+		.def_readwrite("headless", &AppConfig::headless)
+		.def_readwrite("w", &AppConfig::w)
+		.def_readwrite("h", &AppConfig::h)
+		;
+
+	// No public constructor: use `create_gt_app_config`
+	py::class_<GtConfig>(m, "GtConfig")
+		;
+		// .def(py::init<>());
+
+	py::class_<CameraSpec>(m, "CameraSpec")
+		.def(py::init<>())
+		.def(py::init<double, double, double>()) // w, h, vfov
+		;
+
+	py::class_<RenderAction>(m, "RenderAction")
+		.def(py::init<>())
+		.def_readwrite("want_depth", &RenderAction::want_depth);
+
+
+	m.def("makeSetCameraFromPosRotSpec", [](
+				const py::array_t<float> t,
+				const py::array_t<float> R,
+				const CameraSpec& spec) {
+			auto tt = t.unchecked<1>();
+			auto RR = R.unchecked<2>();
+			float ivew[16] = {
+				RR(0,0), RR(0,1), RR(0,2), tt(0),
+				RR(1,0), RR(1,1), RR(1,2), tt(1),
+				RR(2,0), RR(2,1), RR(2,2), tt(2),
+				0, 0, 0, 1 };
+			return SetCameraAction(ivew, spec);
+	});
+
+	py::class_<SetCameraAction>(m, "SetCameraAction")
+		;
+		// .def(py::init<const float*, const CameraSpec&>());
+		// .def("__init__", [](const py::array_t<float> a, const CameraSpec& c) {
+				// return std::make_unique<SetCameraAction>(a.data(), c);
+		// });
+
+	py::class_<RenderResult>(m, "RenderResult")
+		.def("getColor", [](const RenderResult& rr) {
+				const auto& img = rr.color;
+				auto color = create_py_image(img);
+				return color;
+		});
+
+	m.def("create_gt_app_config", &create_gt_app_config);
+
+	py::class_<GtWrapperApp>(m, "GtWrapperApp")
+		.def(py::init<const AppConfig&, const GtConfig&>())
+		.def("setCamera", &GtWrapperApp::external_setCamera)
+		.def("askAndWaitForRender", &GtWrapperApp::external_askAndWaitForRender)
+		;
+
+
 }

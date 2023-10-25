@@ -13,7 +13,7 @@ struct CameraSpec {
 	// double hfov, vfov;
 	double fx_, fy_;
 	// These may be set by the camera dynamically.
-	double near=1e-7, far=2.3;
+	double near=1e-7, far=1.3;
 
 	CameraSpec();
 	CameraSpec(double w, double h, double vfov);
