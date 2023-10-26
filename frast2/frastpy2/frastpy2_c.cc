@@ -276,6 +276,10 @@ PYBIND11_MODULE(frastpy2_c, m) {
 	py::class_<CameraSpec>(m, "CameraSpec")
 		.def(py::init<>())
 		.def(py::init<double, double, double>()) // w, h, vfov
+		.def("w", [](const CameraSpec& s) { return s.w; })
+		.def("h", [](const CameraSpec& s) { return s.h; })
+		.def("fx", [](const CameraSpec& s) { return s.fx(); })
+		.def("fy", [](const CameraSpec& s) { return s.fy(); })
 		;
 
 	py::class_<RenderAction>(m, "RenderAction")

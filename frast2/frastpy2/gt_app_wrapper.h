@@ -23,8 +23,8 @@ namespace frast {
 	struct GtConfig {
 		FtTypes::Config ft_cfg;
 		RtTypes::Config rt_cfg;
-		// bool flipY = true; // Flip projection y axis. WARNING: all black?
-		bool flipY = false; // Flip projection y axis.
+		bool flipY = true; // Flip projection y axis. WARNING: all black?
+		// bool flipY = false; // Flip projection y axis.
 	};
 
 	inline GtConfig create_gt_app_config(
