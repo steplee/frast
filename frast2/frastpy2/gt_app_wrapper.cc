@@ -16,7 +16,7 @@ namespace frast {
 	SetCameraAction::SetCameraAction(const float *invView_, const CameraSpec& spec)
 		: spec(spec)
 	{
-		memcpy(invView, invView_, 4*16);
+		for (int i=0; i<16; i++) invView[i] = invView_[i];
 	}
 
 	GtWrapperApp::GtWrapperApp(const AppConfig& cfg, const GtConfig& gtCfg)
@@ -202,9 +202,12 @@ namespace frast {
 						(double) setCam.invView[2*4+0],
 						(double) setCam.invView[2*4+1],
 						(double) setCam.invView[2*4+2] };
-					cam.setPosition(t);
-					cam.setRotMatrix(R);
-					cam.setSpec(setCam.spec);
+
+					{
+						cam.setRotMatrix(R);
+						cam.setPosition(t);
+						cam.setSpec(setCam.spec);
+					}
 				}
 
 				if (action.id() == RenderAction::ID) {
@@ -256,6 +259,7 @@ namespace frast {
 
 			std::unique_lock<std::mutex> lck(mtx);
 			isDone = true;
+			replyCv.notify_one();
 	}
 
 }

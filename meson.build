@@ -34,8 +34,8 @@ add_project_arguments(set_warnings, language : 'cpp')
 
 frast_flags = ['-DFRAST_WRITER_THREADS=@0@'.format(get_option('writer_threads'))]
 
-# eigen_dep = dependency('eigen')
-eigen_dep = declare_dependency(include_directories: ['/usr/include/eigen3'])
+eigen_dep = dependency('eigen3')
+# eigen_dep = declare_dependency(include_directories: ['/usr/include/eigen3'])
 threads_dep = dependency('threads')
 dl_dep = dependency('dl')
 
