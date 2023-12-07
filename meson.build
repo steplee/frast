@@ -227,6 +227,8 @@ python3.extension_module('frastpy2_c',
   link_with: [])
 install_subdir('frast2/frastpy2', install_dir: 'lib/python3/dist-packages/', exclude_files: ['*.cc', '*.cpp'])
 
+subdir('frastWebGpu')
+
 # ----------------------------------------------
 #               Applications
 # ----------------------------------------------

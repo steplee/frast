@@ -1,0 +1,3 @@
+option('webgpu', type: 'feature', value: 'disabled')
+option('dawn_dir', type: 'string', value: '')
+option('emscripten', type: 'feature', value: 'disabled')
