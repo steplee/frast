@@ -247,7 +247,7 @@ int main(int argc, char** argv) {
 			int th = img.rows;
 			int tw = img.cols;
 			if (ix >= 0 and iy >= 0 and ix < nx and iy < ny)
-				img.copyTo(out(cv::Rect{256*(ix),256*(ny-1-iy),tw,th}));
+				img.copyTo(out(cv::Rect{(int) (256*(ix)),(int) (256*(ny-1-iy)),tw,th}));
 			else
 				fmt::print(" - skip out of bounds tile.\n");
 		}
