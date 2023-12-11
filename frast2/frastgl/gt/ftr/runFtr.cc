@@ -114,8 +114,10 @@ class TestApp : public BaseClass_App {
 			FtTypes::Config cfg;
 			cfg.debugMode = true;
 
-			cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
-			cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
+			// cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
+			// cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
+			cfg.obbIndexPaths = {"/data/naip/vamd2/vamd2.lvl15.fft.obb"};
+			cfg.colorDsetPaths = {"/data/naip/vamd2/vamd2.lvl15.fft"};
 			// cfg.colorDsetPaths = {"/data/naip/mocoNaip/mocoUtm.fft"};
 			// cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
 			cfg.elevDsetPath = {"/data/elevation/srtm/srtm.fft"};

@@ -131,10 +131,12 @@ struct FtCoordinate : public BlockCoordinate {
 struct FtDataLoader : public GtDataLoader<FtTypes, FtDataLoader> {
 
 	// Unfortunately, we need an adaptor to the generic constructor :(
-	FtDataLoader(typename FtTypes::Renderer& renderer_);
+	FtDataLoader();
 	~FtDataLoader();
 
 	int loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& td, bool isOpen);
+
+	void do_init();
 
 
 	private:

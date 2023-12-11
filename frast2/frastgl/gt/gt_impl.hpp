@@ -283,23 +283,9 @@ template <class GtTypes, class Derived>
 GtRenderer<GtTypes,Derived>::GtRenderer(const typename GtTypes::Config &cfg_) :
 			  cfg(cfg_),
 			  debugMode(cfg_.debugMode),
-			  loader((Derived&)*this),
+			  // loader(),
 			  obbMap(new typename GtTypes::ObbMap(cfg_.obbIndexPaths))
 {
-	GtAsk<GtTypes> ask;
-	ask.isOpen = true;
-	ask.ancestor = nullptr;
-	for (auto &rootCoord : obbMap->getRootCoords()) {
-		auto root = new typename GtTypes::Tile(rootCoord);
-		root->bb = obbMap->get(rootCoord);
-		// fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
-		root->state = GtTypes::Tile::INVALID;
-		root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
-		roots.push_back(root);
-		ask.tiles.push_back(root);
-	}
-	loader.pushAsk(ask);
-	nReq++;
 }
 
 template <class GtTypes, class Derived>
@@ -656,7 +642,25 @@ void GtRenderer<GtTypes,Derived>::init(const AppConfig& cfg) {
 	}
 
 	// fmt::print(" - [GtRenderer::init] telling loader to init\n");
-	loader.init();
+	loader.init((Derived*)this);
+
+	{
+		GtAsk<GtTypes> ask;
+		ask.isOpen = true;
+		ask.ancestor = nullptr;
+		for (auto &rootCoord : obbMap->getRootCoords()) {
+			auto root = new typename GtTypes::Tile(rootCoord);
+			root->bb = obbMap->get(rootCoord);
+			// fmt::print(" - root OBB: {} || {} | {} | {}\n", root->coord.toString(), root->bb.ctr.transpose(), root->bb.extents.transpose(), root->bb.q.coeffs().transpose());
+			root->state = GtTypes::Tile::INVALID;
+			root->flags = GtTypes::Tile::ROOT | GtTypes::Tile::OPENING_AS_LEAF;
+			roots.push_back(root);
+			ask.tiles.push_back(root);
+		}
+		loader.pushAsk(ask);
+		nReq++;
+	}
+
 }
 
 ////////////////////////////
@@ -702,7 +706,9 @@ bool GtPooledData<GtTypes>::deposit(const std::vector<uint32_t>& ids) {
 
 
 template <class GtTypes, class Derived>
-void GtDataLoader<GtTypes,Derived>::init() {
+void GtDataLoader<GtTypes,Derived>::init(typename GtTypes::Renderer* renderer_) {
+	renderer = renderer_;
+	static_cast<Derived*>(this)->do_init();
 
 	// Create uploader
 	/*
@@ -711,6 +717,7 @@ void GtDataLoader<GtTypes,Derived>::init() {
 	*/
 
 	thread = std::thread(&GtDataLoader::internalLoop, this);
+
 }
 
 template <class GtTypes, class Derived>
@@ -776,7 +783,7 @@ void GtDataLoader<GtTypes,Derived>::internalLoop() {
 
 
 
-			renderer.pushResult(ask);
+			renderer->pushResult(ask);
 
 			curAsks.pop_back();
 		}

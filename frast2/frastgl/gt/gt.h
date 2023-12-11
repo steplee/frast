@@ -350,12 +350,16 @@ struct GtTile {
 template <class GtTypes, class Derived>
 struct GtDataLoader {
 
-	inline GtDataLoader(typename GtTypes::Renderer& renderer_) : renderer(renderer_) {
+	inline GtDataLoader() {
 	}
 
 	void pushAsk(GtAsk<GtTypes>& ask);
 
-	void init();
+	void init(typename GtTypes::Renderer* renderer_);
+
+	/*
+	 void do_init(); // <- a derived method.
+	 */
 
 	inline void join() {
 		mtx.lock();
@@ -372,7 +376,7 @@ struct GtDataLoader {
 	protected:
 		void internalLoop();
 		std::thread thread;
-		typename GtTypes::Renderer& renderer;
+		typename GtTypes::Renderer* renderer;
 
 		std::condition_variable cv;
 		std::mutex mtx;

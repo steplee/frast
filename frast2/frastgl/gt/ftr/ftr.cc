@@ -161,15 +161,14 @@ FtDataLoader::~FtDataLoader() {
 	if (elevDset) delete elevDset;
 }
 
-FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader<FtTypes, FtDataLoader>(renderer_) {
-
+void FtDataLoader::do_init() {
 	EnvOptions optColor = EnvOptions::getReadonly(false);
-	for (const auto& colorPath : renderer.cfg.colorDsetPaths)
+	for (const auto& colorPath : renderer->cfg.colorDsetPaths)
 		colorDsets.push_back(new FlatReaderCached(colorPath, optColor));
 
 	EnvOptions optElev = EnvOptions::getReadonly(true);
-	if (renderer.cfg.elevDsetPath.length() > 1)
-		elevDset = new FlatReaderCached(renderer.cfg.elevDsetPath, optElev);
+	if (renderer->cfg.elevDsetPath.length() > 1)
+		elevDset = new FlatReaderCached(renderer->cfg.elevDsetPath, optElev);
 
 
 	/*
@@ -208,11 +207,15 @@ FtDataLoader::FtDataLoader(typename FtTypes::Renderer& renderer_) : GtDataLoader
 		memset(elevBuf.buffer, 0, elevBuf.size());
 	}
 	*/
+}
+
+FtDataLoader::FtDataLoader() {
+
 
 }
 
 void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh) {
-	auto& tex = renderer.gtpd.datas[tile->meshIds[0]].tex;
+	auto& tex = renderer->gtpd.datas[tile->meshIds[0]].tex;
 
 	uint64_t tlbr[4] = { tile->coord.x(), tile->coord.y(), tile->coord.x()+1lu, tile->coord.y()+1lu };
 
@@ -394,13 +397,13 @@ int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool 
 
 	loadColor(tile, dtd.mesh);
 	if (elevDset)
-		loadElevAndMetaWithDted(tile, dtd.mesh, renderer.cfg);
+		loadElevAndMetaWithDted(tile, dtd.mesh, renderer->cfg);
 	else
-		loadElevAndMetaNoDted(tile, dtd.mesh, renderer.cfg);
+		loadElevAndMetaNoDted(tile, dtd.mesh, renderer->cfg);
 
 	uint32_t total_meshes = 1;
 	std::vector<uint32_t> gatheredIds(total_meshes);
-	renderer.gtpd.withdraw(gatheredIds, !isOpen);
+	renderer->gtpd.withdraw(gatheredIds, !isOpen);
 	// renderer.gtpd.withdraw(gatheredIds, false);
 
 	auto &coord = tile->coord;
@@ -417,7 +420,7 @@ int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool 
 	// fmt::print(fmt::fg(fmt::color::magenta), " - uploading\n");
 	{
 		int meshId = tile->meshIds[0];
-		auto &td = renderer.gtpd.datas[meshId];
+		auto &td = renderer->gtpd.datas[meshId];
 
 		// See if we must re-allocate larger buffers.
 		// If the texture needs a re-allocation, we must mark that the DescSet needs to be updated too

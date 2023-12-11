@@ -176,7 +176,11 @@ struct RtCoordinate {
 struct RtDataLoader : public GtDataLoader<RtTypes, RtDataLoader> {
 
 	// Unfortunately, we need an adaptor to the generic constructor :(
-	inline RtDataLoader(typename RtTypes::Renderer& renderer_) : GtDataLoader<RtTypes, RtDataLoader>(renderer_) {
+	// inline RtDataLoader(typename RtTypes::Renderer& renderer_) : GtDataLoader<RtTypes, RtDataLoader>(renderer_) {
+	inline RtDataLoader() {
+	}
+
+	inline void do_init() {
 	}
 
 	int loadTile(RtTile* tile, RtTypes::DecodedCpuTileData& td, bool isOpen);

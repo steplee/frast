@@ -47,7 +47,7 @@ int RtDataLoader::loadTile(RtTile* tile, RtTypes::DecodedCpuTileData& dtd, bool 
 	// usleep(10'000);
 	// return 0;
 
-	std::string fname = renderer.cfg.rootDir + "/node/" + std::string{tile->coord.key, (size_t)tile->coord.level()};
+	std::string fname = renderer->cfg.rootDir + "/node/" + std::string{tile->coord.key, (size_t)tile->coord.level()};
 	std::ifstream ifs(fname);
 
 
@@ -65,7 +65,7 @@ int RtDataLoader::loadTile(RtTile* tile, RtTypes::DecodedCpuTileData& dtd, bool 
 
 	uint32_t total_meshes = dtd.meshes.size();
 	std::vector<uint32_t> gatheredIds(total_meshes);
-	renderer.gtpd.withdraw(gatheredIds, !isOpen);
+	renderer->gtpd.withdraw(gatheredIds, !isOpen);
 	// renderer.gtpd.withdraw(gatheredIds, false);
 
 	auto &coord = tile->coord;
