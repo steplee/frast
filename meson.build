@@ -194,13 +194,13 @@ endif
 
 install_subdir('frast2', install_dir: 'include', exclude_files: ['*.cc', '*.cpp', '*.py', '*.pyc'])
 
-py_files = ['frast2/frastpy2/frastpy2_c.cc']
+py_files = files('frast2/frastpy2/frastpy2_c.cc')
 if get_option('gl').enabled()
-  py_files += ['frast2/frastpy2/gt_app_wrapper.cc']
+  py_files += files('frast2/frastpy2/gt_app_wrapper.cc')
 endif
 
 python3.extension_module('frastpy2_c',
-  files('frast2/frastpy2/frastpy2_c.cc', 'frast2/frastpy2/gt_app_wrapper.cc'),
+  py_files,
   subdir: 'frastpy2',
   install: true,
   dependencies: [frast_dep, frastgl_dep],
