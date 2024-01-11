@@ -3,7 +3,10 @@
 #include <pybind11/stl.h>
 
 #include "frast2/flat/reader.h"
+
+#ifdef FRASTGL
 #include "gt_app_wrapper.h"
+#endif
 
 namespace py = pybind11;
 
@@ -55,6 +58,7 @@ py::array create_py_image(cv::Mat& img) {
 	return result;
 }
 
+#ifdef FRASTGL
 py::array create_py_image(const Image& img) {
 
 	auto dtype = img.isFloat ? py::dtype::of<float>() : py::dtype::of<uint8_t>();
@@ -73,6 +77,7 @@ py::array create_py_image(const Image& img) {
 	auto result = py::array(dtype, outShape, outStrides, (uint8_t*) img.data.data());
 	return result;
 }
+#endif
 
 
 }  // namespace
@@ -260,6 +265,7 @@ PYBIND11_MODULE(frastpy2_c, m) {
 			})
 		;
 
+#ifdef FRASTGL
 	py::class_<AppConfig>(m, "AppConfig")
 		.def(py::init<>())
 		.def_readwrite("title", &AppConfig::title)
@@ -322,6 +328,7 @@ PYBIND11_MODULE(frastpy2_c, m) {
 		.def("setCamera", &GtWrapperApp::external_setCamera)
 		.def("askAndWaitForRender", &GtWrapperApp::external_askAndWaitForRender)
 		;
+#endif
 
 
 }

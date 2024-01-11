@@ -73,6 +73,9 @@ namespace frast {
 
 			inline bool fileIsNew() const { return fileIsNew_; }
 
+			inline int getFd() const { return fd_; }
+			inline void* getBasePointer() const { return basePointer; }
+
 
 		protected:
 

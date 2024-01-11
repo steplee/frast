@@ -15,6 +15,9 @@
 #include <fstream>
 #include "frast2/flat/gdal_stuff.hpp"
 
+#include <sys/types.h>
+#include <unistd.h>
+
 using namespace frast;
 
 #if FMT_VERSION == 80101
@@ -133,25 +136,71 @@ int main(int argc, char** argv) {
 		}
 		fmt::print(" - Tlbr (lvl {}) [{} {} -> {} {}]\n", lvl, tlbr[0], tlbr[1], tlbr[2], tlbr[3]);
 
+		std::string path = parser.get2OrDie<std::string>("-i", "--input");
+		int fd = open(path.c_str(), O_RDONLY, S_IRUSR | S_IROTH | S_IRGRP);
+
 		auto &spec = reader.env.getLevelSpec(lvl);
 		fmt::print(" - Items {}\n", spec.nitemsUsed());
 		uint64_t n = spec.nitemsUsed();
 		auto keys = reader.env.getKeys(lvl);
 		for (int i=0; i<spec.nitemsUsed(); i++) {
-			auto key = keys[i];
-			// Value val = reader.env.getValueFromIdx(lvl, i);
-			Value val = reader.env.lookup(lvl, key);
-			fmt::print(" - item ({:>6d}/{:>6d}) key {} len {}\n", i,n, key, val.len);
 
+			cv::Mat img;
 
-			if (val.value != nullptr) {
-				cv::Mat img = decodeValue(val, opts.isTerrain?1:3, opts.isTerrain);
+			if (1) {
+				auto key = keys[i];
+				Value val = reader.env.lookup(lvl, key);
+				fmt::print(" - item ({:>6d}/{:>6d}) key {} len {}\n", i,n, key, val.len);
+				if (val.value != nullptr) {
+					img = decodeValue(val, opts.isTerrain?1:3, opts.isTerrain);
+				}
 
-				cv::cvtColor(img,img,cv::COLOR_BGR2RGB);
-				cv::imshow("tile", img);
-				cv::waitKey(0);
+			} else {
+
+				//
+				// Here I was testing if read() avoids the disk cache.
+				// Although lookup() touches keys and k2vs, it does not touch the values (only creates a pointer to it).
+				// Read does not appear to prevent caching.
+				// (Watch with `watch -n1 vmtouch <file>`)
+				// (clear cache with `sudo bash -c 'echo 1 > /proc/sys/vm/drop_caches'`)
+				//
+				// I thought maybe that it might be only becasue the file is mmaped.
+				// But you can do e.g. `cat <file> > /dev/null`, and it also caches the entire file.
+				// Therefore, I don't think it is related to the file being mmaped.
+				//
+
+				auto key = keys[i];
+				Value touched = reader.env.lookup(lvl, key);
+				fmt::print(" - [touched] item ({:>6d}/{:>6d}) key {} len {}\n", i,n, key, touched.len);
+
+				if (touched.value == nullptr) continue;
+
+				Value loaded;
+				loaded.len = touched.len;
+				std::vector<uint8_t> buf(touched.len);
+				loaded.value = buf.data();
+
+				off_t offset = (uint8_t*)touched.value - (uint8_t*)reader.env.getBasePointer();
+				off_t offset1 = lseek(fd, offset, SEEK_SET);
+				assert(offset == offset1);
+
+				ssize_t nread = read(fd, buf.data(), buf.size());
+				assert(nread == buf.size());
+
+				/*
+				img = decodeValue(loaded, opts.isTerrain?1:3, opts.isTerrain);
+				*/
 			}
 
+
+
+			if (1) {
+				if (not img.empty()) {
+					cv::cvtColor(img,img,cv::COLOR_BGR2RGB);
+					cv::imshow("tile", img);
+					cv::waitKey(0);
+				}
+			}
 
 		}
 	}

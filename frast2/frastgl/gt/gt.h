@@ -376,7 +376,7 @@ struct GtDataLoader {
 	protected:
 		void internalLoop();
 		std::thread thread;
-		typename GtTypes::Renderer* renderer;
+		typename GtTypes::Renderer* renderer=nullptr;
 
 		std::condition_variable cv;
 		std::mutex mtx;

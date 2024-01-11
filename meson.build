@@ -50,26 +50,18 @@ pybind11_dep = declare_dependency(
 
 
 fmt_dep = dependency('fmt', required: true)
-'''
-fmt_dep = declare_dependency(
-  dependencies: [
-      meson.get_compiler('cpp').find_library('fmt',
-        dirs: ['/usr/local/lib', '/usr/local/terrapixel/lib']) ],
-  include_directories: include_directories('/usr/local/include',
-        '/usr/local/terrapixel/include'))
-'''
 
 
 
 # https://github.com/mesonbuild/meson/blob/master/test%20cases/frameworks/5%20protocol%20buffers/meson.build
-protoc = find_program('protoc', required : true)
-dep = dependency('protobuf', required : true)
-gen = generator(protoc, \
-  output    : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
-  # arguments : ['--proto_path=@CURRENT_SOURCE_DIR@', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
-  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/frast2/frastgl/gt/rt/protos/', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
-rocktree_pb_cc = gen.process('frast2/frastgl/gt/rt/protos/rocktree.proto')
-    # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
+if get_option('gl').enabled()
+  protoc = find_program('protoc', required : true)
+  gen = generator(protoc, \
+    output    : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+    # arguments : ['--proto_path=@CURRENT_SOURCE_DIR@', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+    arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/frast2/frastgl/gt/rt/protos/', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+  rocktree_pb_cc = gen.process('frast2/frastgl/gt/rt/protos/rocktree.proto')
+endif
 
 # If we appear to have a custom opencv4 build specifically for terrapixel stuff (located
 # in '/usr/local/terrapixel/') then use it, otherwise use meson to find the system's
@@ -99,45 +91,23 @@ z_dep = declare_dependency(dependencies: [
       meson.get_compiler('cpp').find_library('z')
       ])
 
-protobuf_dep = dependency('protobuf')
+if get_option('gl').enabled()
+  protobuf_dep = dependency('protobuf')
 
-'''
-glfw_dep = dependency('glfw')
-if glfw_dep.found()
-else
   glfw_opts = cmake.subproject_options()
   glfw_opts.add_cmake_defines({'GLFW_BUILD_EXAMPLES': false})
   glfw_opts.add_cmake_defines({'GLFW_BUILD_TESTS': false})
   glfw_opts.add_cmake_defines({'GLFW_INSTALL': false})
   glfw = cmake.subproject('glfw', options: glfw_opts)
   glfw_dep = glfw.dependency('glfw')
+
+  gl_dep = declare_dependency(
+    dependencies: [
+        # meson.get_compiler('cpp').find_library('glfw3', dirs: '/usr/local/terrapixel/lib'),
+        glfw_dep,
+        meson.get_compiler('cpp').find_library('GL'),
+        meson.get_compiler('cpp').find_library('GLEW'), ])
 endif
-'''
-glfw_opts = cmake.subproject_options()
-glfw_opts.add_cmake_defines({'GLFW_BUILD_EXAMPLES': false})
-glfw_opts.add_cmake_defines({'GLFW_BUILD_TESTS': false})
-glfw_opts.add_cmake_defines({'GLFW_INSTALL': false})
-glfw = cmake.subproject('glfw', options: glfw_opts)
-glfw_dep = glfw.dependency('glfw')
-
-gl_dep = declare_dependency(
-  dependencies: [
-      # meson.get_compiler('cpp').find_library('glfw3', dirs: '/usr/local/terrapixel/lib'),
-      glfw_dep,
-      meson.get_compiler('cpp').find_library('GL'),
-      meson.get_compiler('cpp').find_library('GLEW'), ])
-
-# I use `subproject` to download the repos, then copy only the files I need.
-# imgui  = subproject('imgui', required: false)
-# implot = subproject('implot', required: false)
-
-# Actually: these are checked into repo tree and should be updated manually.
-'''
-copy_imgui_files = custom_target('copy_imgui_files',
-  output: 'copy_imgui_files',
-  # output: 'frast2/frastgl/core/imgui/generated/imgui.cpp',
-  command: ['bash', '-c', 'cd @0@ && bash copy_imgui_files.sh'.format(meson.source_root())])
-'''
 
 # ----------------------------------------------
 #               Libraries
@@ -171,59 +141,69 @@ frast_dep = declare_dependency(
   dependencies: [eigen_dep, fmt_dep, threads_dep, opencv_dep])
 
 
-frastgl = shared_library('frastgl',
-  files(
-    'frast2/frastgl/core/app.cc',
-    'frast2/frastgl/core/cameras.cc',
-    'frast2/frastgl/core/render_state.cc',
-    'frast2/frastgl/core/shader.cc',
-    'frast2/frastgl/core/shaders.cc',
-    'frast2/frastgl/core/window.cc',
-    'frast2/frastgl/extra/caster/castable.cc',
-    'frast2/frastgl/extra/earth/earth.cc',
-    'frast2/frastgl/extra/ellipsoid/ellipsoid.cc',
-    'frast2/frastgl/extra/frustum/frustum.cc',
-    'frast2/frastgl/extra/loaders/mesh.cc',
-    'frast2/frastgl/extra/loaders/obj.cc',
-    'frast2/frastgl/extra/textSet/textSet.cc',
-    'frast2/frastgl/gt/ftr/ftr.cc',
-    'frast2/frastgl/gt/rt/rt.cc',
-    # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
-    'frast2/frastgl/gt/gt.cc',
+if get_option('gl').enabled()
+  frastgl = shared_library('frastgl',
+    files(
+      'frast2/frastgl/core/app.cc',
+      'frast2/frastgl/core/cameras.cc',
+      'frast2/frastgl/core/render_state.cc',
+      'frast2/frastgl/core/shader.cc',
+      'frast2/frastgl/core/shaders.cc',
+      'frast2/frastgl/core/window.cc',
+      'frast2/frastgl/extra/caster/castable.cc',
+      'frast2/frastgl/extra/earth/earth.cc',
+      'frast2/frastgl/extra/ellipsoid/ellipsoid.cc',
+      'frast2/frastgl/extra/frustum/frustum.cc',
+      'frast2/frastgl/extra/loaders/mesh.cc',
+      'frast2/frastgl/extra/loaders/obj.cc',
+      'frast2/frastgl/extra/textSet/textSet.cc',
+      'frast2/frastgl/gt/ftr/ftr.cc',
+      'frast2/frastgl/gt/rt/rt.cc',
+      # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
+      'frast2/frastgl/gt/gt.cc',
 
-    'frast2/frastgl/core/imgui/imgui_app.cc',
+      'frast2/frastgl/core/imgui/imgui_app.cc',
 
-    'frast2/frastgl/core/imgui/generated/imgui.cpp',
-    # 'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_draw.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_tables.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_widgets.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_impl_glfw.cpp',
-    'frast2/frastgl/core/imgui/generated/imgui_impl_opengl3.cpp',
-    'frast2/frastgl/core/implot/generated/implot.cpp',
-    'frast2/frastgl/core/implot/generated/implot_items.cpp',
-    # 'frast2/frastgl/core/implot/generated/implot_demo.cpp',
-    ),
-    rocktree_pb_cc,
-  include_directories: include_directories('frast2'),
-  # link_with: [copy_imgui_files],
-  dependencies: [frast_dep, gl_dep, glfw_dep, protobuf_dep, dl_dep],
-  cpp_args: frast_flags,
-  install: true)
+      'frast2/frastgl/core/imgui/generated/imgui.cpp',
+      # 'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
+      'frast2/frastgl/core/imgui/generated/imgui_draw.cpp',
+      'frast2/frastgl/core/imgui/generated/imgui_tables.cpp',
+      'frast2/frastgl/core/imgui/generated/imgui_widgets.cpp',
+      'frast2/frastgl/core/imgui/generated/imgui_impl_glfw.cpp',
+      'frast2/frastgl/core/imgui/generated/imgui_impl_opengl3.cpp',
+      'frast2/frastgl/core/implot/generated/implot.cpp',
+      'frast2/frastgl/core/implot/generated/implot_items.cpp',
+      # 'frast2/frastgl/core/implot/generated/implot_demo.cpp',
+      ),
+      rocktree_pb_cc,
+    include_directories: include_directories('frast2'),
+    # link_with: [copy_imgui_files],
+    dependencies: [frast_dep, gl_dep, protobuf_dep, dl_dep],
+    cpp_args: frast_flags,
+    install: true)
 
-frastgl_dep = declare_dependency(
-  # include_directories: include_directories('frast2'),
-  link_with: [frastgl],
-  dependencies: [frast_dep, glfw_dep, gl_dep, protobuf_dep])
+  frastgl_dep = declare_dependency(
+    # include_directories: include_directories('frast2'),
+    link_with: [frastgl],
+    dependencies: [frast_dep, gl_dep, protobuf_dep],
+    compile_args: ['-DFRASTGL=1'],
+    )
+else
+  frastgl_dep = declare_dependency()
+endif
 
 install_subdir('frast2', install_dir: 'include', exclude_files: ['*.cc', '*.cpp', '*.py', '*.pyc'])
 
+py_files = ['frast2/frastpy2/frastpy2_c.cc']
+if get_option('gl').enabled()
+  py_files += ['frast2/frastpy2/gt_app_wrapper.cc']
+endif
+
 python3.extension_module('frastpy2_c',
-  # files('frast2/frastpy2/frastpy2_c.cc'),
   files('frast2/frastpy2/frastpy2_c.cc', 'frast2/frastpy2/gt_app_wrapper.cc'),
   subdir: 'frastpy2',
   install: true,
-  dependencies: [frastgl_dep],
+  dependencies: [frast_dep, frastgl_dep],
   link_with: [])
 install_subdir('frast2/frastpy2', install_dir: 'lib/python3/dist-packages/', exclude_files: ['*.cc', '*.cpp'])
 
@@ -244,22 +224,25 @@ frastFlatWriter = executable('frastFlatWriter',
   cpp_args: frast_flags,
   install: true)
 
-runFtr = executable('runFtr',
-  files('frast2/frastgl/gt/ftr/runFtr.cc'),
-  dependencies: [frastgl_dep],
-  install: false)
-runRtr = executable('runRt',
-  files('frast2/frastgl/gt/rt/runRt.cc'),
-  dependencies: [frastgl_dep],
-  install: false)
+
+if get_option('gl').enabled()
+  runFtr = executable('runFtr',
+    files('frast2/frastgl/gt/ftr/runFtr.cc'),
+    dependencies: [frastgl_dep],
+    install: false)
+  runRtr = executable('runRt',
+    files('frast2/frastgl/gt/rt/runRt.cc'),
+    dependencies: [frastgl_dep],
+    install: false)
 
 
-if get_option('imgui_demo').enabled()
-runRtr = executable('runImguiDemo',
-  files('frast2/frastgl/core/imgui/imgui_demo_app.cc',
-    'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
-    'frast2/frastgl/core/implot/generated/implot_demo.cpp',
-    ),
-  dependencies: [frastgl_dep],
-  install: false)
+  if get_option('imgui_demo').enabled()
+  runRtr = executable('runImguiDemo',
+    files('frast2/frastgl/core/imgui/imgui_demo_app.cc',
+      'frast2/frastgl/core/imgui/generated/imgui_demo.cpp',
+      'frast2/frastgl/core/implot/generated/implot_demo.cpp',
+      ),
+    dependencies: [frastgl_dep],
+    install: false)
+  endif
 endif
