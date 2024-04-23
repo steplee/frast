@@ -216,7 +216,6 @@ FtDataLoader::FtDataLoader() {
 
 void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh) {
 	assert(renderer != nullptr);
-	auto& tex = renderer->gtpd.datas[tile->meshIds[0]].tex;
 
 	uint64_t tlbr[4] = { tile->coord.x(), tile->coord.y(), tile->coord.x()+1lu, tile->coord.y()+1lu };
 

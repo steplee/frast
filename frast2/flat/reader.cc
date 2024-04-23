@@ -241,6 +241,7 @@ namespace frast {
 	}
 
 
+	// TODO: Return also the number of tiles hit (so we know if zero tiles were hit)
 	cv::Mat FlatReaderCached::getTlbr(uint64_t lvl, uint32_t tlbr[4], int channels) {
 		uint64_t h = tlbr[3] - tlbr[1];
 		uint64_t w = tlbr[2] - tlbr[0];

@@ -74,9 +74,16 @@ class TestApp : public BaseClass_App {
 			RtTypes::Config cfg;
 			cfg.debugMode = true;
 
-			cfg.rootDir = "/data/gearth/naipAoisWgs";
-			cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/obb.obb"};
+			// cfg.rootDir = "/data/gearth/naipAoisWgs";
+			// cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/obb.obb"};
 			// cfg.obbIndexPaths = {"/data/gearth/naipAoisWgs/index.v1.bin"};
+			
+			const char* rtDir_ = getenv("RT_DIR");
+			assert(rtDir_ && "you must pass envvar 'RT_DIR'");
+			std::string rtDir = std::string{rtDir_};
+
+			cfg.rootDir = rtDir;
+			cfg.obbIndexPaths = {rtDir + "/obb.obb"};
 
 			rtr = std::make_unique<RtRenderer>(cfg);
 			rtr->init(this->cfg);
