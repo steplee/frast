@@ -163,6 +163,10 @@ if get_option('gl').enabled()
       # 'frast2/frastgl/gt/rt/protos/rocktree.pb.cc',
       'frast2/frastgl/gt/gt.cc',
 
+      'frast2/frastgl/gt/gdal/gdal.cc',
+      'frast2/frastgl/gt/gdal/dataset.cc',
+      'frast2/frastgl/gt/gdal/create_obb.cc',
+
       'frast2/frastgl/core/imgui/imgui_app.cc',
 
       'frast2/frastgl/core/imgui/generated/imgui.cpp',
@@ -179,14 +183,14 @@ if get_option('gl').enabled()
       rocktree_pb_cc,
     include_directories: include_directories('frast2'),
     # link_with: [copy_imgui_files],
-    dependencies: [frast_dep, gl_dep, protobuf_dep, dl_dep],
+    dependencies: [frast_dep, gl_dep, protobuf_dep, dl_dep, gdal_dep],
     cpp_args: frast_flags,
     install: true)
 
   frastgl_dep = declare_dependency(
     # include_directories: include_directories('frast2'),
     link_with: [frastgl],
-    dependencies: [frast_dep, gl_dep, protobuf_dep],
+    dependencies: [frast_dep, gl_dep, protobuf_dep, gdal_dep],
     compile_args: ['-DFRASTGL=1'],
     )
 else
@@ -235,6 +239,10 @@ if get_option('gl').enabled()
     files('frast2/frastgl/gt/rt/runRt.cc'),
     dependencies: [frastgl_dep],
     install: false)
+  runGdal = executable('runGdal',
+    files('frast2/frastgl/gt/gdal/runGdal.cc'),
+    dependencies: [frastgl_dep],
+    install: false)
 
 
   if get_option('imgui_demo').enabled()
@@ -246,4 +254,8 @@ if get_option('gl').enabled()
     dependencies: [frastgl_dep],
     install: false)
   endif
+endif
+
+if true
+  executable('testDataset', files('frast2/frastgl/gt/gdal/testDataset.cc'), dependencies: [frastgl_dep])
 endif

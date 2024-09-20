@@ -1,9 +1,8 @@
+#include "gdal.h"
 
-#include "ftr.h"
 #include "../gt_impl.hpp"
-// #include "frastVk/core/fvkShaders.h"
 
-#include "conversions.hpp"
+#include "../ftr/conversions.hpp"
 
 #include <fmt/color.h>
 #include <fmt/ostream.h>
@@ -11,27 +10,25 @@
 #include "frast2/frastgl/shaders/ft.h"
 
 #include <opencv2/highgui.hpp>
-
+#include <opencv2/imgproc.hpp>
 
 namespace frast {
 
-// Just need to instantiate the templated functions here.
-// TODO Have a macro do this in gt_impl.hpp, given for example "FtTypes"
 
-template GtRenderer<FtTypes, FtTypes::Renderer>::GtRenderer(const typename FtTypes::Config &cfg_);
-template void GtRenderer<FtTypes, FtTypes::Renderer>::init(const AppConfig& cfg);
-// template void GtRenderer<FtTypes, FtTypes::Renderer>::initDebugPipeline(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
+template GtRenderer<GdalTypes, GdalTypes::Renderer>::GtRenderer(const typename GdalTypes::Config &cfg_);
+template void GtRenderer<GdalTypes, GdalTypes::Renderer>::init(const AppConfig& cfg);
+// template void GtRenderer<GdalTypes, GdalTypes::Renderer>::initDebugPipeline(Device& d, TheDescriptorPool& dpool, SimpleRenderPass& pass, Queue& q, Command& cmd, const AppConfig& cfg);
 
-template void GtRenderer<FtTypes, FtTypes::Renderer>::update(GtUpdateContext<FtTypes>&);
-template void GtRenderer<FtTypes, FtTypes::Renderer>::defaultUpdate(Camera* cam);
+template void GtRenderer<GdalTypes, GdalTypes::Renderer>::update(GtUpdateContext<GdalTypes>&);
+template void GtRenderer<GdalTypes, GdalTypes::Renderer>::defaultUpdate(Camera* cam);
 
-// template void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState&);
-template void GtRenderer<FtTypes, FtTypes::Renderer>::renderDbg(RenderState&);
+// template void GtRenderer<GdalTypes, GdalTypes::Renderer>::render(RenderState&);
+template void GtRenderer<GdalTypes, GdalTypes::Renderer>::renderDbg(RenderState&);
 
-template GtPooledData<FtTypes>::GtPooledData();
+template GtPooledData<GdalTypes>::GtPooledData();
 
-template void GtDataLoader<FtTypes, FtTypes::DataLoader>::pushAsk(GtAsk<FtTypes>& ask);
-template void GtDataLoader<FtTypes, FtTypes::DataLoader>::internalLoop();
+template void GtDataLoader<GdalTypes, GdalTypes::DataLoader>::pushAsk(GtAsk<GdalTypes>& ask);
+template void GtDataLoader<GdalTypes, GdalTypes::DataLoader>::internalLoop();
 
 static uint32_t log2_(uint32_t x) {
 	uint32_t y = 0;
@@ -39,36 +36,36 @@ static uint32_t log2_(uint32_t x) {
 	return y;
 }
 
-static bool isAncestorOf(const FtCoordinate& ancestor, const FtCoordinate& descendent) {
+static bool isAncestorOf(const GdalCoordinate& ancestor, const GdalCoordinate& descendent) {
+	// assert(false); // wrong.
 	if (descendent.level() < ancestor.level()) return false;
-	FtCoordinate cur = descendent;
+	GdalCoordinate cur = descendent;
 	// FIXME: inefficient
 	while (cur.level() > ancestor.level()) cur = cur.parent();
 	return ancestor.c == cur.c;
 }
 
-std::vector<FtCoordinate> FtCoordinate::enumerateChildren() const {
-	std::vector<FtCoordinate> cs;
+std::vector<GdalCoordinate> GdalCoordinate::enumerateChildren() const {
+	std::vector<GdalCoordinate> cs;
 	for (uint64_t i=0; i<4; i++) {
 		uint64_t dx = i % 2;
 		uint64_t dy = (i/2) % 2;
 		cs.emplace_back(z()+1, y()*2+dx, x()*2+dy );
+		// cs.emplace_back(z()-1, y()*2+dx, x()*2+dy );
 		}
 	return cs;
 }
 
 
-
-
 // NOTE: This is *overloading* the function defined in gt_impl.hpp (which worked with vulkan, but we require too much
 // customization for the gl version and cannot use a generic method)
-template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) {
+template<> void GtRenderer<GdalTypes, GdalTypes::Renderer>::render(RenderState& rs) {
 	// fmt::print("my overload\n");
 	if (cfg.allowCaster) {
 		setCasterInRenderThread();
 	}
 
-	typename FtTypes::RenderContext gtrc { rs, gtpd, casterStuff };
+	typename GdalTypes::RenderContext gtrc { rs, gtpd, casterStuff };
 
 	// FIXME: Cache this in RenderState, this is very wasteful.
 	float mvpf[16];
@@ -79,6 +76,7 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 	// WARNING: This is tricky!
 	if (rs.camera and rs.camera->flipY_) glFrontFace(GL_CW);
 	else glFrontFace(GL_CCW);
+	// glFrontFace(GL_CW);
 	glEnable(GL_CULL_FACE);
 
 	glMatrixMode(GL_PROJECTION);
@@ -151,96 +149,75 @@ template<> void GtRenderer<FtTypes, FtTypes::Renderer>::render(RenderState& rs) 
 	if (GT_DEBUG and debugMode) renderDbg(rs);
 }
 
-
-
-
-
-
-FtDataLoader::~FtDataLoader() {
-	for (auto cd : colorDsets) delete cd;
-	if (elevDset) delete elevDset;
+GdalDataLoader::~GdalDataLoader() {
 }
 
-void FtDataLoader::do_init() {
-	EnvOptions optColor = EnvOptions::getReadonly(false);
+void GdalDataLoader::do_init() {
 	for (const auto& colorPath : renderer->cfg.colorDsetPaths)
-		colorDsets.push_back(new FlatReaderCached(colorPath, optColor));
+		colorDsets.push_back(std::make_unique<GdalDataset>(colorPath, false));
 
-	EnvOptions optElev = EnvOptions::getReadonly(true);
-	if (renderer->cfg.elevDsetPath.length() > 1)
-		elevDset = new FlatReaderCached(renderer->cfg.elevDsetPath, optElev);
-
-
-	/*
-	DatasetReaderOptions dopts1, dopts2;
-	dopts1.allowInflate = false;
-	dopts2.allowInflate = true;
-
-	// if (renderer.cfg.obbIndexPaths.size() != renderer.cfg.colorDsetPaths.size())
-
-	if (renderer.cfg.elevDsetPath.length())
-		elevDset  = new DatasetReader(renderer.cfg.elevDsetPath,  dopts2);
-	if (elevDset)
-		elevDset->beginTxn(&elev_txn, true);
-
-	for (const auto& dsetPath : renderer.cfg.colorDsetPaths) {
-		auto colorDset = new DatasetReader(dsetPath, dopts1);
-		MDB_txn* color_txn;
-		colorDset->beginTxn(&color_txn, true);
-		color_txns.push_back(color_txn);
-		assert(renderer.cfg.texSize == colorDset->tileSize());
-		colorDsets.push_back(colorDset);
-	}
-
-	renderer.colorFormat = Image::Format::RGBA;
-	// if (colorDset->format() == Image::Format::GRAY or cfg.channels == 1) renderer.colorFormat = Image::Format::GRAY;
-	colorBuf = Image { (int)colorDsets[0]->tileSize(), (int)colorDsets[0]->tileSize(), renderer.colorFormat };
-	colorBuf.alloc();
-	if (renderer.colorFormat == Image::Format::RGBA)
-		for (int y=0; y<renderer.cfg.texSize; y++)
-		for (int x=0; x<renderer.cfg.texSize; x++)
-			colorBuf.buffer[y*renderer.cfg.texSize*4+x*4+3] = 255;
-
-	if (elevDset) {
-		elevBuf = Image { (int)elevDset->tileSize(), (int)elevDset->tileSize(), Image::Format::TERRAIN_2x8 };
-		elevBuf.alloc();
-		memset(elevBuf.buffer, 0, elevBuf.size());
-	}
-	*/
+	elevDset = std::make_unique<GdalDataset>(renderer->cfg.elevDsetPath, true);
 }
 
-FtDataLoader::FtDataLoader() {
-
-
+GdalDataLoader::GdalDataLoader() {
 }
 
-void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh) {
+void GdalDataLoader::loadColor(GdalTile* tile, GdalTypes::DecodedCpuTileData::MeshData& mesh) {
 	assert(renderer != nullptr);
 
 	uint64_t tlbr[4] = { tile->coord.x(), tile->coord.y(), tile->coord.x()+1lu, tile->coord.y()+1lu };
 
 	// TODO: Not the most efficient thing to loop through each...
 	for (int i=0; i<colorDsets.size(); i++) {
-		auto colorDset = this->colorDsets[i];
+		auto &colorDset = this->colorDsets[i];
 
-		// FIXME: HERE
-		/*
-		if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord, color_txns[i])) {
-			int n_missing = colorDset->fetchBlocks(colorBuf, tile->coord.z(), tlbr, color_txns[i]);
-			// fmt::print(" - [#loadColor()] fetched tiles from tlbr {} {} {} {} ({} missing)\n", tlbr[0],tlbr[1],tlbr[2],tlbr[3], n_missing);
-			// if (n_missing > 0) return true;
-			if (n_missing == 0) {
-				mesh.img_buffer_cpu.resize(colorBuf.size());
-				memcpy(mesh.img_buffer_cpu.data(), colorBuf.buffer, colorBuf.size());
-				return;
+		assert(colorDsets.size() == 1);
+		// if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord)) {
+		if (1) {
+			fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
+			// colorBuf = colorDset->getLocalTile(tile->coord.x(), tile->coord.y(), tile->coord.z());
+			colorBuf = colorDset->getGlobalTile(tile->coord.x(), tile->coord.y(), tile->coord.z());
+
+
+			if (colorBuf.type() == CV_8UC1) cv::cvtColor(colorBuf, colorBuf, cv::COLOR_GRAY2RGBA);
+			if (colorBuf.type() == CV_8UC3) cv::cvtColor(colorBuf, colorBuf, cv::COLOR_RGB2RGBA);
+			fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
+
+			for (int i=3; i<colorBuf.total(); i+=4) {
+				colorBuf.data[i] = 255;
 			}
-		}
-		*/
+			assert(colorBuf.channels() == 4);
+			// colorBuf = cv::Scalar{255,255,255,255};
+			// cv::imshow("tile", colorBuf); cv::waitKey(30);
 
-		if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord)) {
-			// fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
-			colorBuf = colorDset->getTile(tile->coord, 4);
-			// fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
+			cv::putText(colorBuf, fmt::format("g: {} {} z={}", tile->coord.x(), tile->coord.y(), tile->coord.z()), cv::Point{20,20}, 0, .6, cv::Scalar{0,255,0,255});
+			int dz = colorDset->deepestLevelZ - tile->coord.z();
+			int scale = 1 << dz;
+
+			int lx = tile->coord.x() - colorDset->deepestLevelTlbr(0)/scale;
+			// int ly = y - deepestLevelTlbr(1)/scale;
+			// int ly = (colorDset->deepestLevelTlbr(3)+scale-1)/scale - tile->coord.y() - 1;
+			// int ly = (colorDset->deepestLevelTlbr(3)-colorDset->deepestLevelTlbr(1)) / scale - (tile->coord.y() - colorDset->deepestLevelTlbr(1)/scale);
+			// int ly = (colorDset->deepestLevelTlbr(3)-colorDset->deepestLevelTlbr(1)) / scale - (tile->coord.y() - colorDset->deepestLevelTlbr(3)/scale);
+			int yy = tile->coord.y();
+			// yy += colorDset->deepestLevelTlbr(3)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// yy -= colorDset->deepestLevelTlbr(1)/scale - colorDset->shallowestLevelTlbr(1) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// if 
+			// int ly = (colorDset->deepestLevelTlbr(3))/scale - yy - 1;
+			// int ly = (colorDset->deepestLevelTlbr(3) + scale-1)/scale - yy - 1;
+			int ly = ((colorDset->shallowestLevelTlbr(3)-1) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ))) - yy - 1;
+			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// ly = - ly;
+			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			
+			lx += colorDset->deepestLevelTlbr(0)/scale - colorDset->shallowestLevelTlbr(0) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// ly += colorDset->deepestLevelTlbr(3)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+
+			int ovr = dz;
+			cv::putText(colorBuf, fmt::format("l: {} {} z={}", lx, ly, ovr), cv::Point{20,39}, 0, .5, cv::Scalar{0,155,155,255});
+
 			auto size = colorBuf.total()*colorBuf.elemSize();
 			mesh.img_buffer_cpu.resize(size);
 			mesh.texSize[0] = colorBuf.rows;
@@ -254,50 +231,19 @@ void FtDataLoader::loadColor(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData
 	}
 }
 
-
-void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh, const FtTypes::Config& cfg) {
+void GdalDataLoader::loadElevAndMetaWithDted(GdalTile* tile, GdalTypes::DecodedCpuTileData::MeshData& mesh, const GdalTypes::Config& cfg) {
 	uint64_t tz = tile->coord.z();
 	uint64_t ty = tile->coord.y();
 	uint64_t tx = tile->coord.x();
-	float lvlScale = 2. / (1 << tz);
-	float ox = tx * lvlScale * 1. - 1.;
-	float oy = (ty * lvlScale * 1. - 1.);
+	assert(colorDsets.size() == 1);
+	// Vector4d tlbrWm = colorDsets[0]->getLocalTileBoundsWm(tx,ty,tz);
+	Vector4d tlbrWm = colorDsets[0]->getGlobalTileBoundsWm(tx,ty,tz);
+	Vector4d tlbrUwm = tlbrWm / WebMercatorMapScale;
 
-	/*
-	// double bboxWm[4] = {
-			// ox * WebMercatorMapScale,
-			// oy * WebMercatorMapScale,
-			// (ox+lvlScale) * WebMercatorMapScale,
-			// (oy+lvlScale) * WebMercatorMapScale,
-	// };
-	// bool failure = elevDset->rasterIo(elevBuf, bboxWm);
-
-	uint16_t res_ratio = cfg.texSize / cfg.vertsAlongEdge; // 32 for now
-	uint32_t lvlOffset = log2_(res_ratio);
-	// fmt::print(" - res_ratio {}, o {}\n", res_ratio, lvlOffset);
-	uint64_t z = tz - lvlOffset;
-	uint64_t y = ty >> lvlOffset;
-	uint64_t x = tx >> lvlOffset;
-	uint64_t tlbr[4] = { x,y, x+1lu,y+1lu };
-
-	// FIXME: REPLACE
-	int n_missing = elevDset->fetchBlocks(elevBuf, z, tlbr, elev_txn);
-
-	if (n_missing > 0) {
-		memset(elevBuf.buffer, 0, elevBuf.size());
-	}
-	*/
-
-	// elevBuf.create(cfg.vertsAlongEdge, cfg.vertsAlongEdge, CV_16UC1);
-	// cv::Mat rasterIo(double tlbr[4], int w, int h, int c);
-	double tlbrWm[4] = {
-			ox * WebMercatorMapScale,
-			oy * WebMercatorMapScale,
-			(ox+lvlScale) * WebMercatorMapScale,
-			(oy+lvlScale) * WebMercatorMapScale,
-	};
 	// fmt::print(" - elev tlbr {} {} {} {}\n", tlbrWm[0], tlbrWm[1], tlbrWm[2], tlbrWm[3]);
-	elevBuf = elevDset->rasterIo(tlbrWm, cfg.vertsAlongEdge, cfg.vertsAlongEdge, 1);
+	cv::Mat elevBuf(cfg.vertsAlongEdge, cfg.vertsAlongEdge, CV_16UC1);
+	elevDset->getWm(tlbrWm, elevBuf);
+	// elevBuf.convertTo(elevBuf, CV_32FC1, 1./8.);
 
 	int S = cfg.vertsAlongEdge;
 	for (uint16_t yy=0; yy<cfg.vertsAlongEdge-1; yy++)
@@ -306,15 +252,13 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 			uint16_t b = ((yy+0)*S) + (xx+1);
 			uint16_t c = ((yy+1)*S) + (xx+1);
 			uint16_t d = ((yy+1)*S) + (xx+0);
-			mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(c);
-			mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(a);
+			mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(c);
+			mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(a);
+			// mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(c);
+			// mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(a);
 		}
 
 	mesh.vert_buffer_cpu.resize(cfg.vertsAlongEdge*cfg.vertsAlongEdge);
-	// uint32_t y_off = (res_ratio - 1 - (ty % res_ratio)) * cfg.texSize / res_ratio;
-	// uint32_t x_off = (tx % res_ratio) * cfg.texSize / res_ratio;
-	uint32_t y_off = 0;
-	uint32_t x_off = 0;
 	uint16_t* elevData = (uint16_t*) elevBuf.data;
 
 	for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
@@ -324,17 +268,18 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 
 			float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
 			float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
-			float xxx = (xxx_ * lvlScale) + ox;
-			float yyy = ((1. - yyy_) * lvlScale) + oy;
-			// float zzz = (((uint16_t*)elevBuf.buffer)[yy*cfg.vertsAlongEdge+xx]) / (8.0f * static_cast<float>(WebMercatorMapScale));
-			// float zzz = (((uint16_t*)elevBuf.buffer)[(cfg.vertsAlongEdge-yy-1)*cfg.vertsAlongEdge+xx]) / (8.0f * static_cast<float>(WebMercatorMapScale));
-			// float zzz = (elevData[(cfg.vertsAlongEdge-yy-1)*cfg.vertsAlongEdge+xx]) / (4.0f * static_cast<float>(WebMercatorMapScale));
-			float zzz = (elevData[(yy+y_off)*elevBuf.cols+xx+x_off] / 8.0) / WebMercatorMapScale;
+			float xxx = xxx_ * tlbrUwm(0) + (1-xxx_) * tlbrUwm(2);
+			// float yyy = yyy_ * tlbrUwm(3) + (1-yyy_) * tlbrUwm(1);
+			float yyy = yyy_ * tlbrUwm(1) + (1-yyy_) * tlbrUwm(3);
+
+			float zzz = (elevData[(yy)*elevBuf.cols+xx] / 8.0) / WebMercatorMapScale;
+			// zzz = 0;
+
 			mesh.vert_buffer_cpu[ii].x = xxx;
 			mesh.vert_buffer_cpu[ii].y = yyy;
 			mesh.vert_buffer_cpu[ii].z = zzz;
 			mesh.vert_buffer_cpu[ii].w = 0;
-			mesh.vert_buffer_cpu[ii].u = xxx_;
+			mesh.vert_buffer_cpu[ii].u = 1-xxx_;
 			mesh.vert_buffer_cpu[ii].v = yyy_;
 
 			// fmt::print(" - vert {} {} {} | {} {}\n", xxx,yyy,zzz, xxx_,yyy_);
@@ -343,63 +288,18 @@ void FtDataLoader::loadElevAndMetaWithDted(FtTile* tile, FtTypes::DecodedCpuTile
 	unit_wm_to_ecef((float*)mesh.vert_buffer_cpu.data(), mesh.vert_buffer_cpu.size(), (float*)mesh.vert_buffer_cpu.data(), 6);
 }
 
-namespace {
-void loadElevAndMetaNoDted(FtTile* tile, FtTypes::DecodedCpuTileData::MeshData& mesh, const FtTypes::Config& cfg) {
-	int64_t tz = tile->coord.z();
-	int64_t ty = tile->coord.y();
-	int64_t tx = tile->coord.x();
-	float lvlScale = 2. / (1 << tz);
-	float ox = tx * lvlScale * 1. - 1.;
-	float oy = (ty * lvlScale * 1. - 1.);
-
-	int S = cfg.vertsAlongEdge;
-	for (uint16_t yy=0; yy<cfg.vertsAlongEdge-1; yy++)
-		for (uint16_t xx=0; xx<cfg.vertsAlongEdge-1; xx++) {
-			uint16_t a = ((yy+0)*S) + (xx+0);
-			uint16_t b = ((yy+0)*S) + (xx+1);
-			uint16_t c = ((yy+1)*S) + (xx+1);
-			uint16_t d = ((yy+1)*S) + (xx+0);
-			mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(c);
-			mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(a);
-		}
-
-	mesh.vert_buffer_cpu.resize(cfg.vertsAlongEdge*cfg.vertsAlongEdge);
-
-	for (int32_t yy=0; yy<cfg.vertsAlongEdge; yy++)
-		for (int32_t xx=0; xx<cfg.vertsAlongEdge; xx++) {
-			int32_t ii = ((cfg.vertsAlongEdge-1-yy)*cfg.vertsAlongEdge)+xx;
-			// int32_t ii = ((yy)*cfg.vertsAlongEdge)+xx;
-
-			float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
-			float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
-			float xxx = (xxx_ * lvlScale) + ox;
-			float yyy = ((1. - yyy_) * lvlScale) + oy;
-			mesh.vert_buffer_cpu[ii].x = xxx;
-			mesh.vert_buffer_cpu[ii].y = yyy;
-			mesh.vert_buffer_cpu[ii].z = 0;
-			mesh.vert_buffer_cpu[ii].w = 0;
-			mesh.vert_buffer_cpu[ii].u = xxx_;
-			mesh.vert_buffer_cpu[ii].v = yyy_;
-
-			// fmt::print(" - vert {} {} {} | {} {}\n", xxx,yyy,0, xxx_,yyy_);
-		}
-
-	unit_wm_to_ecef((float*)mesh.vert_buffer_cpu.data(), mesh.vert_buffer_cpu.size(), (float*)mesh.vert_buffer_cpu.data(), 6);
-}
-}
-
-
-FtRenderer::~FtRenderer() {
+GdalRenderer::~GdalRenderer() {
 }
 
 // TODO: Note: I've moved also the 'upload' code in here since it is easier (initially meant to split it up)
-int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool isOpen) {
+int GdalDataLoader::loadTile(GdalTile* tile, GdalTypes::DecodedCpuTileData& dtd, bool isOpen) {
 
 	loadColor(tile, dtd.mesh);
 	if (elevDset)
 		loadElevAndMetaWithDted(tile, dtd.mesh, renderer->cfg);
-	else
-		loadElevAndMetaNoDted(tile, dtd.mesh, renderer->cfg);
+	else {
+		assert(false);
+	}
 
 	uint32_t total_meshes = 1;
 	std::vector<uint32_t> gatheredIds(total_meshes);
@@ -425,7 +325,7 @@ int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool 
 		// See if we must re-allocate larger buffers.
 		// If the texture needs a re-allocation, we must mark that the DescSet needs to be updated too
 		// NOTE: This will not happen in ftr (but does in rt)
-		auto vert_size = sizeof(FtPackedVertex)*dtd.mesh.vert_buffer_cpu.size();
+		auto vert_size = sizeof(GdalPackedVertex)*dtd.mesh.vert_buffer_cpu.size();
 		auto indx_size = sizeof(uint16_t)*dtd.mesh.ind_buffer_cpu.size();
 		auto img_size  = sizeof(uint8_t)*dtd.mesh.img_buffer_cpu.size();
 
@@ -462,11 +362,10 @@ int FtDataLoader::loadTile(FtTile* tile, FtTypes::DecodedCpuTileData& dtd, bool 
 	return total_meshes;
 }
 
-
 //
 // NOTE: Unlike in frast1, in frast2 this is **called in the render thread**.
 //
-bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) {
+bool GdalTile::upload(GdalTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) {
 	assert(idx == 0);
 	// Upload vertices, indices, texture
 
@@ -477,7 +376,7 @@ bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) 
 		// See if we must re-allocate larger buffers.
 		// If the texture needs a re-allocation, we must mark that the DescSet needs to be updated too
 		// NOTE: This will not happen in ftr (but does in rt)
-		auto vert_size = sizeof(FtPackedVertex)*dctd.mesh.vert_buffer_cpu.size();
+		auto vert_size = sizeof(GdalPackedVertex)*dctd.mesh.vert_buffer_cpu.size();
 		auto indx_size = sizeof(uint16_t)*dctd.mesh.ind_buffer_cpu.size();
 		auto img_size  = sizeof(uint8_t)*dctd.mesh.img_buffer_cpu.size();
 
@@ -528,7 +427,7 @@ bool FtTile::upload(FtTypes::DecodedCpuTileData& dctd, int idx, GtTileData& td) 
 	return false;
 }
 
-void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int meshIdx) {
+void GdalTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int meshIdx) {
 	// fmt::print(" - rendering casted\n");
 
 	glBindTexture(GL_TEXTURE_2D, td.tex);
@@ -541,7 +440,7 @@ void FtTile::doRenderCasted(GtTileData& td, const CasterStuff& casterStuff, int 
 	glDrawElements(GL_TRIANGLES, td.residentInds, GL_UNSIGNED_SHORT, 0);
 }
 
-void FtTile::doRender(GtTileData& td, int meshIdx) {
+void GdalTile::doRender(GtTileData& td, int meshIdx) {
 
 	// NOTE: To avoid excessive state switches and line noise: assume correct shader is already bound (as well as uniforms)
 
@@ -559,17 +458,18 @@ void FtTile::doRender(GtTileData& td, int meshIdx) {
 
 }
 
-// Called for new tiles
-// void FtTile::updateGlobalBuffer(FtTypes::GlobalBuffer* gpuBuffer) { }
-
-
-void FtRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {
+void GdalRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {
 
 	// FIXME: Replace
 
 	// TODO: 1) Compile Shaders
 
 	normalShader = Shader{ft_tile_vsrc, ft_tile_fsrc};
+
+	if (this->cfg.allowCaster) {
+		do_init_caster_stuff();
+		castableShader = Shader{ft_tile_casted_vsrc, ft_tile_casted_fsrc};
+	}
 
 	/*
 	
@@ -713,10 +613,6 @@ void FtRenderer::initPipelinesAndDescriptors(const AppConfig& cfg) {
 
 		*/
 
-		if (this->cfg.allowCaster) {
-			do_init_caster_stuff();
-			castableShader = Shader{ft_tile_casted_vsrc, ft_tile_casted_fsrc};
-		}
 
 }
 

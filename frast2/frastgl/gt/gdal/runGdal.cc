@@ -7,7 +7,7 @@
 #include "frast2/frastgl/extra/frustum/frustum.h"
 #include "frast2/frastgl/extra/textSet/textSet.h"
 #include "frast2/frastgl/extra/loaders/obj.h"
-#include "ftr.h"
+#include "gdal.h"
 
 #include <chrono>
 #include <signal.h>
@@ -49,7 +49,7 @@ class TestApp : public BaseClass_App {
 				Eigen::Map<const RowMatrix4d> view { rs.view() };
 				Eigen::Map<const RowMatrix4d> proj { rs.proj() };
 				RowMatrix4f matrix = (proj*view).cast<float>();
-				ftr->cwd.setMatrix1(matrix.data());
+				gdalRenderer->cwd.setMatrix1(matrix.data());
 			}
 
 			// fmt::print(" - render\n");
@@ -65,10 +65,10 @@ class TestApp : public BaseClass_App {
 
 
 			glLineWidth(1);
-			ftr->defaultUpdate(rs.camera);
-			glCheck("ftr update");
-			ftr->render(rs);
-			glCheck("ftr render");
+			gdalRenderer->defaultUpdate(rs.camera);
+			glCheck("gdalRenderer update");
+			gdalRenderer->render(rs);
+			glCheck("gdalRenderer render");
 
 			earthEllps->render(rs);
 			glCheck("earthEllps render");
@@ -111,19 +111,18 @@ class TestApp : public BaseClass_App {
 
 
 		virtual void doInit() override {
-			FtTypes::Config cfg;
+			GdalTypes::Config cfg;
 			cfg.debugMode = true;
 
 			// cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
 			// cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
-			// cfg.obbIndexPaths = {"/data/naip/vamd2/vamd2.lvl15.fft.obb"};
-			// cfg.colorDsetPaths = {"/data/naip/vamd2/vamd2.lvl15.fft"};
-			cfg.colorDsetPaths = {"/data/naip/mdpa/mdpa.fft"};
-			// cfg.elevDsetPath = {"/data/elevation/gmted/gmted.fft"};
-			cfg.elevDsetPath = {"/data/elevation/srtm/srtm.fft"};
+			cfg.colorDsetPaths = {"/data/naip/pburgbmore/merged.tiff"};
+			cfg.obbIndexPaths = {cfg.colorDsetPaths[0] + ".obb"};
+			cfg.elevDsetPath = "/data/elevation/srtm/usa.lzw.x1.halfRes.tiff";
 
-			ftr = std::make_unique<FtRenderer>(cfg);
-			ftr->init(this->cfg);
+			maybeCreateObbFile(cfg);
+			gdalRenderer = std::make_unique<GdalRenderer>(cfg);
+			gdalRenderer->init(this->cfg);
 			setExampleCasterData();
 
 			earthEllps = std::make_unique<EarthEllipsoid>();
@@ -154,7 +153,7 @@ class TestApp : public BaseClass_App {
 
 				RowMatrix4f casterMatrixFromFrustum;
 				frustum1->getCasterMatrix(casterMatrixFromFrustum.data());
-				ftr->cwd.setMatrix2(casterMatrixFromFrustum.data());
+				gdalRenderer->cwd.setMatrix2(casterMatrixFromFrustum.data());
 
 				// Ellipsoid
 				auto ellps = frustum1->getOrCreateEllipsoid();
@@ -181,13 +180,13 @@ class TestApp : public BaseClass_App {
 
 		inline virtual bool handleKey(int key, int scancode, int action, int mods) override {
 			if (action == GLFW_PRESS and key == GLFW_KEY_M) moveCaster = !moveCaster;
-			if (action == GLFW_PRESS and key == GLFW_KEY_K) if (ftr) ftr->flipDebugMode();
+			if (action == GLFW_PRESS and key == GLFW_KEY_K) if (gdalRenderer) gdalRenderer->flipDebugMode();
 			return false;
 		}
 
 	protected:
 
-		std::unique_ptr<FtRenderer> ftr;
+		std::unique_ptr<GdalRenderer> gdalRenderer;
 		std::unique_ptr<EarthEllipsoid> earthEllps;
 		std::unique_ptr<Frustum> frustum1;
 		std::unique_ptr<TextSet> textSet;
@@ -262,10 +261,10 @@ class TestApp : public BaseClass_App {
 				if (frames>5000) break;
 			}
 
-			fmt::print(" - Destroying ftr in render thread\n");
-			ftr = nullptr;
+			fmt::print(" - Destroying gdalRenderer in render thread\n");
+			gdalRenderer = nullptr;
 
-			ftr = nullptr;
+			gdalRenderer = nullptr;
 			earthEllps = nullptr;
 			frustum1 = nullptr;
 			textSet = nullptr;
@@ -276,7 +275,7 @@ class TestApp : public BaseClass_App {
 
 		bool moveCaster = true;
 		void setExampleCasterData() {
-			// ftr->setCasterInRenderThread
+			// gdalRenderer->setCasterInRenderThread
 
 			float color1[4] = {.1f,0.f,.1f,.6f};
 			float color2[4] = {.0f,.5f,.2f,.6f};
@@ -291,11 +290,11 @@ class TestApp : public BaseClass_App {
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+2] = c;
 				static_cast<uint8_t*>(tstImg.data)[y*512*4+x*4+3] = 100;
 			}
-			ftr->cwd.setImage(tstImg);
-			ftr->cwd.setColor1(color1);
-			ftr->cwd.setColor2(color2);
-			ftr->cwd.setMask(0b11);
-			// ftr->cwd.setMask(0b0);
+			gdalRenderer->cwd.setImage(tstImg);
+			gdalRenderer->cwd.setColor1(color1);
+			gdalRenderer->cwd.setColor2(color2);
+			gdalRenderer->cwd.setMask(0b11);
+			// gdalRenderer->cwd.setMask(0b0);
 		}
 
 	public:
