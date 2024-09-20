@@ -130,7 +130,8 @@ GdalDataset::GdalDataset(const std::string& path, bool isTerrain) : isTerrain(is
 		}
 
 		deepestLevelZ = matchedPixelLevel - 8;
-		shallowestLevelZ = deepestLevelZ - bands[0]->GetOverviewCount() + 1;
+		// shallowestLevelZ = deepestLevelZ - bands[0]->GetOverviewCount() + 1;
+		shallowestLevelZ = deepestLevelZ - bands[0]->GetOverviewCount();
 		deepestLevelTlbr(0) = std::floor((tlbrWm(0) / WebMercatorScale + 1) * .5 * (1 << deepestLevelZ));
 		deepestLevelTlbr(1) = std::floor((tlbrWm(1) / WebMercatorScale + 1) * .5 * (1 << deepestLevelZ));
 		deepestLevelTlbr(2) = std::ceil ((tlbrWm(2) / WebMercatorScale + 1) * .5 * (1 << deepestLevelZ));
@@ -139,6 +140,14 @@ GdalDataset::GdalDataset(const std::string& path, bool isTerrain) : isTerrain(is
 		shallowestLevelTlbr(1) = std::floor((tlbrWm(1) / WebMercatorScale + 1) * .5 * (1 << shallowestLevelZ));
 		shallowestLevelTlbr(2) = std::ceil ((tlbrWm(2) / WebMercatorScale + 1) * .5 * (1 << shallowestLevelZ));
 		shallowestLevelTlbr(3) = std::ceil ((tlbrWm(3) / WebMercatorScale + 1) * .5 * (1 << shallowestLevelZ));
+		fmt::print(" - Deepest    level tlbr: [{} {} {} {}] (w {}, h {})\n",
+				deepestLevelTlbr(0), deepestLevelTlbr(1), deepestLevelTlbr(2), deepestLevelTlbr(3),
+				deepestLevelTlbr(2) - deepestLevelTlbr(0),
+				deepestLevelTlbr(3) - deepestLevelTlbr(1));
+		fmt::print(" - Shallowest level tlbr: [{} {} {} {}] (w {}, h {})\n",
+				shallowestLevelTlbr(0), shallowestLevelTlbr(1), shallowestLevelTlbr(2), shallowestLevelTlbr(3),
+				shallowestLevelTlbr(2) - shallowestLevelTlbr(0),
+				shallowestLevelTlbr(3) - shallowestLevelTlbr(1));
 	}
 
 
@@ -185,31 +194,10 @@ cv::Mat GdalDataset::getLocalTile(int x, int y, int overview) {
 
 
 cv::Mat GdalDataset::getGlobalTile(int x, int y, int z) {
-
-	int dz = deepestLevelZ - z;
-	int scale = 1 << dz;
-
-	int lx = x - deepestLevelTlbr(0)/scale;
-
-
-	int ly = deepestLevelTlbr(3)/scale - y - 1;
-
-	lx += deepestLevelTlbr(0)/scale - shallowestLevelTlbr(0) * (1 << (z - shallowestLevelZ));
-	// ly -= deepestLevelTlbr(3)/scale - shallowestLevelTlbr(3) * (1 << (z - shallowestLevelZ));
-	ly = ((shallowestLevelTlbr(3)-1) * (1 << (z - shallowestLevelZ))) - y - 1;
-
-	/*
-			ly = (deepestLevelTlbr(3))/scale - y - 1;
-			ly += (deepestLevelTlbr(3)+scale-1)/scale - shallowestLevelTlbr(3) * (1 << (z - shallowestLevelZ));
-			ly = - ly;
-	*/
-	int ovr = dz;
-
-
-	// ly = ((h + 255) / 256 - 1)/scale - ly;
-
-	fmt::print("getGlobalTile ovr {}, deepestZ {}, z {}, dz {}\n", ovr, deepestLevelZ, z, dz);
-	return getLocalTile(lx,ly,ovr);
+	Vector4d wm = getGlobalTileBoundsWm(x,y,z);
+	cv::Mat out(256,256,internalCvType);
+	getWm(wm,out);
+	return out;
 }
 
 BlockCoordinate GdalDataset::localToGlobalCoord(int x, int y, int ovr) {

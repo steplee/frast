@@ -115,8 +115,9 @@ class TestApp : public BaseClass_App {
 			cfg.debugMode = true;
 
 			// cfg.obbIndexPaths = {"/data/naip/mocoNaip/moco.fft.obb"};
-			// cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
-			cfg.colorDsetPaths = {"/data/naip/pburgbmore/merged.tiff"};
+			cfg.colorDsetPaths = {"/data/naip/mocoNaip/moco.fft"};
+			cfg.colorDsetPaths = {"/data/mosaicVaNm/mosaic.tif"};
+			// cfg.colorDsetPaths = {"/data/naip/pburgbmore/merged.tiff"};
 			cfg.obbIndexPaths = {cfg.colorDsetPaths[0] + ".obb"};
 			cfg.elevDsetPath = "/data/elevation/srtm/usa.lzw.x1.halfRes.tiff";
 

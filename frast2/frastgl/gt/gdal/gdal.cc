@@ -242,7 +242,10 @@ void GdalDataLoader::loadElevAndMetaWithDted(GdalTile* tile, GdalTypes::DecodedC
 
 	// fmt::print(" - elev tlbr {} {} {} {}\n", tlbrWm[0], tlbrWm[1], tlbrWm[2], tlbrWm[3]);
 	cv::Mat elevBuf(cfg.vertsAlongEdge, cfg.vertsAlongEdge, CV_16UC1);
-	elevDset->getWm(tlbrWm, elevBuf);
+	Vector4d elevTlbrWm = tlbrWm;
+	elevTlbrWm(2) += (elevTlbrWm(2) - elevTlbrWm(0)) / (cfg.vertsAlongEdge);
+	elevTlbrWm(3) += (elevTlbrWm(3) - elevTlbrWm(1)) / (cfg.vertsAlongEdge);
+	elevDset->getWm(elevTlbrWm, elevBuf);
 	// elevBuf.convertTo(elevBuf, CV_32FC1, 1./8.);
 
 	int S = cfg.vertsAlongEdge;
@@ -252,10 +255,10 @@ void GdalDataLoader::loadElevAndMetaWithDted(GdalTile* tile, GdalTypes::DecodedC
 			uint16_t b = ((yy+0)*S) + (xx+1);
 			uint16_t c = ((yy+1)*S) + (xx+1);
 			uint16_t d = ((yy+1)*S) + (xx+0);
-			mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(c);
-			mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(a);
-			// mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(c);
-			// mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(a);
+			// mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(c);
+			// mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(a);
+			mesh.ind_buffer_cpu.push_back(a); mesh.ind_buffer_cpu.push_back(b); mesh.ind_buffer_cpu.push_back(c);
+			mesh.ind_buffer_cpu.push_back(c); mesh.ind_buffer_cpu.push_back(d); mesh.ind_buffer_cpu.push_back(a);
 		}
 
 	mesh.vert_buffer_cpu.resize(cfg.vertsAlongEdge*cfg.vertsAlongEdge);
@@ -268,7 +271,7 @@ void GdalDataLoader::loadElevAndMetaWithDted(GdalTile* tile, GdalTypes::DecodedC
 
 			float xxx_ = static_cast<float>(xx) / static_cast<float>(cfg.vertsAlongEdge-1);
 			float yyy_ = static_cast<float>(yy) / static_cast<float>(cfg.vertsAlongEdge-1);
-			float xxx = xxx_ * tlbrUwm(0) + (1-xxx_) * tlbrUwm(2);
+			float xxx = xxx_ * tlbrUwm(2) + (1-xxx_) * tlbrUwm(0);
 			// float yyy = yyy_ * tlbrUwm(3) + (1-yyy_) * tlbrUwm(1);
 			float yyy = yyy_ * tlbrUwm(1) + (1-yyy_) * tlbrUwm(3);
 
@@ -279,7 +282,7 @@ void GdalDataLoader::loadElevAndMetaWithDted(GdalTile* tile, GdalTypes::DecodedC
 			mesh.vert_buffer_cpu[ii].y = yyy;
 			mesh.vert_buffer_cpu[ii].z = zzz;
 			mesh.vert_buffer_cpu[ii].w = 0;
-			mesh.vert_buffer_cpu[ii].u = 1-xxx_;
+			mesh.vert_buffer_cpu[ii].u = xxx_;
 			mesh.vert_buffer_cpu[ii].v = yyy_;
 
 			// fmt::print(" - vert {} {} {} | {} {}\n", xxx,yyy,zzz, xxx_,yyy_);
