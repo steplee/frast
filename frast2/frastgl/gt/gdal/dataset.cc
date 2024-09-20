@@ -293,7 +293,7 @@ Vector4d GdalDataset::getPix(const Vector4d& tlbrPix, cv::Mat& out) {
 			arg.dfXSize = br(0) - tl(0);
 			arg.dfYSize = br(1) - tl(1);
 			arg.bFloatingPointWindowValidity = 1;
-			fmt::print(" - subpixel: {} {} {} {} \n", arg.dfXOff, arg.dfYOff, arg.dfXSize, arg.dfYSize);
+			// fmt::print(" - subpixel: {} {} {} {} \n", arg.dfXOff, arg.dfYOff, arg.dfXSize, arg.dfYSize);
 		} else {
 			arg.bFloatingPointWindowValidity = 0;
 		}

@@ -153,8 +153,13 @@ GdalDataLoader::~GdalDataLoader() {
 }
 
 void GdalDataLoader::do_init() {
-	for (const auto& colorPath : renderer->cfg.colorDsetPaths)
+	for (const auto& colorPath : renderer->cfg.colorDsetPaths) {
 		colorDsets.push_back(std::make_unique<GdalDataset>(colorPath, false));
+		fmt::print("Setting colorDset.bilinearSampling false, since it should already be aligned to WM tree.\n");
+		colorDsets.back()->bilinearSampling = false;
+		fmt::print("Setting colorDset.useSubpixelOffsets false, since it should already be aligned to WM tree.\n");
+		colorDsets.back()->setUseSubpixelOffsets(false);
+	}
 
 	elevDset = std::make_unique<GdalDataset>(renderer->cfg.elevDsetPath, true);
 }
@@ -174,14 +179,14 @@ void GdalDataLoader::loadColor(GdalTile* tile, GdalTypes::DecodedCpuTileData::Me
 		assert(colorDsets.size() == 1);
 		// if (colorDsets.size() == 1 or colorDset->tileExists(tile->coord)) {
 		if (1) {
-			fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
+			// fmt::print(" - loading tile {} {} {}\n", tile->coord.z(), tile->coord.y(), tile->coord.x());
 			// colorBuf = colorDset->getLocalTile(tile->coord.x(), tile->coord.y(), tile->coord.z());
 			colorBuf = colorDset->getGlobalTile(tile->coord.x(), tile->coord.y(), tile->coord.z());
 
 
 			if (colorBuf.type() == CV_8UC1) cv::cvtColor(colorBuf, colorBuf, cv::COLOR_GRAY2RGBA);
 			if (colorBuf.type() == CV_8UC3) cv::cvtColor(colorBuf, colorBuf, cv::COLOR_RGB2RGBA);
-			fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
+			// fmt::print(" - loading tile {} -> {}x{}x{}\n", tile->coord.c, colorBuf.rows, colorBuf.cols, colorBuf.channels());
 
 			for (int i=3; i<colorBuf.total(); i+=4) {
 				colorBuf.data[i] = 255;
@@ -190,33 +195,21 @@ void GdalDataLoader::loadColor(GdalTile* tile, GdalTypes::DecodedCpuTileData::Me
 			// colorBuf = cv::Scalar{255,255,255,255};
 			// cv::imshow("tile", colorBuf); cv::waitKey(30);
 
-			cv::putText(colorBuf, fmt::format("g: {} {} z={}", tile->coord.x(), tile->coord.y(), tile->coord.z()), cv::Point{20,20}, 0, .6, cv::Scalar{0,255,0,255});
-			int dz = colorDset->deepestLevelZ - tile->coord.z();
-			int scale = 1 << dz;
+			if (renderer->debugMode) {
+				cv::putText(colorBuf, fmt::format("g: {} {} z={}", tile->coord.x(), tile->coord.y(), tile->coord.z()), cv::Point{20,20}, 0, .6, cv::Scalar{0,255,0,255});
+				int dz = colorDset->deepestLevelZ - tile->coord.z();
+				int scale = 1 << dz;
 
-			int lx = tile->coord.x() - colorDset->deepestLevelTlbr(0)/scale;
-			// int ly = y - deepestLevelTlbr(1)/scale;
-			// int ly = (colorDset->deepestLevelTlbr(3)+scale-1)/scale - tile->coord.y() - 1;
-			// int ly = (colorDset->deepestLevelTlbr(3)-colorDset->deepestLevelTlbr(1)) / scale - (tile->coord.y() - colorDset->deepestLevelTlbr(1)/scale);
-			// int ly = (colorDset->deepestLevelTlbr(3)-colorDset->deepestLevelTlbr(1)) / scale - (tile->coord.y() - colorDset->deepestLevelTlbr(3)/scale);
-			int yy = tile->coord.y();
-			// yy += colorDset->deepestLevelTlbr(3)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// yy -= colorDset->deepestLevelTlbr(1)/scale - colorDset->shallowestLevelTlbr(1) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// if 
-			// int ly = (colorDset->deepestLevelTlbr(3))/scale - yy - 1;
-			// int ly = (colorDset->deepestLevelTlbr(3) + scale-1)/scale - yy - 1;
-			int ly = ((colorDset->shallowestLevelTlbr(3)-1) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ))) - yy - 1;
-			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// ly = - ly;
-			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			
-			lx += colorDset->deepestLevelTlbr(0)/scale - colorDset->shallowestLevelTlbr(0) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// ly += colorDset->deepestLevelTlbr(3)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
-			// ly += (colorDset->deepestLevelTlbr(3)+scale-1)/scale - colorDset->shallowestLevelTlbr(3) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
+				// broken logic...
+				int lx = tile->coord.x() - colorDset->deepestLevelTlbr(0)/scale;
+				int yy = tile->coord.y();
+				int ly = ((colorDset->shallowestLevelTlbr(3)-1) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ))) - yy - 1;
+				
+				lx += colorDset->deepestLevelTlbr(0)/scale - colorDset->shallowestLevelTlbr(0) * (1 << (tile->coord.z() - colorDset->shallowestLevelZ));
 
-			int ovr = dz;
-			cv::putText(colorBuf, fmt::format("l: {} {} z={}", lx, ly, ovr), cv::Point{20,39}, 0, .5, cv::Scalar{0,155,155,255});
+				int ovr = dz;
+				cv::putText(colorBuf, fmt::format("l: {} {} z={}", lx, ly, ovr), cv::Point{20,39}, 0, .5, cv::Scalar{0,155,155,255});
+			}
 
 			auto size = colorBuf.total()*colorBuf.elemSize();
 			mesh.img_buffer_cpu.resize(size);
