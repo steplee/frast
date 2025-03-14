@@ -64,6 +64,11 @@ namespace frast {
 				usleep(10);
 				ftr->defaultUpdate(rs.camera);
 				ftr->render(rs);
+			} else if (usingGdal) {
+				gdalr->defaultUpdate(rs.camera);
+				usleep(10);
+				gdalr->defaultUpdate(rs.camera);
+				gdalr->render(rs);
 			} else {
 				rtr->defaultUpdate(rs.camera);
 				usleep(10);
@@ -78,6 +83,7 @@ namespace frast {
 
 	void GtWrapperApp::doInit() {
 		const auto& ft_cfg = gtCfg.ft_cfg;
+		const auto& gdal_cfg = gtCfg.gdal_cfg;
 		const auto& rt_cfg = gtCfg.rt_cfg;
 
 		bool askedRt = rt_cfg.rootDir.length() > 0;
@@ -88,6 +94,14 @@ namespace frast {
 				ftr->init(cfg);
 			} else {
 				throw std::runtime_error(fmt::format("Asked to use FtRenderer root dir '{}', but it does not exist!", ft_cfg.colorDsetPaths[0]));
+			}
+		} else if (gdal_cfg.colorDsetPaths.size()) {
+			maybeCreateObbFile(gdal_cfg);
+			if (fileExists(gdal_cfg.colorDsetPaths[0])) {
+				gdalr = std::make_unique<GdalRenderer>(gdal_cfg);
+				gdalr->init(cfg);
+			} else {
+				throw std::runtime_error(fmt::format("Asked to use GdalRenderer root dir '{}', but it does not exist!", gdal_cfg.colorDsetPaths[0]));
 			}
 		}
 
@@ -100,12 +114,13 @@ namespace frast {
 			}
 		}
 
-		if (ftr == nullptr and rtr == nullptr) {
+		if (ftr == nullptr and rtr == nullptr and gdalr == nullptr) {
 			// logCritical("Viewer needs one-of or both-of ftr and rtr");
-			throw std::runtime_error("Viewer needs one-of or both-of ftr and rtr");
+			throw std::runtime_error("Viewer needs one-of or both-of ftr and rtr and gdalr");
 		}
 
 		usingFtr = (ftr != nullptr); // default to ftr, if it is on.
+		usingGdal = gdalr != nullptr;
 		if (askedRt and rtr) usingFtr = false;
 
 		earthEllps = std::make_unique<EarthEllipsoid>();
@@ -255,6 +270,7 @@ namespace frast {
 			fmt::print(" - Destroying rtr in render thread\n");
 			rtr = nullptr;
 			ftr = nullptr;
+			gdalr = nullptr;
 			earthEllps = nullptr;
 
 			std::unique_lock<std::mutex> lck(mtx);

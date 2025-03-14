@@ -322,6 +322,7 @@ PYBIND11_MODULE(frastpy2_c, m) {
 		});
 
 	m.def("create_gt_app_config", &create_gt_app_config);
+	m.def("create_gt_app_config_for_gdal", &create_gt_app_config_for_gdal);
 
 	py::class_<GtWrapperApp>(m, "GtWrapperApp")
 		.def(py::init<const AppConfig&, const GtConfig&>())

@@ -66,7 +66,7 @@ endif
 # If we appear to have a custom opencv4 build specifically for terrapixel stuff (located
 # in '/usr/local/terrapixel/') then use it, otherwise use meson to find the system's
 # installation (pkgconfig or cmake)
-if fs.is_dir('/usr/local/terrapixel/include/opencv4')
+if false
   opencv_root = '/usr/local/terrapixel/'
   opencv_inc_dir = opencv_root / 'include' / 'opencv4'
   opencv_lib_dir = opencv_root / 'lib'

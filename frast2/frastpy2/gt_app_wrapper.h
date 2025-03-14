@@ -15,6 +15,7 @@ namespace py = pybind11;
 // #include "frast2/frastgl/extra/frustum/frustum.h"
 #include "frast2/frastgl/gt/rt/rt.h"
 #include "frast2/frastgl/gt/ftr/ftr.h"
+#include "frast2/frastgl/gt/gdal/gdal.h"
 
 #include <condition_variable>
 
@@ -23,9 +24,22 @@ namespace frast {
 	struct GtConfig {
 		FtTypes::Config ft_cfg;
 		RtTypes::Config rt_cfg;
+		GdalTypes::Config gdal_cfg;
 		bool flipY = true; // Flip projection y axis. WARNING: all black?
 		// bool flipY = false; // Flip projection y axis.
 	};
+
+	inline GtConfig create_gt_app_config_for_gdal(
+			std::vector<std::string> colorPaths,
+			std::string ftDtedPath) {
+		GtConfig out;
+		out.gdal_cfg.colorDsetPaths = colorPaths;
+		for (const auto &s : colorPaths)
+			out.gdal_cfg.obbIndexPaths.push_back(s + ".obb");
+		out.gdal_cfg.elevDsetPath = ftDtedPath;
+		return out;
+	}
+
 
 	inline GtConfig create_gt_app_config(
 			std::vector<std::string> ftColorPaths,
@@ -119,12 +133,14 @@ namespace frast {
 
 			std::unique_ptr<RtRenderer> rtr;
 			std::unique_ptr<FtRenderer> ftr;
+			std::unique_ptr<GdalRenderer> gdalr;
 			std::unique_ptr<EarthEllipsoid> earthEllps;
 
 			std::thread thread;
 
 			bool isDone = false;
 			bool usingFtr = true;
+			bool usingGdal = false;
 
 	};
 
